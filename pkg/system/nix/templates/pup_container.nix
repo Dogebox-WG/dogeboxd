@@ -13,7 +13,10 @@ let
 in
 {
   # Maybe don't need this here at the top-level, only inside the container block?
-  nixpkgs.overlays = [ pupOverlay ];
+  nixpkgs.overlays = lib.mkAfter [
+    pupOverlay
+    (import "/etc/nixos/nix/builders/nanopc-t6/optee/overlay.nix")
+  ];
 
   systemd.services."container-log-forwarder@pup-{{.PUP_ID}}" = {
     description = "Container Log Forwarder for pup-{{.PUP_ID}}";
@@ -63,7 +66,44 @@ in
         hostPath = "{{ .PUP_PATH }}";
         isReadOnly = true;
       };
+
+      "tee0" = {
+        mountPoint = "/dev/tee0";
+        hostPath   = "/dev/tee0";
+        isReadOnly = false;
+      };
+
+      "teepriv0" = {
+        mountPoint = "/dev/teepriv0";
+        hostPath   = "/dev/teepriv0";
+        isReadOnly = false;
+      };
+
+      "usb-bus" = {
+        mountPoint = "/dev/bus/usb";
+        hostPath   = "/dev/bus/usb";
+        isReadOnly = false;
+      };
+
+      "hidraw0" = {
+        mountPoint = "/dev/hidraw0";
+        hostPath   = "/dev/hidraw0";
+        isReadOnly = false;
+      };
+
+      "hidraw1" = {
+        mountPoint = "/dev/hidraw1";
+        hostPath   = "/dev/hidraw1";
+        isReadOnly = false;
+      };
     };
+
+    allowedDevices = [
+      { node = "/dev/tee0";     modifier = "rwm"; }
+      { node = "/dev/teepriv0"; modifier = "rwm"; }
+      { node = "char-usb_device"; modifier = "rwm"; }
+      { node = "char-hidraw";     modifier = "rwm"; }
+    ];
 
     ephemeral = true;
 
@@ -75,13 +115,20 @@ in
       # we are now using flakes for everything.
       system.copySystemConfiguration = lib.mkForce false;
 
-      nixpkgs.overlays = [ pupOverlay ];
+      nixpkgs.overlays = lib.mkAfter [
+        pupOverlay
+        (import "/etc/nixos/nix/builders/nanopc-t6/optee/overlay.nix")
+      ];
 
       # Mark our root fs as readonly.
       fileSystems."/" = {
         device = "rootfs";
         options = [ "ro" ];
       };
+
+      imports = [
+        "/etc/nixos/nix/builders/nanopc-t6/optee/modules/tee-supplicant/default.nix"
+      ];
 
       networking = {
         useHostResolvConf = lib.mkForce false;
@@ -112,7 +159,20 @@ in
 
       environment.systemPackages = with pkgs; [
         {{ range .SERVICES }}pup.{{.NAME}} {{end}}
+        yubikey-personalization
+        optee-client
       ];
+
+      # Give pup access to OP-TEE
+      systemd.services.fix-device-perms = {
+        description = "Give the pup user access to the OP-TEE device";
+        wantedBy    = [ "multi-user.target" ];
+        before      = [ "tee-supplicant.service" ];
+        serviceConfig = {
+          Type      = "oneshot";
+          ExecStart = "${pkgs.coreutils}/bin/chown pup:pup /dev/tee0";
+        };
+      };
 
       # Merge in any managed nix service that the pup wants to start.
       services = lib.mkMerge [
