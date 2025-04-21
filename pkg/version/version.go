@@ -1,15 +1,11 @@
 package version
 
 import (
+	"os"
+	"strings"
+
 	"github.com/carlmjohnson/versioninfo"
 )
-
-/* injected */
-
-var dbxRelease string
-var nurHash string
-
-/* ** */
 
 type DBXVersionInfoGit struct {
 	Commit string `json:"commit"`
@@ -23,15 +19,15 @@ type DBXVersionInfo struct {
 }
 
 func GetDBXRelease() *DBXVersionInfo {
-	release := dbxRelease
-	nurHash := nurHash
+	release := "unknown"
+	nurHash := "unknown"
 
-	if release == "" {
-		release = "unknown"
+	if dbxReleaseData, err := os.ReadFile("/opt/dbx-release"); err == nil {
+		release = strings.TrimSpace(string(dbxReleaseData))
 	}
 
-	if nurHash == "" {
-		nurHash = "unknown"
+	if nurHashData, err := os.ReadFile("/opt/dbx-nur-hash"); err == nil {
+		nurHash = strings.TrimSpace(string(nurHashData))
 	}
 
 	return &DBXVersionInfo{

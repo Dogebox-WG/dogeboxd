@@ -1,5 +1,22 @@
 {
   "nodes": {
+    "dpanel-src": {
+      "flake": false,
+      "locked": {
+        "lastModified": 1734661435,
+        "narHash": "sha256-spr0RSaJ3CIThRUB+w/Z9rmHhNrsKCH8moV/NBTohhI=",
+        "owner": "dogeorg",
+        "repo": "dpanel",
+        "rev": "b35a676cf7e66199013b312d96b79053b17d53c6",
+        "type": "github"
+      },
+      "original": {
+        "owner": "dogeorg",
+        "repo": "dpanel",
+        "rev": "b35a676cf7e66199013b312d96b79053b17d53c6",
+        "type": "github"
+      }
+    },
     "flake-utils": {
       "inputs": {
         "systems": "systems"
@@ -36,6 +53,7 @@
     },
     "root": {
       "inputs": {
+        "dpanel-src": "dpanel-src",
         "flake-utils": "flake-utils",
         "nixpkgs": "nixpkgs"
       }
