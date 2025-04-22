@@ -83,16 +83,16 @@ func GetFlakePath() (string, error) {
 	return flakePath, nil
 }
 
-func GetRebuildCommand(action string) (string, error) {
+func GetRebuildCommand(action string) (string, []string, error) {
 	// Action is allowed to be "boot" or "switch". Throw an error if it's not.
 	if action != "boot" && action != "switch" {
-		return "", fmt.Errorf("invalid action: %s", action)
+		return "", nil, fmt.Errorf("invalid action: %s", action)
 	}
 
 	flakePath, err := GetFlakePath()
 	if err != nil {
-		return "", fmt.Errorf("failed to get flake path: %w", err)
+		return "", nil, fmt.Errorf("failed to get flake path: %w", err)
 	}
 
-	return fmt.Sprintf("nixos-rebuild %s --flake %s", action, flakePath), nil
+	return "nixos-rebuild", []string{action, "--flake", flakePath}, nil
 }

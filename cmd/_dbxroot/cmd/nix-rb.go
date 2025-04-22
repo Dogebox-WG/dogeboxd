@@ -13,13 +13,13 @@ var rbCmd = &cobra.Command{
 	Use:   "rb",
 	Short: "Executes nixos-rebuild boot",
 	Run: func(cmd *cobra.Command, args []string) {
-		rebuildCommand, err := utils.GetRebuildCommand("boot")
+		rebuildCommand, rebuildArgs, err := utils.GetRebuildCommand("boot")
 		if err != nil {
 			fmt.Fprintf(os.Stderr, "Error getting rebuild command: %v\n", err)
 			os.Exit(1)
 		}
 
-		execCmd := exec.Command(rebuildCommand)
+		execCmd := exec.Command(rebuildCommand, rebuildArgs...)
 		execCmd.Stdout = os.Stdout
 		execCmd.Stderr = os.Stderr
 
