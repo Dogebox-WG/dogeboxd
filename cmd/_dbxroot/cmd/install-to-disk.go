@@ -82,20 +82,11 @@ Example:
 		utils.RunCommand("mkdir", "-p", "/mnt/opt/")
 		utils.RunCommand("touch", "/mnt/opt/dbx-installed")
 
-		// Get system architecture
-		archOutput := utils.RunCommand("uname", "-m")
-		architecture := strings.TrimSpace(archOutput)
-
-		// Get build type
-		buildTypeBytes, err := os.ReadFile("/opt/build-type")
+		flakePath, err := utils.GetFlakePath()
 		if err != nil {
-			log.Printf("Failed to read build type: %v", err)
+			log.Printf("Failed to get flake path: %v", err)
 			os.Exit(1)
 		}
-		buildType := strings.TrimSpace(string(buildTypeBytes))
-
-		flakeName := fmt.Sprintf("dogeboxos-%s-%s", buildType, architecture)
-		flakePath := fmt.Sprintf("/etc/nixos#%s", flakeName)
 
 		// Install
 		utils.RunCommand("nixos-install", "--flake", flakePath, "--no-root-passwd", "--root", "/mnt")

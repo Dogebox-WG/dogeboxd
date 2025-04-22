@@ -63,3 +63,36 @@ func GetLoopDeviceBackingFile(loopDevice string) (string, error) {
 
 	return "", fmt.Errorf("loop device %s not found", loopDevice)
 }
+
+func GetFlakePath() (string, error) {
+	// Get system architecture
+	archOutput := RunCommand("uname", "-m")
+	architecture := strings.TrimSpace(archOutput)
+
+	// Get build type
+	buildTypeBytes, err := os.ReadFile("/opt/build-type")
+	if err != nil {
+		log.Printf("Failed to read build type: %v", err)
+		os.Exit(1)
+	}
+	buildType := strings.TrimSpace(string(buildTypeBytes))
+
+	flakeName := fmt.Sprintf("dogeboxos-%s-%s", buildType, architecture)
+	flakePath := fmt.Sprintf("/etc/nixos#%s", flakeName)
+
+	return flakePath, nil
+}
+
+func GetRebuildCommand(action string) (string, error) {
+	// Action is allowed to be "boot" or "switch". Throw an error if it's not.
+	if action != "boot" && action != "switch" {
+		return "", fmt.Errorf("invalid action: %s", action)
+	}
+
+	flakePath, err := GetFlakePath()
+	if err != nil {
+		return "", fmt.Errorf("failed to get flake path: %w", err)
+	}
+
+	return fmt.Sprintf("nixos-rebuild %s --flake %s", action, flakePath), nil
+}
