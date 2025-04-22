@@ -94,5 +94,5 @@ func GetRebuildCommand(action string) (string, []string, error) {
 		return "", nil, fmt.Errorf("failed to get flake path: %w", err)
 	}
 
-	return "nixos-rebuild", []string{action, "--flake", flakePath}, nil
+	return "nixos-rebuild", []string{action, "--flake", flakePath, "--impure"}, nil
 }
