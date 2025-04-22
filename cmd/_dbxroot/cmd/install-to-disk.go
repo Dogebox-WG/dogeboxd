@@ -95,7 +95,7 @@ Example:
 		buildType := strings.TrimSpace(string(buildTypeBytes))
 
 		flakeName := fmt.Sprintf("dogeboxos-%s-%s", buildType, architecture)
-		flakePath := fmt.Sprintf("/etc/nixos/%s.nix", flakeName)
+		flakePath := fmt.Sprintf("/etc/nixos#%s", flakeName)
 
 		// Install
 		utils.RunCommand("nixos-install", "--flake", flakePath, "--no-root-passwd", "--root", "/mnt")
