@@ -69,7 +69,11 @@ in
 
     config = { config, pkgs, lib, ... }: {
       system.stateVersion = "24.11";
-      system.copySystemConfiguration = true;
+
+      # This needs to be set to false, otherwise the system
+      # will try and use channels, which won't work, because
+      # we are now using flakes for everything.
+      system.copySystemConfiguration = lib.mkForce false;
 
       nixpkgs.overlays = [ pupOverlay ];
 
