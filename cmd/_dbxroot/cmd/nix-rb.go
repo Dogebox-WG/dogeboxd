@@ -9,11 +9,13 @@ import (
 	"github.com/spf13/cobra"
 )
 
+var nixRBDevMode bool
+
 var rbCmd = &cobra.Command{
 	Use:   "rb",
 	Short: "Executes nixos-rebuild boot",
 	Run: func(cmd *cobra.Command, args []string) {
-		rebuildCommand, rebuildArgs, err := utils.GetRebuildCommand("boot")
+		rebuildCommand, rebuildArgs, err := utils.GetRebuildCommand("boot", nixRBDevMode)
 		if err != nil {
 			fmt.Fprintf(os.Stderr, "Error getting rebuild command: %v\n", err)
 			os.Exit(1)
@@ -32,5 +34,6 @@ var rbCmd = &cobra.Command{
 }
 
 func init() {
+	rbCmd.Flags().BoolVarP(&nixRBDevMode, "dev", "d", false, "dev mode")
 	nixCmd.AddCommand(rbCmd)
 }
