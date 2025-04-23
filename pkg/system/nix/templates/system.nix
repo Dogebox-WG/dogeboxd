@@ -2,7 +2,7 @@
 
 {
   networking.hostName = lib.mkForce "{{ .SYSTEM_HOSTNAME }}";
-  networking.networkmanager.enable = false;
+  networking.networkmanager.enable = lib.mkDefault false;
 
   console.keyMap = "{{ .KEYMAP }}";
 
