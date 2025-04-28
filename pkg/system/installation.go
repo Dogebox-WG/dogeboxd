@@ -220,7 +220,7 @@ func InstallToDisk(config dogeboxd.ServerConfig, dbxState dogeboxd.DogeboxState,
 
 	// For the T6, we need to write the root FS over the EMMC
 	// with DD, as we need all the arm-specific bootloaders and such.
-	if buildType == "nanopc-T6" {
+	if buildType == "nanopc-t6" {
 		installFn = dbxrootDDToDisk
 	}
 
