@@ -82,8 +82,14 @@ Example:
 		utils.RunCommand("mkdir", "-p", "/mnt/opt/")
 		utils.RunCommand("touch", "/mnt/opt/dbx-installed")
 
+		flakePath, err := utils.GetFlakePath()
+		if err != nil {
+			log.Printf("Failed to get flake path: %v", err)
+			os.Exit(1)
+		}
+
 		// Install
-		utils.RunCommand("nixos-install", "--no-root-passwd", "--root", "/mnt")
+		utils.RunCommand("nixos-install", "--flake", flakePath, "--no-root-passwd", "--root", "/mnt")
 
 		log.Println("Finished installing. Please remove installation media and reboot.")
 	},
