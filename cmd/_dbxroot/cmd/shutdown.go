@@ -22,5 +22,5 @@ var shutdownCmd = &cobra.Command{
 }
 
 func init() {
-	shutdownCmd.AddCommand(rebootCmd)
+	rootCmd.AddCommand(shutdownCmd)
 }
