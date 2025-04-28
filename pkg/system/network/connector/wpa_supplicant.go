@@ -31,14 +31,14 @@ func (t NetworkConnectorWPASupplicant) Connect(network dogeboxd.SelectedNetwork)
 		"-c", "/dev/null",
 		"-C", "/var/run/wpa_supplicant",
 		"-B",
-		"-o", "/var/log/wpa_supplicant.log",
+		"-f", "/var/log/wpa_supplicant.log",
 		"-D", "nl80211,wext",
 	)
 
 	// // Set environment variables for network configuration
 	cmd.Env = append(cmd.Env,
 		"WPA_CTRL_INTERFACE=/var/run/wpa_supplicant",
-		"WPA_CTRL_INTERFACE_GROUP=0",
+		"WPA_CTRL_INTERFACE_GROUP=dogebox",
 	)
 
 	// // Start wpa_supplicant
