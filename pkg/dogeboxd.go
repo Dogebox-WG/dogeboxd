@@ -107,7 +107,7 @@ func NewDogeboxd(
 // Main Dogeboxd goroutine, handles routing messages in
 // and out of the system via job and change channels,
 // handles messages from subsystems ie: SystemUpdater,
-// SysteMonitor etc.
+// SystemMonitor etc.
 func (t Dogeboxd) Run(started, stopped chan bool, stop chan context.Context) error {
 	go func() {
 		go func() {
@@ -120,7 +120,7 @@ func (t Dogeboxd) Run(started, stopped chan bool, stop chan context.Context) err
 				case <-stop:
 					break mainloop
 
-				// Hand incomming jobs to the Job Dispatcher
+				// Hand incoming jobs to the Job Dispatcher
 				case j, ok := <-t.jobs:
 					if !ok {
 						break dance
