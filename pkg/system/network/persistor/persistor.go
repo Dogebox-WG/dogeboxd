@@ -11,7 +11,7 @@ func NewNetworkPersistor(nix dogeboxd.NixManager, network dogeboxd.SelectedNetwo
 		return NetworkPersistorNix{nix}, nil
 	}
 
-	return nil, errors.New("failed to intialise network persistor, no handler implemented")
+	return nil, errors.New("failed to initialise network persistor, no handler implemented")
 }
 
 func isNix() bool {

@@ -4,9 +4,11 @@ import (
 	"encoding/json"
 	"fmt"
 	"log"
+	"net"
 	"net/http"
 	"os"
 	"path/filepath"
+	"time"
 
 	dogeboxd "github.com/dogeorg/dogeboxd/pkg"
 	"github.com/go-resty/resty/v2"
@@ -66,13 +68,18 @@ func CheckAndSubmitReflectorData(config dogeboxd.ServerConfig, networkManager do
 		return nil
 	}
 
-	localIP, err := networkManager.GetLocalIP()
+	// Try, sleep, retry for a bit so we can wait for the network to catch up
+	var localIP net.IP
+	err = retry(10, 2*time.Second, func() (err error) {
+		localIP, err = networkManager.GetLocalIP()
+		return err
+	})
 	if err != nil {
 		log.Printf("Could not determine local IP address for reflector submission: %s", err)
 		return nil
 	}
 
-	log.Printf("Submitting reflector data to %s w/ token %s", host, token)
+	log.Printf("Submitting reflector data to %s w/ token %s, ip %s", host, token, localIP.String())
 
 	client := resty.New()
 	client.SetBaseURL(host)
@@ -94,4 +101,22 @@ func CheckAndSubmitReflectorData(config dogeboxd.ServerConfig, networkManager do
 	}
 
 	return nil
+}
+
+func retry(attempts int, sleep time.Duration, f func() error) (err error) {
+	for i := 0; ; i++ {
+		err = f()
+		if err == nil {
+			return
+		}
+
+		if i >= (attempts - 1) {
+			break
+		}
+
+		time.Sleep(sleep)
+
+		log.Println("retrying after error:", err)
+	}
+	return fmt.Errorf("after %d attempts, last error: %s", attempts, err)
 }
