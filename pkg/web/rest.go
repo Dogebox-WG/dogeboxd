@@ -73,6 +73,7 @@ func RESTAPI(
 
 		"GET /system/network/list":        a.getNetwork,
 		"PUT /system/network/set-pending": a.setPendingNetwork,
+		"POST /system/network/test":       a.testConnectNetwork,
 		"POST /system/network/connect":    a.connectNetwork,
 		"POST /system/host/shutdown":      a.hostShutdown,
 		"POST /system/host/reboot":        a.hostReboot,
