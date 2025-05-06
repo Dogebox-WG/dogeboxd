@@ -26,12 +26,18 @@ type BootstrapFacts struct {
 	HasCompletedInitialConfiguration bool `json:"hasCompletedInitialConfiguration"`
 }
 
+type BootstrapFlags struct {
+	IsFirstTimeWelcomeComplete bool `json:"isFirstTimeWelcomeComplete"`
+	IsDeveloperMode            bool `json:"isDeveloperMode"`
+}
+
 type BootstrapResponse struct {
 	Version    *version.DBXVersionInfo      `json:"version"`
 	DevMode    bool                         `json:"devMode"`
 	Assets     map[string]dogeboxd.PupAsset `json:"assets"`
 	States     map[string]dogeboxd.PupState `json:"states"`
 	Stats      map[string]dogeboxd.PupStats `json:"stats"`
+	Flags      BootstrapFlags               `json:"flags"`
 	SetupFacts BootstrapFacts               `json:"setupFacts"`
 }
 
@@ -44,6 +50,10 @@ func (t api) getRawBS() BootstrapResponse {
 		Assets:  t.pups.GetAssetsMap(),
 		States:  t.pups.GetStateMap(),
 		Stats:   t.pups.GetStatsMap(),
+		Flags: BootstrapFlags{
+			IsFirstTimeWelcomeComplete: dbxState.Flags.IsFirstTimeWelcomeComplete,
+			IsDeveloperMode:            dbxState.Flags.IsDeveloperMode,
+		},
 		SetupFacts: BootstrapFacts{
 			HasGeneratedKey:                  dbxState.InitialState.HasGeneratedKey,
 			HasConfiguredNetwork:             dbxState.InitialState.HasSetNetwork,
@@ -89,6 +99,18 @@ func (t api) getBootstrap(w http.ResponseWriter, r *http.Request) {
 
 func (t api) getRecoveryBootstrap(w http.ResponseWriter, r *http.Request) {
 	sendResponse(w, t.getRecoveryBS())
+}
+
+func (t api) setWelcomeComplete(w http.ResponseWriter, r *http.Request) {
+	dbxState := t.sm.Get().Dogebox
+	dbxState.Flags.IsFirstTimeWelcomeComplete = true
+
+	if err := t.sm.SetDogebox(dbxState); err != nil {
+		sendErrorResponse(w, http.StatusInternalServerError, "Error saving state")
+		return
+	}
+
+	sendResponse(w, map[string]any{"status": "OK"})
 }
 
 func (t api) hostReboot(w http.ResponseWriter, r *http.Request) {

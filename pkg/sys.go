@@ -54,6 +54,11 @@ type DogeboxStateInitialSetup struct {
 	HasFullyConfigured bool `json:"hasFullyConfigured"`
 }
 
+type DogeboxFlags struct {
+	IsFirstTimeWelcomeComplete bool `json:"isFirstTimeWelcomeComplete"`
+	IsDeveloperMode            bool `json:"isDeveloperMode"`
+}
+
 type DogeboxStateSSHKey struct {
 	ID        string    `json:"id"`
 	DateAdded time.Time `json:"dateAdded"`
@@ -71,6 +76,7 @@ type DogeboxState struct {
 	KeyMap        string
 	SSH           DogeboxStateSSHConfig
 	StorageDevice string
+	Flags         DogeboxFlags
 }
 
 type NetworkState struct {
@@ -125,11 +131,11 @@ type NetworkWifi struct {
 }
 
 type NetworkWifiSSID struct {
-	Ssid       string `json:"ssid"`
-	Bssid      string `json:"bssid"` // TODO: this should probably not be a string?
-	Encryption string `json:"encryption,omitempty"`
+	Ssid       string  `json:"ssid"`
+	Bssid      string  `json:"bssid"` // TODO: this should probably not be a string?
+	Encryption string  `json:"encryption,omitempty"`
 	Quality    float32 `json:"quality"`
-	Signal     string `json:"signal"`
+	Signal     string  `json:"signal"`
 }
 
 func (n NetworkEthernet) networkConnectionMarker() {}
