@@ -3,6 +3,7 @@ package dogeboxd
 import (
 	"context"
 	"database/sql"
+	"encoding/json"
 	"fmt"
 	"reflect"
 	"strings"

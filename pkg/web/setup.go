@@ -113,6 +113,42 @@ func (t api) setWelcomeComplete(w http.ResponseWriter, r *http.Request) {
 	sendResponse(w, map[string]any{"status": "OK"})
 }
 
+type InstallPupCollectionRequest struct {
+	CollectionName string `json:"collectionName"`
+}
+
+func (t api) installPupCollection(w http.ResponseWriter, r *http.Request) {
+	body, err := io.ReadAll(r.Body)
+	if err != nil {
+		sendErrorResponse(w, http.StatusBadRequest, "Error reading request body")
+		return
+	}
+	defer r.Body.Close()
+
+	var requestBody InstallPupCollectionRequest
+	if err := json.Unmarshal(body, &requestBody); err != nil {
+		sendErrorResponse(w, http.StatusBadRequest, "Error parsing payload")
+		return
+	}
+
+	if requestBody.CollectionName == "" {
+		sendErrorResponse(w, http.StatusBadRequest, "Collection name is required")
+		return
+	}
+
+	// Get the session token for authentication
+	session, sessionOK := getSession(r, getBearerToken)
+	if !sessionOK {
+		sendErrorResponse(w, http.StatusUnauthorized, "Failed to fetch session")
+		return
+	}
+
+	// Process the collection installation
+	processPupCollections(t.sm, t.dbx, session.DKM_TOKEN, requestBody.CollectionName)
+
+	sendResponse(w, map[string]any{"success": true})
+}
+
 func (t api) hostReboot(w http.ResponseWriter, r *http.Request) {
 	t.lifecycle.Reboot()
 }
