@@ -13,8 +13,8 @@ type CollectionPup struct {
 	SourceId string
 }
 
-// collectionPups maps collection names to their respective pups
-var collectionPups = map[string][]CollectionPup{
+// FoundationPupCollections maps collection names to their respective pups
+var FoundationPupCollections = map[string][]CollectionPup{
 	"core": {
 		{
 			Name:     "Dogecoin Core",
@@ -47,24 +47,26 @@ var collectionPups = map[string][]CollectionPup{
 	"custom": {},
 }
 
-// processPupCollections handles the installation of pups from the selected collection
+// processPupCollections handles the installation of pups for a given collection
 func processPupCollections(sm dogeboxd.StateManager, dbx dogeboxd.Dogeboxd, sessionToken string, collectionName string) {
 	// Get the list of pups for the selected collection
-	pupsToInstall, exists := collectionPups[collectionName]
+	pupsToInstall, exists := FoundationPupCollections[collectionName]
 	if !exists {
 		fmt.Printf(">> Unknown collection: %s\n", collectionName)
-	} else {
-		// Create and queue jobs for each pup in the collection
-		for _, pup := range pupsToInstall {
-			req := dogeboxd.InstallPup{
-				PupName:      pup.Name,
-				PupVersion:   pup.Version,
-				SourceId:     pup.SourceId,
-				SessionToken: sessionToken,
-			}
+		return
+	}
 
-			//Add the action to the system updater
-			dbx.AddAction(req)
+	// Create a batch installation request
+	installRequests := make([]dogeboxd.InstallPup, len(pupsToInstall))
+	for i, pup := range pupsToInstall {
+		installRequests[i] = dogeboxd.InstallPup{
+			PupName:      pup.Name,
+			PupVersion:   pup.Version,
+			SourceId:     pup.SourceId,
+			SessionToken: sessionToken,
 		}
 	}
+
+	// Add the batch installation action
+	dbx.AddAction(dogeboxd.InstallPups(installRequests))
 }

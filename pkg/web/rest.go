@@ -94,6 +94,7 @@ func RESTAPI(
 		"GET /pup/{ID}/metrics":               a.getPupMetrics,
 		"POST /pup/{ID}/{action}":             a.pupAction,
 		"PUT /pup":                            a.installPup,
+		"PUT /pups":                           a.installPups,
 		"POST /config/{PupID}":                a.updateConfig,
 		"POST /providers/{PupID}":             a.updateProviders,
 		"GET /providers/{PupID}":              a.getPupProviders,
@@ -105,6 +106,7 @@ func RESTAPI(
 		"/ws/log/{PupID}":                     a.getLogSocket,
 		"POST /system/welcome-complete":       a.setWelcomeComplete,
 		"POST /system/install-pup-collection": a.installPupCollection,
+		"GET /missing-deps/{PupID}":           a.getMissingDeps,
 	}
 
 	// We always want to load recovery routes.

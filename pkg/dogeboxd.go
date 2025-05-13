@@ -251,6 +251,10 @@ func (t Dogeboxd) jobDispatcher(j Job) {
 	// System actions
 	case InstallPup:
 		t.createPupFromManifest(j, a.PupName, a.PupVersion, a.SourceId)
+	case InstallPups:
+		for _, pup := range a {
+			t.createPupFromManifest(j, pup.PupName, pup.PupVersion, pup.SourceId)
+		}
 	case UninstallPup:
 		t.sendSystemJobWithPupDetails(j, a.PupID)
 	case PurgePup:
@@ -321,6 +325,13 @@ func (t *Dogeboxd) createPupFromManifest(j Job, pupName, pupVersion, sourceId st
 
 	// send the job off to the SystemUpdater to install
 	t.sendSystemJobWithPupDetails(j, pupID)
+}
+
+// Handle batch installation of multiple pups
+func (t *Dogeboxd) installPups(j Job, pups InstallPups) {
+	for _, pup := range pups {
+		t.createPupFromManifest(j, pup.PupName, pup.PupVersion, pup.SourceId)
+	}
 }
 
 // Handle an UpdatePupConfig action
