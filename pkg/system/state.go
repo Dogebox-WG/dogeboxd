@@ -28,6 +28,10 @@ func NewStateManager(store *dogeboxd.StoreManager) dogeboxd.StateManager {
 				HasSetNetwork:      false,
 				HasFullyConfigured: false,
 			},
+			Flags: dogeboxd.DogeboxFlags{
+				IsFirstTimeWelcomeComplete: false,
+				IsDeveloperMode:            false,
+			},
 		},
 		source: dogeboxd.SourceState{
 			SourceConfigs: []dogeboxd.ManifestSourceConfiguration{},
