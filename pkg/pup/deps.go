@@ -10,41 +10,40 @@ import (
 	dogeboxd "github.com/dogeorg/dogeboxd/pkg"
 )
 
+// CalculateDeps calculates the dependencies for a given pup
 func (t PupManager) CalculateDeps(pupID string) ([]dogeboxd.PupDependencyReport, error) {
 	// First try to get the pup from the state map
 	pup, ok := t.state[pupID]
 	if !ok {
-		// Let's check if this is an uninstalled pup by looking in sources
 		sourceList, err := t.sourceManager.GetAll(false)
 		if err != nil {
 			return []dogeboxd.PupDependencyReport{}, errors.New("no such pup and failed to check sources")
 		}
-		
-		// Parse the pupID to get name and version
+
 		parts := strings.Split(pupID, "-")
 		if len(parts) != 2 {
 			return []dogeboxd.PupDependencyReport{}, errors.New("invalid pup ID format")
 		}
 		pupName := parts[0]
 		pupVersion := parts[1]
-		
+
 		// Search through sources for this pup
 		for _, list := range sourceList {
 			for _, p := range list.Pups {
 				if p.Name == pupName && p.Version == pupVersion {
 					// Create a temporary state for this uninstalled pup
 					tempState := &dogeboxd.PupState{
-						Manifest: p.Manifest,
+						Manifest:  p.Manifest,
 						Providers: make(map[string]string),
 					}
 					return t.calculateDeps(tempState), nil
 				}
 			}
 		}
-		
+
 		return []dogeboxd.PupDependencyReport{}, errors.New("no such pup")
 	}
-	
+
 	return t.calculateDeps(pup), nil
 }
 
