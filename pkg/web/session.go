@@ -304,12 +304,8 @@ func (t api) changePassword(w http.ResponseWriter, r *http.Request) {
 			sendErrorResponse(w, 400, "Authentication method required")
 		case "length":
 			sendErrorResponse(w, 403, "Invalid mnemonic length")
-		case "wordlist":
+		case "seedphrase":
 			sendErrorResponse(w, 403, "Invalid mnemonic word")
-		case "checksum":
-			sendErrorResponse(w, 403, "Invalid mnemonic checksum")
-		case "mnemonic":
-			sendErrorResponse(w, 403, "Invalid mnemonic phrase")
 		default:
 			sendErrorResponse(w, 500, "Failed to change password: "+err.Error())
 		}
