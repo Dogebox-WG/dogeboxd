@@ -14,6 +14,8 @@ type DKMManager interface {
 	RefreshToken(old string) (string, bool, error)
 	InvalidateToken(token string) (bool, error)
 	MakeDelegate(id string, token string) (DKMResponseMakeDelegate, error)
+	// ChangePassword changes the master key password. Requires either current_password or seedphrase, and new_password.
+	ChangePassword(currentPassword string, seedphrase string, newPassword string) error
 }
 
 type DKMResponseCreateKey struct {
@@ -47,6 +49,10 @@ type DKMErrorResponseMakeDelegate struct {
 }
 
 type DKMResponseInvalidateToken struct{}
+
+type DKMResponseChangePassword struct {
+	Changed bool `json:"changed"`
+}
 
 type dkmManager struct {
 	client *resty.Client
@@ -158,4 +164,36 @@ func (t dkmManager) MakeDelegate(id string, token string) (DKMResponseMakeDelega
 	}
 
 	return result, nil
+}
+
+func (t dkmManager) ChangePassword(currentPassword string, seedphrase string, newPassword string) error {
+	var result DKMResponseChangePassword
+	var errorResponse DKMErrorResponse
+
+	body := map[string]string{
+		"new_password": newPassword,
+	}
+	if currentPassword != "" {
+		body["current_password"] = currentPassword
+	}
+	if seedphrase != "" {
+		body["seedphrase"] = seedphrase
+	}
+
+	_, err := t.client.R().SetBody(body).SetResult(&result).SetError(&errorResponse).Post("/change-password")
+	if err != nil {
+		log.Println("Failed to contact DKM:", err)
+		return err
+	}
+
+	if errorResponse.Error != "" {
+		log.Printf("Error from DKM: [%s] %s", errorResponse.Error, errorResponse.Reason)
+		return errors.New(errorResponse.Reason)
+	}
+
+	if !result.Changed {
+		return errors.New("password change failed")
+	}
+
+	return nil
 }
