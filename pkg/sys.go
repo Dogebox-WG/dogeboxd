@@ -106,6 +106,7 @@ type NetworkManager interface {
 	GetAvailableNetworks() []NetworkConnection
 	SetPendingNetwork(selectedNetwork SelectedNetwork, j Job) error
 	TryConnect(nixPatch NixPatch) error
+	TestConnect() error
 	GetLocalIP() (net.IP, error)
 }
 
@@ -125,11 +126,11 @@ type NetworkWifi struct {
 }
 
 type NetworkWifiSSID struct {
-	Ssid       string `json:"ssid"`
-	Bssid      string `json:"bssid"` // TODO: this should probably not be a string?
-	Encryption string `json:"encryption,omitempty"`
+	Ssid       string  `json:"ssid"`
+	Bssid      string  `json:"bssid"` // TODO: this should probably not be a string?
+	Encryption string  `json:"encryption,omitempty"`
 	Quality    float32 `json:"quality"`
-	Signal     string `json:"signal"`
+	Signal     string  `json:"signal"`
 }
 
 func (n NetworkEthernet) networkConnectionMarker() {}

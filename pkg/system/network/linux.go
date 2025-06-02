@@ -159,6 +159,18 @@ func (t NetworkManagerLinux) SetPendingNetwork(selectedNetwork dogeboxd.Selected
 	return t.sm.SetNetwork(ns)
 }
 
+func (t NetworkManagerLinux) TestConnect() error {
+	state := t.sm.Get().Network
+
+	if state.PendingNetwork == nil {
+		return errors.New("no pending network to connect to")
+	}
+
+	connector := network_connector.NewNetworkConnector(state.PendingNetwork)
+
+	return connector.Connect(state.PendingNetwork)
+}
+
 func (t NetworkManagerLinux) TryConnect(nixPatch dogeboxd.NixPatch) error {
 	state := t.sm.Get().Network
 
