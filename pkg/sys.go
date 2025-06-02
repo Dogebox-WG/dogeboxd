@@ -106,7 +106,7 @@ type NetworkManager interface {
 	GetAvailableNetworks() []NetworkConnection
 	SetPendingNetwork(selectedNetwork SelectedNetwork, j Job) error
 	TryConnect(nixPatch NixPatch) error
-	TestConnect(nixPatch NixPatch) error
+	TestConnect() error
 	GetLocalIP() (net.IP, error)
 }
 

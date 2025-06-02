@@ -17,9 +17,7 @@ func (t api) getNetwork(w http.ResponseWriter, r *http.Request) {
 }
 
 func (t api) testConnectNetwork(w http.ResponseWriter, r *http.Request) {
-	nixPatch := t.nix.NewPatch(dogeboxd.NewConsoleSubLogger("internal", "test network credentials"))
-
-	err := t.dbx.NetworkManager.TestConnect(nixPatch)
+	err := t.dbx.NetworkManager.TestConnect()
 	if err != nil {
 		log.Printf("Failed to connect to network: %+v", err)
 		sendErrorResponse(w, http.StatusInternalServerError, "Failed to connect to network")

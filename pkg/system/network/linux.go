@@ -159,7 +159,7 @@ func (t NetworkManagerLinux) SetPendingNetwork(selectedNetwork dogeboxd.Selected
 	return t.sm.SetNetwork(ns)
 }
 
-func (t NetworkManagerLinux) TestConnect(nixPatch dogeboxd.NixPatch) error {
+func (t NetworkManagerLinux) TestConnect() error {
 	state := t.sm.Get().Network
 
 	if state.PendingNetwork == nil {
