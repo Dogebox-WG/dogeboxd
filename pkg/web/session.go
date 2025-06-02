@@ -259,3 +259,66 @@ func (t api) logout(w http.ResponseWriter, r *http.Request) {
 		"success": true,
 	})
 }
+
+type ChangePasswordRequestBody struct {
+	CurrentPassword string `json:"current_password"`
+	Seedphrase      string `json:"seedphrase"`
+	NewPassword     string `json:"new_password"`
+}
+
+func (t api) changePassword(w http.ResponseWriter, r *http.Request) {
+	body, err := io.ReadAll(r.Body)
+	if err != nil {
+		sendErrorResponse(w, http.StatusBadRequest, "Error reading request body")
+		return
+	}
+	defer r.Body.Close()
+
+	var requestBody ChangePasswordRequestBody
+	if err := json.Unmarshal(body, &requestBody); err != nil {
+		http.Error(w, "Error parsing payload", http.StatusBadRequest)
+		return
+	}
+
+	// Validate that either current_password or seedphrase is provided
+	if requestBody.CurrentPassword == "" && requestBody.Seedphrase == "" {
+		sendErrorResponse(w, 400, "Either current_password or seedphrase must be provided")
+		return
+	}
+
+	// Change the password
+	if err := t.dkm.ChangePassword(requestBody.CurrentPassword, requestBody.Seedphrase, requestBody.NewPassword); err != nil {
+		// Map DKM error codes to appropriate HTTP responses
+
+		log.Println("DKM error:", err)
+		switch err.Error() {
+		case "password":
+			sendErrorResponse(w, 403, "Invalid credentials")
+		case "newpassword":
+			sendErrorResponse(w, 400, "New password cannot be empty")
+		case "bad-request":
+			sendErrorResponse(w, 400, "Invalid request format")
+		case "nokey":
+			sendErrorResponse(w, 400, "Master key not created")
+		case "auth":
+			sendErrorResponse(w, 400, "Authentication method required")
+		case "length":
+			sendErrorResponse(w, 403, "Invalid mnemonic length")
+		case "seedphrase":
+			sendErrorResponse(w, 403, "Invalid mnemonic word")
+		default:
+			sendErrorResponse(w, 500, "Failed to change password: "+err.Error())
+		}
+		return
+	}
+
+	// Invalidate all existing sessions since they're using the old password
+	for _, session := range sessions {
+		t.dkm.InvalidateToken(session.DKM_TOKEN)
+	}
+	sessions = nil
+
+	sendResponse(w, map[string]any{
+		"success": true,
+	})
+}
