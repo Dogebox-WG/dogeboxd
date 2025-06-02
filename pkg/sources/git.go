@@ -299,7 +299,6 @@ func (r ManifestSourceGit) getPupManifestFromWorktreeLocation(tag string, worktr
 		}
 	}
 
-	log.Printf("Successfully read manifest for location %s", location)
 	return manifest, logoBase64, true, nil
 }
 

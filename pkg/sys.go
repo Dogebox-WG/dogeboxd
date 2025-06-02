@@ -54,6 +54,11 @@ type DogeboxStateInitialSetup struct {
 	HasFullyConfigured bool `json:"hasFullyConfigured"`
 }
 
+type DogeboxFlags struct {
+	IsFirstTimeWelcomeComplete bool `json:"isFirstTimeWelcomeComplete"`
+	IsDeveloperMode            bool `json:"isDeveloperMode"`
+}
+
 type DogeboxStateSSHKey struct {
 	ID        string    `json:"id"`
 	DateAdded time.Time `json:"dateAdded"`
@@ -71,6 +76,7 @@ type DogeboxState struct {
 	KeyMap        string
 	SSH           DogeboxStateSSHConfig
 	StorageDevice string
+	Flags         DogeboxFlags
 }
 
 type NetworkState struct {
