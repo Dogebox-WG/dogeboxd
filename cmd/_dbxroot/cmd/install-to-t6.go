@@ -2,10 +2,8 @@ package cmd
 
 import (
 	"fmt"
-	"io"
 	"log"
 	"os"
-	"path/filepath"
 	"strings"
 
 	"github.com/dogeorg/dogeboxd/cmd/_dbxroot/utils"
@@ -14,14 +12,14 @@ import (
 	"github.com/spf13/cobra"
 )
 
-var ddToDiskCmd = &cobra.Command{
-	Use:   "dd-to-disk",
-	Short: "Install Dogebox to a disk.",
-	Long: `Install Dogebox to a disk.
+var installToT6Cmd = &cobra.Command{
+	Use:   "install-to-t6",
+	Short: "Install Dogebox to a NanoPC T6 disk.",
+	Long: `Install Dogebox to a NanoPC T6 disk.
 This command requires --target-disk and --dbx-secret flags.
 
 Example:
-  _dbxroot dd-to-disk --target-disk /dev/sdb --dbx-secret ?`,
+  _dbxroot install-to-t6 --target-disk /dev/sdb --dbx-secret ?`,
 	Run: func(cmd *cobra.Command, args []string) {
 		targetDisk, _ := cmd.Flags().GetString("target-disk")
 		dbxSecret, _ := cmd.Flags().GetString("dbx-secret")
@@ -123,7 +121,7 @@ Example:
 
 		// Copy our NixOS configuration over
 		utils.RunCommand("mkdir", "-p", "/mnt/etc/nixos/")
-		CopyFiles("/etc/nixos/", "/mnt/etc/nixos/")
+		utils.CopyFiles("/etc/nixos/", "/mnt/etc/nixos/")
 
 		// Generate hardware-configuration.nix
 		utils.RunCommand("nixos-generate-config", "--root", "/mnt")
@@ -148,87 +146,11 @@ Example:
 }
 
 func init() {
-	rootCmd.AddCommand(ddToDiskCmd)
+	rootCmd.AddCommand(installToT6Cmd)
 
-	ddToDiskCmd.Flags().StringP("target-disk", "d", "", "Disk to install to (required)")
-	ddToDiskCmd.MarkFlagRequired("target-disk")
+	installToT6Cmd.Flags().StringP("target-disk", "d", "", "Disk to install to (required)")
+	installToT6Cmd.MarkFlagRequired("target-disk")
 
-	ddToDiskCmd.Flags().StringP("dbx-secret", "s", "", "?")
-	ddToDiskCmd.MarkFlagRequired("dbx-secret")
-}
-
-//func getWrittenRootPartition(disk string) (string, error) {
-//	cmd := exec.Command("lsblk", disk, "-o", "name,label", "--json")
-//	output, err := cmd.Output()
-//	if err != nil {
-//		return "", fmt.Errorf("failed to run lsblk command: %w", err)
-//	}
-//
-//	var result struct {
-//		Blockdevices []struct {
-//			Name     string `json:"name"`
-//			Label    string `json:"label"`
-//			Children []struct {
-//				Name  string `json:"name"`
-//				Label string `json:"label"`
-//			} `json:"children,omitempty"`
-//		} `json:"blockdevices"`
-//	}
-//
-//	if err := json.Unmarshal(output, &result); err != nil {
-//		return "", fmt.Errorf("failed to parse lsblk output: %w", err)
-//	}
-//
-//	for _, device := range result.Blockdevices {
-//		if device.Label == "nixos" {
-//			return "/dev/" + device.Name, nil
-//		}
-//		for _, child := range device.Children {
-//			if child.Label == "nixos" {
-//				return "/dev/" + child.Name, nil
-//			}
-//		}
-//	}
-//
-//	return "", fmt.Errorf("no partition with label 'nixos' found")
-//}
-
-func CopyFiles(source string, destination string) error {
-	err := filepath.Walk(source, func(path string, info os.FileInfo, err error) error {
-		if err != nil {
-			return err
-		}
-
-		relPath, err := filepath.Rel(source, path)
-		if err != nil {
-			return err
-		}
-
-		destPath := filepath.Join(destination, relPath)
-
-		if info.IsDir() {
-			return os.MkdirAll(destPath, info.Mode())
-		}
-
-		srcFile, err := os.Open(path)
-		if err != nil {
-			return err
-		}
-		defer srcFile.Close()
-
-		destFile, err := os.Create(destPath)
-		if err != nil {
-			return err
-		}
-		defer destFile.Close()
-
-		_, err = io.Copy(destFile, srcFile)
-		if err != nil {
-			return err
-		}
-
-		return os.Chmod(destPath, info.Mode())
-	})
-
-	return err
+	installToT6Cmd.Flags().StringP("dbx-secret", "s", "", "?")
+	installToT6Cmd.MarkFlagRequired("dbx-secret")
 }

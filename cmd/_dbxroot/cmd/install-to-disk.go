@@ -2,10 +2,8 @@ package cmd
 
 import (
 	"fmt"
-	"io"
 	"log"
 	"os"
-	"path/filepath"
 	"strings"
 
 	"github.com/dogeorg/dogeboxd/cmd/_dbxroot/utils"
@@ -73,7 +71,7 @@ Example:
 
 		// Copy our NixOS configuration over
 		utils.RunCommand("mkdir", "-p", "/mnt/etc/nixos/")
-		copyFiles("/etc/nixos/", "/mnt/etc/nixos/")
+		utils.CopyFiles("/etc/nixos/", "/mnt/etc/nixos/")
 
 		// Generate hardware-configuration.nix
 		utils.RunCommand("nixos-generate-config", "--root", "/mnt")
@@ -103,44 +101,4 @@ func init() {
 
 	installToDiskCmd.Flags().StringP("dbx-secret", "s", "", "?")
 	installToDiskCmd.MarkFlagRequired("dbx-secret")
-}
-
-func copyFiles(source string, destination string) error {
-	err := filepath.Walk(source, func(path string, info os.FileInfo, err error) error {
-		if err != nil {
-			return err
-		}
-
-		relPath, err := filepath.Rel(source, path)
-		if err != nil {
-			return err
-		}
-
-		destPath := filepath.Join(destination, relPath)
-
-		if info.IsDir() {
-			return os.MkdirAll(destPath, info.Mode())
-		}
-
-		srcFile, err := os.Open(path)
-		if err != nil {
-			return err
-		}
-		defer srcFile.Close()
-
-		destFile, err := os.Create(destPath)
-		if err != nil {
-			return err
-		}
-		defer destFile.Close()
-
-		_, err = io.Copy(destFile, srcFile)
-		if err != nil {
-			return err
-		}
-
-		return os.Chmod(destPath, info.Mode())
-	})
-
-	return err
 }
