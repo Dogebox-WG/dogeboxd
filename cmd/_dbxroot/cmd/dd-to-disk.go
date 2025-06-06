@@ -75,44 +75,44 @@ Example:
 		log.Printf("Installing to target disk: %s", targetDisk)
 
 		// Create partition table
-		utils.RunParted(disk, "mklabel", "gpt")
+		utils.RunParted(targetDisk, "mklabel", "gpt")
 
-		utils.RunParted(disk, "mkpart", "uboot", "16384s", "24575s")
-		utils.RunParted(disk, "type", "1", "F808D051-1602-4DCD-9452-F9637FEFC49A")
+		utils.RunParted(targetDisk, "mkpart", "uboot", "16384s", "24575s")
+		utils.RunParted(targetDisk, "type", "1", "F808D051-1602-4DCD-9452-F9637FEFC49A")
 
-		utils.RunParted(disk, "mkpart", "misc", "24576s", "32767s")
-		utils.RunParted(disk, "type", "2", "C6D08308-E418-4124-8890-F8411E3D8D87")
+		utils.RunParted(targetDisk, "mkpart", "misc", "24576s", "32767s")
+		utils.RunParted(targetDisk, "type", "2", "C6D08308-E418-4124-8890-F8411E3D8D87")
 
-		utils.RunParted(disk, "mkpart", "dtbo", "32768s", "40959s")
-		utils.RunParted(disk, "type", "3", "2A583E58-486A-4BD4-ACE4-8D5454E97F5C")
+		utils.RunParted(targetDisk, "mkpart", "dtbo", "32768s", "40959s")
+		utils.RunParted(targetDisk, "type", "3", "2A583E58-486A-4BD4-ACE4-8D5454E97F5C")
 
-		utils.RunParted(disk, "mkpart", "resource", "40960s", "73727s")
-		utils.RunParted(distk, "type", "4", "6115F139-4F47-4BAF-8D23-B6957EAEE4B3")
+		utils.RunParted(targetDisk, "mkpart", "resource", "40960s", "73727s")
+		utils.RunParted(targetDisk, "type", "4", "6115F139-4F47-4BAF-8D23-B6957EAEE4B3")
 
-		utils.RunParted(disk, "mkpart", "kernel", "73728s", "155647s")
-		utils.RunParted(disk, "type", "5", "A83FBA16-D354-45C5-8B44-3EC50832D363")
+		utils.RunParted(targetDisk, "mkpart", "kernel", "73728s", "155647s")
+		utils.RunParted(targetDisk, "type", "5", "A83FBA16-D354-45C5-8B44-3EC50832D363")
 
-		utils.RunParted(disk, "mkpart", "boot", "155648s", "221183s")
-		utils.RunParted(disk, "type", "6", "500E2214-B72D-4CC3-D7C1-8419260130F5")
+		utils.RunParted(targetDisk, "mkpart", "boot", "155648s", "221183s")
+		utils.RunParted(targetDisk, "type", "6", "500E2214-B72D-4CC3-D7C1-8419260130F5")
 
-		utils.RunParted(disk, "mkpart", "recovery", "221184s", "286719s")
-		utils.RunParted(disk, "type", "7", "E099DA71-5450-44EA-AA9F-1B771C582805")
+		utils.RunParted(targetDisk, "mkpart", "recovery", "221184s", "286719s")
+		utils.RunParted(targetDisk, "type", "7", "E099DA71-5450-44EA-AA9F-1B771C582805")
 
-		utils.RunParted(disk, "mkpart", "rootfs")
-		utils.RunParted(disk, "type", "8", "AF12D156-5D5B-4EE3-B415-8D492CA12EA9")
-		utils.RunParted(disk, "set", "8", "boot", "on")
-		utils.RunParted(disk, "set", "8", "legacy_boot", "on")
+		utils.RunParted(targetDisk, "mkpart", "rootfs", "286720s", "100%")
+		utils.RunParted(targetDisk, "type", "8", "AF12D156-5D5B-4EE3-B415-8D492CA12EA9")
+		utils.RunParted(targetDisk, "set", "8", "boot", "on")
+		utils.RunParted(targetDisk, "set", "8", "legacy_boot", "on")
 
 		utils.RunCommand("dd", "if="+bootMediaDisk.Name, "of="+targetDisk, "skip=64", "seek=64", "bs=100k", "count=4", "status=progress")
 
-		hasPartitionPrefix := strings.HasPrefix(disk, "/dev/nvme") || strings.HasPrefix(disk, "/dev/mmcblk")
+		hasPartitionPrefix := strings.HasPrefix(targetDisk, "/dev/nvme") || strings.HasPrefix(targetDisk, "/dev/mmcblk")
 		partitionPrefix := ""
 
 		if hasPartitionPrefix {
 			partitionPrefix = "p"
 		}
 
-		rootPartition := fmt.Sprintf("%s%s8", disk, partitionPrefix)
+		rootPartition := fmt.Sprintf("%s%s8", targetDisk, partitionPrefix)
 
 		utils.RunCommand("mkfs.ext4", "-L", "nixos", rootPartition)
 
@@ -123,7 +123,7 @@ Example:
 
 		// Copy our NixOS configuration over
 		utils.RunCommand("mkdir", "-p", "/mnt/etc/nixos/")
-		copyFiles("/etc/nixos/", "/mnt/etc/nixos/")
+		CopyFiles("/etc/nixos/", "/mnt/etc/nixos/")
 
 		// Generate hardware-configuration.nix
 		utils.RunCommand("nixos-generate-config", "--root", "/mnt")
@@ -133,7 +133,7 @@ Example:
 		utils.RunCommand("sudo", "touch", "/mnt/opt/dbx-installed")
 		utils.RunCommand("sudo", "chown", "dogeboxd:dogebox", "/mnt/opt/dbx-installed")
 
-		flakePath, err := utils.FlakePath()
+		flakePath, err := utils.GetFlakePath()
 		if err != nil {
 			log.Printf("Failed to get flake path: %v", err)
 			os.Exit(1)
@@ -193,7 +193,7 @@ func init() {
 //	return "", fmt.Errorf("no partition with label 'nixos' found")
 //}
 
-func copyFiles(source string, destination string) error {
+func CopyFiles(source string, destination string) error {
 	err := filepath.Walk(source, func(path string, info os.FileInfo, err error) error {
 		if err != nil {
 			return err
