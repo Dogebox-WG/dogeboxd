@@ -383,10 +383,10 @@ func InstallToDisk(t dogeboxd.Dogeboxd, config dogeboxd.ServerConfig, dbxState d
 
 	installFn = dbxrootInstallToDisk
 
-	// For the T6, we need to write the root FS over the EMMC
-	// with DD, as we need all the arm-specific bootloaders and such.
+	// For the T6, we need to write the bootloader and partitions
+	// to specific offsets.
 	if buildType == "nanopc-t6" {
-		installFn = dbxrootDDToDisk
+		installFn = dbxrootInstallToT6
 	}
 
 	if err := installFn(name, t); err != nil {
@@ -439,10 +439,10 @@ func dbxrootInstallToDisk(disk string, t dogeboxd.Dogeboxd) error {
 	return cmd.Run()
 }
 
-func dbxrootDDToDisk(toDisk string, t dogeboxd.Dogeboxd) error {
-	cmd := exec.Command("sudo", "_dbxroot", "dd-to-disk", "--target-disk", toDisk, "--dbx-secret", DBXRootSecret)
-	cmd.Stdout = newLineStreamWriter(t, "dd-output")
-	cmd.Stderr = newLineStreamWriter(t, "dd-output")
+func dbxrootInstallToT6(disk string, t dogeboxd.Dogeboxd) error {
+	cmd := exec.Command("sudo", "_dbxroot", "install-to-t6", "--target-disk", disk, "--dbx-secret", DBXRootSecret)
+	cmd.Stdout = newLineStreamWriter(t, "install-output")
+	cmd.Stderr = newLineStreamWriter(t, "install-output")
 
 	return cmd.Run()
 }
