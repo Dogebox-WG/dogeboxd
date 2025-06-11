@@ -3,16 +3,46 @@ package pup
 import (
 	"errors"
 	"fmt"
+	"sort"
+	"strings"
 
 	"github.com/Masterminds/semver"
 	dogeboxd "github.com/dogeorg/dogeboxd/pkg"
 )
 
+// CalculateDeps calculates the dependencies for a given pup
 func (t PupManager) CalculateDeps(pupID string) ([]dogeboxd.PupDependencyReport, error) {
 	pup, ok := t.state[pupID]
 	if !ok {
+		sourceList, err := t.sourceManager.GetAll(false)
+		if err != nil {
+			return []dogeboxd.PupDependencyReport{}, errors.New("no such pup and failed to check sources")
+		}
+
+		parts := strings.Split(pupID, "-")
+		if len(parts) != 2 {
+			return []dogeboxd.PupDependencyReport{}, errors.New("invalid pup ID format")
+		}
+		pupName := parts[0]
+		pupVersion := parts[1]
+
+		// Search through sources for this pup
+		for _, list := range sourceList {
+			for _, p := range list.Pups {
+				if p.Name == pupName && p.Version == pupVersion {
+					// Create a temporary state for this uninstalled pup
+					tempState := &dogeboxd.PupState{
+						Manifest:  p.Manifest,
+						Providers: make(map[string]string),
+					}
+					return t.calculateDeps(tempState), nil
+				}
+			}
+		}
+
 		return []dogeboxd.PupDependencyReport{}, errors.New("no such pup")
 	}
+
 	return t.calculateDeps(pup), nil
 }
 
@@ -81,17 +111,41 @@ func (t PupManager) calculateDeps(pupState *dogeboxd.PupState) []dogeboxd.PupDep
 							}
 
 							if !alreadyInstalled {
-								available = append(available, dogeboxd.PupManifestDependencySource{
-									SourceLocation: list.Config.Location,
-									PupName:        p.Name,
-									PupVersion:     p.Version,
-									PupLogoBase64:  p.LogoBase64,
-								})
+								// Check if this provider is already in the available list
+								isDuplicate := false
+								for _, existing := range available {
+									if existing.SourceLocation == list.Config.Location &&
+										existing.PupName == p.Name &&
+										existing.PupVersion == p.Version {
+										isDuplicate = true
+										break
+									}
+								}
+
+								if !isDuplicate {
+									available = append(available, dogeboxd.PupManifestDependencySource{
+										SourceLocation: list.Config.Location,
+										PupName:        p.Name,
+										PupVersion:     p.Version,
+									})
+								}
 							}
 						}
 					}
 				}
 			}
+			// Sort available providers by version in descending order
+			sort.Slice(available, func(i, j int) bool {
+				vi, err := semver.NewVersion(available[i].PupVersion)
+				if err != nil {
+					return false
+				}
+				vj, err := semver.NewVersion(available[j].PupVersion)
+				if err != nil {
+					return false
+				}
+				return vi.GreaterThan(vj)
+			})
 			report.InstallableProviders = available
 		}
 

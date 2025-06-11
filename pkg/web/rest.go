@@ -93,18 +93,22 @@ func RESTAPI(
 	// Normal routes are used when we are not in recovery mode.
 	// nb. These are used in _addition_ to recovery routes.
 	normalRoutes := map[string]http.HandlerFunc{
-		"GET /pup/{ID}/metrics":   a.getPupMetrics,
-		"POST /pup/{ID}/{action}": a.pupAction,
-		"PUT /pup":                a.installPup,
-		"POST /config/{PupID}":    a.updateConfig,
-		"POST /providers/{PupID}": a.updateProviders,
-		"GET /providers/{PupID}":  a.getPupProviders,
-		"POST /hooks/{PupID}":     a.updateHooks,
-		"GET /sources":            a.getSources,
-		"PUT /source":             a.createSource,
-		"GET /sources/store":      a.getStoreList,
-		"DELETE /source/{id}":     a.deleteSource,
-		"/ws/log/{PupID}":         a.getLogSocket,
+		"GET /pup/{ID}/metrics":               a.getPupMetrics,
+		"POST /pup/{ID}/{action}":             a.pupAction,
+		"PUT /pup":                            a.installPup,
+		"PUT /pups":                           a.installPups,
+		"POST /config/{PupID}":                a.updateConfig,
+		"POST /providers/{PupID}":             a.updateProviders,
+		"GET /providers/{PupID}":              a.getPupProviders,
+		"POST /hooks/{PupID}":                 a.updateHooks,
+		"GET /sources":                        a.getSources,
+		"PUT /source":                         a.createSource,
+		"GET /sources/store":                  a.getStoreList,
+		"DELETE /source/{id}":                 a.deleteSource,
+		"/ws/log/{PupID}":                     a.getLogSocket,
+		"POST /system/welcome-complete":       a.setWelcomeComplete,
+		"POST /system/install-pup-collection": a.installPupCollection,
+		"GET /missing-deps/{PupID}":           a.getMissingDeps,
 	}
 
 	// We always want to load recovery routes.

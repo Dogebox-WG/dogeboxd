@@ -55,6 +55,9 @@ type InstallPup struct {
 	SessionToken string
 }
 
+// InstallPups represents a batch installation of multiple pups
+type InstallPups []InstallPup
+
 // Uninstalling a pup will remove container
 // configuration, but keep storage.
 type UninstallPup struct {
