@@ -130,7 +130,7 @@ func (t api) installPup(w http.ResponseWriter, r *http.Request) {
 
 		// Add installation actions for dependencies
 		for _, dep := range deps {
-			if dep.CurrentProvider == "" && !dep.Optional {
+			if dep.CurrentProvider == "" {
 				// Use the first available provider for each dependency
 				if len(dep.InstallableProviders) > 0 {
 					provider := dep.InstallableProviders[0]
@@ -282,15 +282,18 @@ func (t api) installPups(w http.ResponseWriter, r *http.Request) {
 
 			// Add all required dependencies
 			for _, dep := range deps {
-				if dep.CurrentProvider == "" && !dep.Optional && len(dep.InstallableProviders) > 0 {
-					// Use the first (highest version) provider
-					provider := dep.InstallableProviders[0]
-					installRequests = append(installRequests, dogeboxd.InstallPup{
-						PupName:      provider.PupName,
-						PupVersion:   provider.PupVersion,
-						SourceId:     pup.SourceId, // Use same source for dependencies
-						SessionToken: pup.SessionToken,
-					})
+				if dep.CurrentProvider == "" {
+					// Use the first available provider for each dependency
+					if len(dep.InstallableProviders) > 0 {
+						provider := dep.InstallableProviders[0]
+						// Use the same source ID as the main pup for dependencies
+						installRequests = append(installRequests, dogeboxd.InstallPup{
+							PupName:      provider.PupName,
+							PupVersion:   provider.PupVersion,
+							SourceId:     pup.SourceId, // Use same source for dependencies
+							SessionToken: pup.SessionToken,
+						})
+					}
 				}
 			}
 		} else {

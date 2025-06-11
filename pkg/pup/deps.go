@@ -12,7 +12,6 @@ import (
 
 // CalculateDeps calculates the dependencies for a given pup
 func (t PupManager) CalculateDeps(pupID string) ([]dogeboxd.PupDependencyReport, error) {
-	// First try to get the pup from the state map
 	pup, ok := t.state[pupID]
 	if !ok {
 		sourceList, err := t.sourceManager.GetAll(false)

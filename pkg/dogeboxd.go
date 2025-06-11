@@ -224,19 +224,15 @@ func (t *Dogeboxd) enqueue(j Job) {
 // Add an Action to the Action queue, returns a unique ID
 // which can be used to match the outcome in the Event queue
 func (t Dogeboxd) AddAction(a Action) string {
-	fmt.Println(">> AddAction: Starting to process new action")
 	b := make([]byte, 16)
 	_, err := rand.Read(b)
 	if err != nil {
 		fmt.Println(">> AddAction: Entropic Failure, add more Overminds.")
 	}
 	id := fmt.Sprintf("%x", b)
-	fmt.Printf(">> AddAction: Generated job ID: %s\n", id)
 	j := Job{A: a, ID: id}
 	j.Logger = NewActionLogger(j, "", t)
-	fmt.Printf(">> AddAction: Sending job to channel for action type: %T\n", a)
 	t.jobs <- j
-	fmt.Println(">> AddAction: Job successfully sent to channel")
 	return id
 }
 
