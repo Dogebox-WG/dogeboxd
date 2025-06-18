@@ -74,6 +74,13 @@ func (t server) Start() {
 
 	dbx := dogeboxd.NewDogeboxd(t.sm, pups, systemUpdater, systemMonitor, journalReader, networkManager, sourceManager, nixManager, logtailer)
 
+	//No need to show welcome screen if any pups are already installed (may have just done a system update or something similar)
+	if len(pups.GetStateMap()) > 0 {
+		state := t.sm.Get()
+		state.Dogebox.Flags.IsFirstTimeWelcomeComplete = true
+		t.sm.SetDogebox(state.Dogebox)
+	}
+
 	/* ----------------------------------------------------------------------- */
 	// Setup our external APIs. REST, Websockets
 
