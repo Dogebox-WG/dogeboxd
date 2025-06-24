@@ -48,14 +48,23 @@ type sourceManager struct {
 
 func (sourceManager *sourceManager) GetAll(ignoreCache bool) (map[string]dogeboxd.ManifestSourceList, error) {
 	available := map[string]dogeboxd.ManifestSourceList{}
+	successCount := 0
+	failedCount := 0
 
 	for _, r := range sourceManager.sources {
 		l, err := r.List(ignoreCache)
 		if err != nil {
-			return nil, err
+			log.Printf("Warning: Source '%s' failed to load: %v", r.Config().ID, err)
+			failedCount++
+			continue
 		}
 
 		available[l.Config.ID] = l
+		successCount++
+	}
+
+	if failedCount > 0 {
+		log.Printf("Loaded %d sources successfully, %d sources failed to load", successCount, failedCount)
 	}
 
 	return available, nil
