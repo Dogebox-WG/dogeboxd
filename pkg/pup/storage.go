@@ -4,7 +4,6 @@ import (
 	"encoding/gob"
 	"fmt"
 	"io"
-	"log"
 	"os"
 	"path/filepath"
 	"strings"
@@ -44,8 +43,6 @@ func (t PupManager) loadPups() error {
 			fmt.Printf("cannot decode object from file %q: %v", path, err)
 			continue
 		}
-
-		log.Printf("Loaded pup state: %+v", state)
 
 		// Success! add to index
 		t.indexPup(&state)
