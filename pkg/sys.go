@@ -205,6 +205,7 @@ type ManifestSourceList struct {
 	Config      ManifestSourceConfiguration
 	LastChecked time.Time
 	Pups        []ManifestSourcePup
+	Error       string `json:"error,omitempty"`
 }
 
 type ManifestSource interface {

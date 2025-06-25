@@ -7,6 +7,7 @@ import (
 	"os"
 	"path/filepath"
 	"strings"
+	"time"
 
 	dogeboxd "github.com/dogeorg/dogeboxd/pkg"
 )
@@ -47,18 +48,35 @@ type sourceManager struct {
 }
 
 func (sourceManager *sourceManager) GetAll(ignoreCache bool) (map[string]dogeboxd.ManifestSourceList, error) {
-	available := map[string]dogeboxd.ManifestSourceList{}
+
+	allSources := map[string]dogeboxd.ManifestSourceList{}
+	successCount := 0
+	failedCount := 0
 
 	for _, r := range sourceManager.sources {
 		l, err := r.List(ignoreCache)
 		if err != nil {
-			return nil, err
+			log.Printf("Warning: Source '%s' failed to load: %v", r.Config().ID, err)
+			// Create an empty ManifestSourceList for failed sources with error info
+			allSources[r.Config().ID] = dogeboxd.ManifestSourceList{
+				Config:      r.Config(),
+				LastChecked: time.Now(),
+				Pups:        []dogeboxd.ManifestSourcePup{},
+				Error:       err.Error(),
+			}
+			failedCount++
+			continue
 		}
 
-		available[l.Config.ID] = l
+		allSources[l.Config.ID] = l
+		successCount++
 	}
 
-	return available, nil
+	if failedCount > 0 {
+		log.Printf("Loaded %d sources successfully, %d sources failed to load", successCount, failedCount)
+	}
+
+	return allSources, nil
 }
 
 func (sourceManager *sourceManager) GetSourceManifest(sourceID, pupName, pupVersion string) (dogeboxd.PupManifest, dogeboxd.ManifestSource, error) {
