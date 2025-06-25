@@ -4,6 +4,7 @@ import (
 	"crypto/rand"
 	"errors"
 	"fmt"
+	"net"
 
 	dogeboxd "github.com/dogeorg/dogeboxd/pkg"
 )
@@ -137,9 +138,21 @@ func (t PupManager) UpdatePup(id string, updates ...func(*dogeboxd.PupState, *[]
 }
 
 func (t PupManager) PurgePup(pupId string) error {
+	// Get the pup state before removing it so we can send the event
+	pup, exists := t.state[pupId]
+
 	// Remove our in-memory state
 	delete(t.state, pupId)
 	delete(t.stats, pupId)
+
+	// Send a Pupdate announcing 'purged' after removal
+	if exists {
+		t.sendPupdate(dogeboxd.Pupdate{
+			ID:    pupId,
+			Event: dogeboxd.PUP_PURGED,
+			State: *pup,
+		})
+	}
 
 	return nil
 }
@@ -202,6 +215,16 @@ func (t PupManager) indexPup(p *dogeboxd.PupState) {
 	t.stats[p.ID] = &s
 }
 
+// isPortAvailable checks if a port is actually available on the system
+func (t PupManager) isPortAvailable(port int) bool {
+	ln, err := net.Listen("tcp", fmt.Sprintf(":%d", port))
+	if err != nil {
+		return false
+	}
+	ln.Close()
+	return true
+}
+
 // get N available webUI ports. These must be set on
 // a PupState before you can call again without getting
 // duplicates
@@ -232,8 +255,9 @@ func (t PupManager) nextAvailablePorts(howMany int) []int {
 			fmt.Println("PORT", port)
 			// check port not in use anywhere
 			_, exists := consumed[port]
-			if !exists {
+			if !exists && t.isPortAvailable(port) {
 				out = append(out, port)
+				fmt.Printf("Allocated port %d (available on system)\n", port)
 				break
 			}
 		}
