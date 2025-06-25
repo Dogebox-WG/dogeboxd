@@ -194,7 +194,7 @@ func (t SystemUpdater) installPup(pupSelection dogeboxd.InstallPup, j dogeboxd.J
 
 	// Compare the sha256 hash of the nix file to the hash specified in the manifest
 	if fmt.Sprintf("%x", nixFileSha256) != s.Manifest.Container.Build.NixFileSha256 {
-		log.Errf("Nix file hash mismatch")
+		log.Errf("Nix file hash mismatch, should be %s but is %s", fmt.Sprintf("%x", nixFileSha256), s.Manifest.Container.Build.NixFileSha256)
 		return t.markPupBroken(s, dogeboxd.BROKEN_REASON_NIX_HASH_MISMATCH, err)
 	}
 
