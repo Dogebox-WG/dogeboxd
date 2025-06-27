@@ -74,8 +74,6 @@ in
         "tee0"     = { mountPoint = "/dev/tee0";     hostPath = "/dev/tee0";     isReadOnly = false; };
         "teepriv0" = { mountPoint = "/dev/teepriv0"; hostPath = "/dev/teepriv0"; isReadOnly = false; };
         "usb-bus"  = { mountPoint = "/dev/bus/usb";  hostPath = "/dev/bus/usb";  isReadOnly = false; };
-        "hidraw0"  = { mountPoint = "/dev/hidraw0";  hostPath = "/dev/hidraw0";  isReadOnly = false; };
-        "hidraw1"  = { mountPoint = "/dev/hidraw1";  hostPath = "/dev/hidraw1";  isReadOnly = false; };
       })
     ];
 
