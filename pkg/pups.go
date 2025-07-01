@@ -39,6 +39,7 @@ const (
 const (
 	PUP_CHANGED_INSTALLATION int = iota
 	PUP_ADOPTED                  = iota
+	PUP_PURGED                   = iota
 )
 
 // PupManager Errors

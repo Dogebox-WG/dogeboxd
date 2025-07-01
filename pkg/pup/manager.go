@@ -68,6 +68,9 @@ func NewPupManager(dataDir string, tmpDir string, monitor dogeboxd.SystemMonitor
 		return &p, err
 	}
 
+	// Recover any pups that were stuck in installing state. Sometimes this happens during development - for eg. if dogeboxd crashes during a pup installation
+	p.recoverStuckPups()
+
 	// set lastIP for IP Generation
 	ip := net.IP{10, 69, 0, 1} // skip 0.1 (dogeboxd)
 	for _, v := range p.state {
@@ -343,4 +346,16 @@ func (t PupManager) GetPupSpecificEnvironmentVariablesForContainer(pupID string)
 	}
 
 	return env
+}
+
+// recoverStuckPups checks for pups that were stuck in "installing" state - mark them as broken
+func (t *PupManager) recoverStuckPups() {
+	for id, pup := range t.state {
+		if pup.Installation == dogeboxd.STATE_INSTALLING {
+			_, err := t.UpdatePup(id, dogeboxd.SetPupInstallation(dogeboxd.STATE_BROKEN), dogeboxd.SetPupBrokenReason(dogeboxd.BROKEN_REASON_DOWNLOAD_FAILED))
+			if err != nil {
+				log.Printf("Failed to mark pup %s as broken: %v", id, err)
+			}
+		}
+	}
 }

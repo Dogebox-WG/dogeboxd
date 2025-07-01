@@ -67,8 +67,7 @@ func (t AdminRouter) Run(started, stopped chan bool, stop chan context.Context) 
 					if !ok {
 						break mainloop
 					}
-					if p.Event == dogeboxd.PUP_ADOPTED {
-						// New pup adopted, update proxies
+					if p.Event == dogeboxd.PUP_ADOPTED || p.Event == dogeboxd.PUP_CHANGED_INSTALLATION || p.Event == dogeboxd.PUP_PURGED {
 						t.updateProxies()
 					}
 				}
@@ -103,6 +102,7 @@ func (t *adminProxy) Start() {
 	proxyURL, err := url.Parse(target)
 	if err != nil {
 		log.Fatalf("Failed to parse URL: %v", err)
+		return
 	}
 
 	httpServer := &http.Server{
