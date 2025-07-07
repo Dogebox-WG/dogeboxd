@@ -6,6 +6,7 @@ import (
 	"log"
 	"os"
 	"os/exec"
+	"path/filepath"
 	"strings"
 )
 
@@ -100,4 +101,44 @@ func GetRebuildCommand(action string, isDev bool) (string, []string, error) {
 	}
 
 	return "nixos-rebuild", []string{action, "--flake", flakePath, "--impure"}, nil
+}
+
+func CopyFiles(source string, destination string) error {
+	err := filepath.Walk(source, func(path string, info os.FileInfo, err error) error {
+		if err != nil {
+			return err
+		}
+
+		relPath, err := filepath.Rel(source, path)
+		if err != nil {
+			return err
+		}
+
+		destPath := filepath.Join(destination, relPath)
+
+		if info.IsDir() {
+			return os.MkdirAll(destPath, info.Mode())
+		}
+
+		srcFile, err := os.Open(path)
+		if err != nil {
+			return err
+		}
+		defer srcFile.Close()
+
+		destFile, err := os.Create(destPath)
+		if err != nil {
+			return err
+		}
+		defer destFile.Close()
+
+		_, err = io.Copy(destFile, srcFile)
+		if err != nil {
+			return err
+		}
+
+		return os.Chmod(destPath, info.Mode())
+	})
+
+	return err
 }
