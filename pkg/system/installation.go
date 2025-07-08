@@ -463,7 +463,7 @@ func dbxrootInstallToDisk(disk string, t dogeboxd.Dogeboxd) error {
 }
 
 func dbxrootInstallToT6(disk string, t dogeboxd.Dogeboxd) error {
-	cmd := exec.Command("sudo", "_dbxroot", "install-to-t6", "--target-disk", disk, "--dbx-secret", DBXRootSecret)
+	cmd := exec.Command("sudo", "_dbxroot", "install-to-disk", "--variant", "t6", "--disk", disk, "--dbx-secret", DBXRootSecret)
 	cmd.Stdout = newLineStreamWriter(t, "install-output")
 	cmd.Stderr = newLineStreamWriter(t, "install-output")
 
