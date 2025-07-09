@@ -124,6 +124,11 @@ type RemoveSSHKey struct {
 	ID string
 }
 
+// Import blockchain data to a pup
+type ImportBlockchainData struct {
+	PupID string
+}
+
 /* Updates are responses to Actions or simply
 * internal state changes that the frontend needs,
 * these are wrapped in a 'change' and sent via
