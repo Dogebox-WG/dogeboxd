@@ -15,10 +15,11 @@ import (
 )
 
 type InitialSystemBootstrapRequestBody struct {
-	ReflectorToken           string `json:"reflectorToken"`
-	ReflectorHost            string `json:"reflectorHost"`
-	InitialSSHKey            string `json:"initialSSHKey"`
-	UseFoundationBinaryCache bool   `json:"useFoundationBinaryCache"`
+	ReflectorToken              string `json:"reflectorToken"`
+	ReflectorHost               string `json:"reflectorHost"`
+	InitialSSHKey               string `json:"initialSSHKey"`
+	UseFoundationOSBinaryCache  bool   `json:"useFoundationOSBinaryCache"`
+	UseFoundationPupBinaryCache bool   `json:"useFoundationPupBinaryCache"`
 }
 
 type BootstrapFacts struct {
@@ -484,15 +485,28 @@ func (t api) initialBootstrap(w http.ResponseWriter, r *http.Request) {
 		}
 	}
 
-	if requestBody.UseFoundationBinaryCache {
+	if requestBody.UseFoundationOSBinaryCache {
 		// This is a bit of a hack until we can dispatch and then block,
 		// until a job has finished through the queue.
 		if err := t.dbx.SystemUpdater.AddBinaryCache(dogeboxd.AddBinaryCache{
-			Host: "https://nix.dogecoin.org",
-			Key:  "nix.dogecoin.org:PeUX5ftpdp5W3h827irwXxMZZr/4PGfHvSmV+2o6rC4=",
+			Host: "https://dbx.nix.dogecoin.org",
+			Key:  "dbx.nix.dogecoin.org:ODXaHC+9DNqXQ8ZTijaCT4JpieqmOatZeZBbdN51Obc=",
 		}, log); err != nil {
-			log.Errf("Error adding foundation binary cache: %v", err)
-			sendErrorResponse(w, http.StatusInternalServerError, "Error adding foundation binary cache")
+			log.Errf("Error adding foundation OS binary cache: %v", err)
+			sendErrorResponse(w, http.StatusInternalServerError, "Error adding foundation OS binary cache")
+			return
+		}
+	}
+
+	if requestBody.UseFoundationPupBinaryCache {
+		// This is a bit of a hack until we can dispatch and then block,
+		// until a job has finished through the queue.
+		if err := t.dbx.SystemUpdater.AddBinaryCache(dogeboxd.AddBinaryCache{
+			Host: "https://pups.nix.dogecoin.org",
+			Key:  "pups.nix.dogecoin.org:hQx/w1TQlN423VyK+D/AnD10Ul8ovVxLcPrMRBt9T3Q=",
+		}, log); err != nil {
+			log.Errf("Error adding foundation pups binary cache: %v", err)
+			sendErrorResponse(w, http.StatusInternalServerError, "Error adding foundation pups binary cache")
 			return
 		}
 	}
