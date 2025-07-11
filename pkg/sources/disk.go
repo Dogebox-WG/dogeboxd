@@ -160,6 +160,30 @@ func (r ManifestSourceDisk) Download(diskPath string, remoteLocation map[string]
 
 		destPath := filepath.Join(diskPath, relPath)
 
+		// If the current item is a symbolic link, recreate the link itself
+		// instead of copying the file it points to.
+		if info.Mode()&os.ModeSymlink != 0 {
+			linkTarget, err := os.Readlink(path)
+			if err != nil {
+				return fmt.Errorf("failed to read symlink at %s: %w", path, err)
+			}
+
+			// Guarantee the destination directory exists (normally created
+			// earlier when its parent dir was visited, but be safe).
+			if err := os.MkdirAll(filepath.Dir(destPath), 0o755); err != nil {
+				return fmt.Errorf("failed to create directory for symlink: %w", err)
+			}
+
+			// Overwrite any existing entry at the destination.
+			_ = os.Remove(destPath)
+
+			if err := os.Symlink(linkTarget, destPath); err != nil {
+				return fmt.Errorf("failed to create symlink: %w", err)
+			}
+
+			// Nothing more to do for this filesystem entry.
+			return nil
+		}
 		if info.IsDir() {
 			return os.MkdirAll(destPath, info.Mode())
 		}
