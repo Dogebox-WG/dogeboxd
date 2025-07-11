@@ -396,12 +396,11 @@ func (t SystemUpdater) disablePup(j dogeboxd.Job) error {
 }
 
 func (t SystemUpdater) importBlockchainData(j dogeboxd.Job) error {
-	s := *j.State
-	log := j.Logger.Step("import-blockchain")
-	log.Logf("Importing blockchain data for pup %s (%s)", s.Manifest.Meta.Name, s.ID)
+	log := j.Logger.Step("import-blockchain-data")
+	log.Log("Starting blockchain data import")
 
-	// Run the blockchain import command
-	cmd := exec.Command("sudo", "_dbxroot", "pup", "import-blockchain", "--pupId", s.ID, "--data-dir", t.config.DataDir)
+	// Use the new blockchain data import command
+	cmd := exec.Command("sudo", "_dbxroot", "import-blockchain-data", "--data-dir", t.config.DataDir)
 	log.LogCmd(cmd)
 
 	if err := cmd.Run(); err != nil {

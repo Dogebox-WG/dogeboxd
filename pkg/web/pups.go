@@ -178,8 +178,6 @@ func (t api) pupAction(w http.ResponseWriter, r *http.Request) {
 		a = dogeboxd.EnablePup{PupID: id}
 	case "disable":
 		a = dogeboxd.DisablePup{PupID: id}
-	case "import-blockchain":
-		a = dogeboxd.ImportBlockchainData{PupID: id}
 	default:
 		sendErrorResponse(w, http.StatusNotFound, fmt.Sprintf("No pup action %s", action))
 		return

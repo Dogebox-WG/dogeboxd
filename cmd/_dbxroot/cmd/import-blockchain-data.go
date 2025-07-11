@@ -1,27 +1,40 @@
 package cmd
 
 import (
+	"encoding/gob"
 	"fmt"
 	"os"
 	"os/exec"
 	"path/filepath"
 
-	"github.com/dogeorg/dogeboxd/cmd/_dbxroot/utils"
 	"github.com/spf13/cobra"
 )
+
+// PupState represents the structure of a pup state file
+type PupState struct {
+	ID       string `json:"id"`
+	Manifest struct {
+		Meta struct {
+			Name string `json:"name"`
+		} `json:"meta"`
+	} `json:"manifest"`
+	Installation string `json:"installation"`
+}
 
 // Embedded shell script for importing blockchain data
 const importBlockchainScript = `#!/run/current-system/sw/bin/bash
 
-# Script to copy blockchain data from external drive to pup storage
-# Usage: ./import-dogecoin-core-blockchain.sh <pup_id> [--dry-run]
+# Script to copy blockchain data from external drive
+# Usage: ./blockchain-import.sh <destination_path> [--dry-run]
 
 set -e
 
 # Global variables
 DRY_RUN=false
-DATA_DIR="/home/br/data"  # Default dogeboxd data directory
-PUP_ID=""
+DATA_DIR=""
+DEST_PATH=""
+OWNER_UID="root"
+OWNER_GID="root"
 
 # Colors for output
 RED='\033[0;31m'
@@ -58,17 +71,27 @@ parse_arguments() {
                 DATA_DIR="$2"
                 shift 2
                 ;;
+            --owner-uid)
+                OWNER_UID="$2"
+                shift 2
+                ;;
+            --owner-gid)
+                OWNER_GID="$2"
+                shift 2
+                ;;
             -h|--help)
-                echo "Usage: $0 <pup_id> [--dry-run] [--data-dir /path/to/data]"
-                echo "  <pup_id>     The ID of the pup to import blockchain data for"
-                echo "  --dry-run    Show what would be done without actually copying files"
-                echo "  --data-dir   Specify dogeboxd data directory (default: /home/br/data)"
-                echo "  -h, --help   Show this help message"
+                echo "Usage: $0 <destination_path> [--dry-run] [--data-dir /path/to/data] [--owner-uid UID] [--owner-gid GID]"
+                echo "  <destination_path>  The destination path to copy blockchain data to"
+                echo "  --dry-run           Show what would be done without actually copying files"
+                echo "  --data-dir          Specify dogeboxd data directory (required)"
+                echo "  --owner-uid         UID for file ownership (default: root)"
+                echo "  --owner-gid         GID for file ownership (default: root)"
+                echo "  -h, --help          Show this help message"
                 exit 0
                 ;;
             *)
-                if [[ -z "$PUP_ID" ]]; then
-                    PUP_ID="$1"
+                if [[ -z "$DEST_PATH" ]]; then
+                    DEST_PATH="$1"
                 else
                     print_error "Unknown option: $1"
                     echo "Use -h or --help for usage information"
@@ -79,10 +102,18 @@ parse_arguments() {
         esac
     done
     
-    # Validate that pup_id was provided
-    if [[ -z "$PUP_ID" ]]; then
-        print_error "Pup ID is required"
-        echo "Usage: $0 <pup_id> [--dry-run] [--data-dir /path/to/data]"
+    # Validate that destination path was provided
+    if [[ -z "$DEST_PATH" ]]; then
+        print_error "Destination path is required"
+        echo "Usage: $0 <destination_path> [--dry-run] [--data-dir /path/to/data]"
+        echo "Use -h or --help for usage information"
+        exit 1
+    fi
+    
+    # Validate that data directory was provided
+    if [[ -z "$DATA_DIR" ]]; then
+        print_error "Data directory is required"
+        echo "Usage: $0 <destination_path> [--dry-run] [--data-dir /path/to/data]"
         echo "Use -h or --help for usage information"
         exit 1
     fi
@@ -93,23 +124,6 @@ if [[ $EUID -ne 0 ]]; then
    print_error "This script must be run as root (use sudo)"
    exit 1
 fi
-
-# Function to check if pup storage exists
-pup_storage_exists() {
-    local pup_id=$1
-    local storage_path="$DATA_DIR/pups/storage/$pup_id"
-    [[ -d "$storage_path" ]]
-}
-
-
-
-# Function to find pup storage path
-get_pup_storage_path() {
-    local pup_id=$1
-    echo "$DATA_DIR/pups/storage/$pup_id"
-}
-
-
 
 # Function to get source directory
 get_source_directory() {
@@ -175,8 +189,6 @@ show_directory_info() {
     du -sh "$dest_dir/blocks" "$dest_dir/chainstate" 2>/dev/null || echo "Destination directories don't exist or are empty"
 }
 
-
-
 # Main execution
 main() {
     # Parse command line arguments
@@ -194,16 +206,11 @@ main() {
     fi
     print_status "====================================="
     
-    # Validate pup storage exists
-    if ! pup_storage_exists "$PUP_ID"; then
-        print_error "Pup storage directory does not exist for pup ID: $PUP_ID"
-        print_error "Storage path: $(get_pup_storage_path "$PUP_ID")"
-        exit 1
+    # Create destination directory if it doesn't exist
+    if [[ ! -d "$DEST_PATH" ]]; then
+        print_status "Creating destination directory: $DEST_PATH"
+        mkdir -p "$DEST_PATH"
     fi
-    
-    # Get storage path
-    storage_path=$(get_pup_storage_path "$PUP_ID")
-    print_status "Pup storage found at: $storage_path"
     
     # Get source directory
     print_status "Step 1: Select source directory"
@@ -216,7 +223,7 @@ main() {
     print_status "Selected source directory: $source_dir"
     
     # Show directory information
-    show_directory_info "$source_dir" "$storage_path"
+    show_directory_info "$source_dir" "$DEST_PATH"
     
     # Show operation summary
     echo ""
@@ -224,12 +231,12 @@ main() {
         print_dry_run "Would copy blockchain data from:"
         echo "  $source_dir/{blocks,chainstate}"
         print_dry_run "To:"
-        echo "  $storage_path/{blocks,chainstate}"
+        echo "  $DEST_PATH/{blocks,chainstate}"
     else
         print_warning "This will copy blockchain data from:"
         echo "  $source_dir/{blocks,chainstate}"
         print_warning "To:"
-        echo "  $storage_path/{blocks,chainstate}"
+        echo "  $DEST_PATH/{blocks,chainstate}"
         echo ""
         print_warning "Only missing files will be copied. Existing files will be preserved."
         
@@ -250,32 +257,32 @@ main() {
         print_dry_run "Step 2: Simulating blockchain data copy..."
         
         print_dry_run "Would copy blocks directory..."
-        if [[ -d "$storage_path/blocks" ]]; then
-            print_dry_run "Would preserve existing blocks directory: $storage_path/blocks"
+        if [[ -d "$DEST_PATH/blocks" ]]; then
+            print_dry_run "Would preserve existing blocks directory: $DEST_PATH/blocks"
         fi
         print_dry_run "Would use targeted .dat file copying to avoid directory traversal issues"
-        print_dry_run "Would copy .dat files from $source_dir/blocks/ to $storage_path/blocks/"
+        print_dry_run "Would copy .dat files from $source_dir/blocks/ to $DEST_PATH/blocks/"
         
         print_dry_run "Would copy chainstate directory..."
-        if [[ -d "$storage_path/chainstate" ]]; then
-            print_dry_run "Would preserve existing chainstate directory: $storage_path/chainstate"
+        if [[ -d "$DEST_PATH/chainstate" ]]; then
+            print_dry_run "Would preserve existing chainstate directory: $DEST_PATH/chainstate"
         fi
         print_dry_run "Would use targeted .ldb file copying to avoid directory traversal issues"
-        print_dry_run "Would copy .ldb files from $source_dir/chainstate/ to $storage_path/chainstate/"
+        print_dry_run "Would copy .ldb files from $source_dir/chainstate/ to $DEST_PATH/chainstate/"
         
-        # Set proper permissions for container user (UID 420, GID 69)
+        # Set proper permissions
         print_dry_run "Would set permissions..."
-        print_dry_run "Would run: chown -R 420:69 \"$storage_path/blocks\" \"$storage_path/chainstate\""
-        print_dry_run "Would run: chmod -R 755 \"$storage_path/blocks\" \"$storage_path/chainstate\""
+        print_dry_run "Would run: chown -R $OWNER_UID:$OWNER_GID \"$DEST_PATH/blocks\" \"$DEST_PATH/chainstate\""
+        print_dry_run "Would run: chmod -R 755 \"$DEST_PATH/blocks\" \"$DEST_PATH/chainstate\""
         
         print_dry_run "DRY RUN: Blockchain data copy simulation completed!"
         print_dry_run "Run without --dry-run to perform the actual copy"
     else
         print_status "Step 2: Copying blockchain data..."
         
-                print_status "Copying blocks directory..."
+        print_status "Copying blocks directory..."
         # Create directory if it doesn't exist
-        mkdir -p "$storage_path/blocks"
+        mkdir -p "$DEST_PATH/blocks"
         
         # Use targeted file copying to avoid directory traversal issues
         print_status "Using targeted file copying to avoid directory traversal issues..."
@@ -291,7 +298,7 @@ main() {
             for file in "$source_dir/blocks"/*.dat; do
                 if [ -f "$file" ]; then
                     local filename=$(basename "$file")
-                    if cp "$file" "$storage_path/blocks/$filename" 2>/dev/null; then
+                    if cp "$file" "$DEST_PATH/blocks/$filename" 2>/dev/null; then
                         copied_count=$((copied_count + 1))
                         # Show progress every 50 files (blocks are larger, so less frequent updates)
                         if [ $((copied_count % 50)) -eq 0 ]; then
@@ -310,7 +317,7 @@ main() {
         
         print_status "Copying chainstate directory..."
         # Create directory if it doesn't exist
-        mkdir -p "$storage_path/chainstate"
+        mkdir -p "$DEST_PATH/chainstate"
         
         # Try to increase file descriptor limit temporarily
         local old_ulimit=$(ulimit -n 2>/dev/null || echo "1024")
@@ -330,7 +337,7 @@ main() {
             for file in "$source_dir/chainstate"/*.ldb; do
                 if [ -f "$file" ]; then
                     local filename=$(basename "$file")
-                    if cp "$file" "$storage_path/chainstate/$filename" 2>/dev/null; then
+                    if cp "$file" "$DEST_PATH/chainstate/$filename" 2>/dev/null; then
                         copied_count=$((copied_count + 1))
                         # Show progress every 100 files
                         if [ $((copied_count % 100)) -eq 0 ]; then
@@ -350,13 +357,13 @@ main() {
         # Restore original file descriptor limit
         ulimit -n "$old_ulimit" 2>/dev/null || true
         
-        # Set proper permissions for container user (UID 420, GID 69)
+        # Set proper permissions
         print_status "Setting permissions..."
-        chown -R 420:69 "$storage_path/blocks" "$storage_path/chainstate"
-        chmod -R 755 "$storage_path/blocks" "$storage_path/chainstate"
+        chown -R "$OWNER_UID:$OWNER_GID" "$DEST_PATH/blocks" "$DEST_PATH/chainstate"
+        chmod -R 755 "$DEST_PATH/blocks" "$DEST_PATH/chainstate"
         
         print_status "Blockchain data copy completed successfully!"
-        print_status "You can now start your pup through the dogeboxd web interface"
+        print_status "Blockchain data is now available at: $DEST_PATH"
     fi
 }
 
@@ -364,56 +371,90 @@ main() {
 main "$@"
 `
 
-var importBlockchainCmd = &cobra.Command{
-	Use:   "import-blockchain",
-	Short: "Import blockchain data to a specific pup",
-	Long: `Import blockchain data to a specific pup by providing its ID.
-This command requires a --pupId flag with an alphanumeric value.
+var importBlockchainDataCmd = &cobra.Command{
+	Use:   "import-blockchain-data",
+	Short: "Import blockchain data to Dogecoin Core pup",
+	Long: `Import blockchain data to the Dogecoin Core pup if it's installed.
+This command will automatically detect if Dogecoin Core is installed and
+manage the import for that specific pup.
 
 The command will:
-1. Stop the pup if it's running
-2. Run the blockchain import script
-3. Restart the pup if it was previously running
+1. Check if Dogecoin Core is installed
+2. Stop the pup if it's running
+3. Run the blockchain import script
+4. Restart the pup if it was previously running
 
 Example:
-  pup import-blockchain --pupId mypup123`,
+  import-blockchain-data --data-dir /home/user/data`,
 	Run: func(cmd *cobra.Command, args []string) {
-		pupId, _ := cmd.Flags().GetString("pupId")
 		dataDir, _ := cmd.Flags().GetString("data-dir")
-
-		if !utils.IsAlphanumeric(pupId) {
-			fmt.Println("Error: pupId must contain only alphanumeric characters")
-			return
-		}
+		dryRun, _ := cmd.Flags().GetBool("dry-run")
 
 		if dataDir == "" {
 			fmt.Println("Error: data-dir is required")
 			return
 		}
 
-		fmt.Printf("Importing blockchain data for pup: %s\n", pupId)
+		if dryRun {
+			fmt.Println("DRY RUN MODE - No files will be copied")
+		}
+
+		fmt.Println("Checking for installed Dogecoin Core pup...")
+
+		// Find Dogecoin Core pup
+		dogecoinPup, err := findDogecoinCorePup(dataDir)
+		if err != nil {
+			fmt.Printf("Error finding Dogecoin Core pup: %v\n", err)
+			return
+		}
+
+		if dogecoinPup == nil {
+			fmt.Println("No Dogecoin Core pup found. Please install Dogecoin Core first.")
+			return
+		}
+
+		fmt.Printf("Found Dogecoin Core pup: %s (ID: %s)\n", dogecoinPup.Manifest.Meta.Name, dogecoinPup.ID)
 
 		// Check if pup is currently running
-		machineId := fmt.Sprintf("pup-%s", pupId)
+		machineId := fmt.Sprintf("pup-%s", dogecoinPup.ID)
 		checkCmd := exec.Command("sudo", "machinectl", "status", machineId)
 		wasRunning := checkCmd.Run() == nil
 
 		// Stop the pup if it's running
 		if wasRunning {
-			fmt.Println("Stopping pup before import...")
-			stopCmd := exec.Command("sudo", "machinectl", "stop", machineId)
-			stopCmd.Stdout = os.Stdout
-			stopCmd.Stderr = os.Stderr
+			if dryRun {
+				fmt.Println("[DRY RUN] Dogecoin Core pup is running, would stop before import...")
+			} else {
+				fmt.Println("Dogecoin Core pup is running, stopping before import...")
+				stopCmd := exec.Command("sudo", "machinectl", "stop", machineId)
+				stopCmd.Stdout = os.Stdout
+				stopCmd.Stderr = os.Stderr
 
-			if err := stopCmd.Run(); err != nil {
-				fmt.Fprintln(os.Stderr, "Error stopping pup:", err)
-				os.Exit(1)
+				if err := stopCmd.Run(); err != nil {
+					fmt.Fprintln(os.Stderr, "Error stopping pup:", err)
+					os.Exit(1)
+				}
 			}
+		} else {
+			if dryRun {
+				fmt.Println("[DRY RUN] Dogecoin Core pup is not running, no need to stop")
+			} else {
+				fmt.Println("Dogecoin Core pup is not running, proceeding with import...")
+			}
+		}
+
+		// Get pup storage path
+		storagePath := filepath.Join(dataDir, "pups", "storage", dogecoinPup.ID)
+
+		// Validate pup storage exists
+		if _, err := os.Stat(storagePath); os.IsNotExist(err) {
+			fmt.Printf("Error: Pup storage directory does not exist: %s\n", storagePath)
+			os.Exit(1)
 		}
 
 		// Create a temporary script file
 		tmpDir := os.TempDir()
-		scriptPath := filepath.Join(tmpDir, "import-dogecoin-core-blockchain.sh")
+		scriptPath := filepath.Join(tmpDir, "blockchain-import.sh")
 
 		// Write the embedded script to the temporary file
 		if err := os.WriteFile(scriptPath, []byte(importBlockchainScript), 0755); err != nil {
@@ -424,8 +465,19 @@ Example:
 		// Clean up the temporary file when we're done
 		defer os.Remove(scriptPath)
 
-		fmt.Println("Running blockchain import script...")
-		importCmd := exec.Command("sudo", "bash", scriptPath, pupId, "--data-dir", dataDir)
+		// Build command arguments
+		scriptArgs := []string{"bash", scriptPath, storagePath, "--data-dir", dataDir, "--owner-uid", "420", "--owner-gid", "69"}
+		if dryRun {
+			scriptArgs = append(scriptArgs, "--dry-run")
+		}
+
+		// Run the script
+		if dryRun {
+			fmt.Println("[DRY RUN] Would run blockchain import script...")
+		} else {
+			fmt.Println("Running blockchain import script...")
+		}
+		importCmd := exec.Command("sudo", scriptArgs...)
 		importCmd.Stdout = os.Stdout
 		importCmd.Stderr = os.Stderr
 
@@ -436,26 +488,86 @@ Example:
 
 		// Restart the pup if it was previously running
 		if wasRunning {
-			fmt.Println("Restarting pup after import...")
-			startCmd := exec.Command("sudo", "machinectl", "start", machineId)
-			startCmd.Stdout = os.Stdout
-			startCmd.Stderr = os.Stderr
+			if dryRun {
+				fmt.Println("[DRY RUN] Dogecoin Core pup was running, would restart after import...")
+			} else {
+				fmt.Println("Dogecoin Core pup was running, restarting after import...")
+				startCmd := exec.Command("sudo", "machinectl", "start", machineId)
+				startCmd.Stdout = os.Stdout
+				startCmd.Stderr = os.Stderr
 
-			if err := startCmd.Run(); err != nil {
-				fmt.Fprintln(os.Stderr, "Error restarting pup:", err)
-				os.Exit(1)
+				if err := startCmd.Run(); err != nil {
+					fmt.Fprintln(os.Stderr, "Error restarting pup:", err)
+					os.Exit(1)
+				}
+			}
+		} else {
+			if dryRun {
+				fmt.Println("[DRY RUN] Dogecoin Core pup was not running, no need to restart")
+			} else {
+				fmt.Println("Dogecoin Core pup was not running, no restart needed")
 			}
 		}
 
-		fmt.Println("Blockchain data import completed successfully")
+		if dryRun {
+			fmt.Println("[DRY RUN] Blockchain data import simulation completed successfully")
+		} else {
+			fmt.Println("Blockchain data import completed successfully")
+		}
 	},
 }
 
-func init() {
-	pupCmd.AddCommand(importBlockchainCmd)
+// findDogecoinCorePup searches for an installed Dogecoin Core pup
+func findDogecoinCorePup(dataDir string) (*PupState, error) {
+	pupDir := filepath.Join(dataDir, "pups")
 
-	importBlockchainCmd.Flags().StringP("pupId", "p", "", "ID of the pup to import blockchain data to (required, alphanumeric only)")
-	importBlockchainCmd.Flags().StringP("data-dir", "d", "", "Data directory path (required)")
-	importBlockchainCmd.MarkFlagRequired("pupId")
-	importBlockchainCmd.MarkFlagRequired("data-dir")
+	// Read all .gob files in the pup directory
+	files, err := os.ReadDir(pupDir)
+	if err != nil {
+		return nil, fmt.Errorf("failed to read pup directory: %w", err)
+	}
+
+	for _, file := range files {
+		if !file.IsDir() && filepath.Ext(file.Name()) == ".gob" {
+			pupPath := filepath.Join(pupDir, file.Name())
+
+			// Read and parse the pup state file
+			pupState, err := readPupState(pupPath)
+			if err != nil {
+				fmt.Printf("Warning: Failed to read pup state file %s: %v\n", pupPath, err)
+				continue
+			}
+
+			// Check if this is Dogecoin Core
+			if pupState.Manifest.Meta.Name == "Dogecoin Core" {
+				return pupState, nil
+			}
+		}
+	}
+
+	return nil, nil
+}
+
+// readPupState reads and parses a pup state file
+func readPupState(pupPath string) (*PupState, error) {
+	file, err := os.Open(pupPath)
+	if err != nil {
+		return nil, fmt.Errorf("failed to open pup state file: %w", err)
+	}
+	defer file.Close()
+
+	var pupState PupState
+	decoder := gob.NewDecoder(file)
+	if err := decoder.Decode(&pupState); err != nil {
+		return nil, fmt.Errorf("failed to decode pup state: %w", err)
+	}
+
+	return &pupState, nil
+}
+
+func init() {
+	importBlockchainDataCmd.Flags().String("data-dir", "", "Dogeboxd data directory")
+	importBlockchainDataCmd.MarkFlagRequired("data-dir")
+	importBlockchainDataCmd.Flags().Bool("dry-run", false, "Run the import in dry-run mode (no files will be copied)")
+	rootCmd.AddCommand(importBlockchainDataCmd)
 }

@@ -271,7 +271,7 @@ func (t Dogeboxd) jobDispatcher(j Job) {
 		t.updatePupHooks(j, a)
 
 	case ImportBlockchainData:
-		t.sendSystemJobWithPupDetails(j, a.PupID)
+		t.enqueue(j)
 
 	// Host Actions
 	case UpdatePendingSystemNetwork:
