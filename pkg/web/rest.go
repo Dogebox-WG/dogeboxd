@@ -82,12 +82,13 @@ func RESTAPI(
 		"GET /keys":                       a.listKeys,
 		"POST /system/bootstrap":          a.initialBootstrap,
 
-		"GET /system/ssh/state":       a.getSSHState,
-		"PUT /system/ssh/state":       a.setSSHState,
-		"GET /system/ssh/keys":        a.listSSHKeys,
-		"PUT /system/ssh/key":         a.addSSHKey,
-		"DELETE /system/ssh/key/{id}": a.removeSSHKey,
-		"/ws/state/":                  a.getUpdateSocket,
+		"GET /system/ssh/state":               a.getSSHState,
+		"PUT /system/ssh/state":               a.setSSHState,
+		"GET /system/ssh/keys":                a.listSSHKeys,
+		"PUT /system/ssh/key":                 a.addSSHKey,
+		"DELETE /system/ssh/key/{id}":         a.removeSSHKey,
+		"POST /system/import-blockchain-data": a.importBlockchainData,
+		"/ws/state/":                          a.getUpdateSocket,
 	}
 
 	// Normal routes are used when we are not in recovery mode.

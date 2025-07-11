@@ -176,6 +176,7 @@ func authReq(dbx dogeboxd.Dogeboxd, sm dogeboxd.StateManager, route string, next
 		route == "POST /keys/create-master" ||
 		route == "POST /system/host/shutdown" ||
 		route == "POST /system/host/reboot" ||
+		route == "POST /system/import-blockchain-data" ||
 		route == "/ws/state/" {
 		return http.HandlerFunc(handleConfigCheck)
 	}

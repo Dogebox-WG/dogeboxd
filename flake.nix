@@ -30,6 +30,7 @@
               pkgs.nix
               pkgs.git
               pkgs.libxkbcommon
+              pkgs.rsync
             ];
           }
         else

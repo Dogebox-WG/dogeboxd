@@ -91,6 +91,12 @@ func (t SystemUpdater) Run(started, stopped chan bool, stop chan context.Context
 							j.Err = "Failed to disable pup"
 						}
 						t.done <- j
+					case dogeboxd.ImportBlockchainData:
+						err := t.importBlockchainData(j)
+						if err != nil {
+							j.Err = "Failed to import blockchain data"
+						}
+						t.done <- j
 					case dogeboxd.UpdatePendingSystemNetwork:
 						err := t.network.SetPendingNetwork(a.Network, j)
 						if err != nil {
@@ -386,5 +392,22 @@ func (t SystemUpdater) disablePup(j dogeboxd.Job) error {
 		return err
 	}
 
+	return nil
+}
+
+func (t SystemUpdater) importBlockchainData(j dogeboxd.Job) error {
+	log := j.Logger.Step("import-blockchain-data")
+	log.Log("Starting blockchain data import")
+
+	// Use the new blockchain data import command
+	cmd := exec.Command("sudo", "_dbxroot", "import-blockchain-data", "--data-dir", t.config.DataDir)
+	log.LogCmd(cmd)
+
+	if err := cmd.Run(); err != nil {
+		log.Errf("Failed to import blockchain data: %v", err)
+		return err
+	}
+
+	log.Log("Blockchain data import completed successfully")
 	return nil
 }
