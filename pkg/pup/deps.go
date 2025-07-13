@@ -83,70 +83,78 @@ func (t PupManager) calculateDeps(pupState *dogeboxd.PupState) []dogeboxd.PupDep
 		}
 		report.InstalledProviders = installed
 
-		// What are all available pups that can provide the interface?
-		available := []dogeboxd.PupManifestDependencySource{}
-		sourceList, err := t.sourceManager.GetAll(false)
-		if err == nil {
-			for _, list := range sourceList {
-				// search the interfaces and check against constraint
-				for _, p := range list.Pups {
-					for _, iface := range p.Manifest.Interfaces {
-						ver, err := semver.NewVersion(iface.Version)
-						if err != nil {
-							continue
-						}
-						if iface.Name == dep.InterfaceName && constraint.Check(ver) == true {
-							// check if this isnt alread installed..
-							alreadyInstalled := false
-							for _, installedPupID := range installed {
-								iPup, _, err := t.GetPup(installedPupID)
-								if err != nil {
-									continue
-								}
-								if iPup.Source.Location == list.Config.Location && iPup.Manifest.Meta.Name == p.Name {
-									// matching location and name, assume already installed
-									alreadyInstalled = true
-									break
-								}
-							}
+		// This is a bit of a hack, but sometimes PupManager gets instantiated without a sourceManager
+		// available (eg. during `dbx can-pup-start`). So we need to check if it's available first.
+		//
+		// TODO: Refactor this out, likely to have an RPC style interface that the service listens on
+		//       that the `dbx` tool can talk to, rather than having to load everything off disk again.
+		if t.sourceManager != nil {
 
-							if !alreadyInstalled {
-								// Check if this provider is already in the available list
-								isDuplicate := false
-								for _, existing := range available {
-									if existing.SourceLocation == list.Config.Location &&
-										existing.PupName == p.Name &&
-										existing.PupVersion == p.Version {
-										isDuplicate = true
+			// What are all available pups that can provide the interface?
+			available := []dogeboxd.PupManifestDependencySource{}
+			sourceList, err := t.sourceManager.GetAll(false)
+			if err == nil {
+				for _, list := range sourceList {
+					// search the interfaces and check against constraint
+					for _, p := range list.Pups {
+						for _, iface := range p.Manifest.Interfaces {
+							ver, err := semver.NewVersion(iface.Version)
+							if err != nil {
+								continue
+							}
+							if iface.Name == dep.InterfaceName && constraint.Check(ver) == true {
+								// check if this isnt alread installed..
+								alreadyInstalled := false
+								for _, installedPupID := range installed {
+									iPup, _, err := t.GetPup(installedPupID)
+									if err != nil {
+										continue
+									}
+									if iPup.Source.Location == list.Config.Location && iPup.Manifest.Meta.Name == p.Name {
+										// matching location and name, assume already installed
+										alreadyInstalled = true
 										break
 									}
 								}
 
-								if !isDuplicate {
-									available = append(available, dogeboxd.PupManifestDependencySource{
-										SourceLocation: list.Config.Location,
-										PupName:        p.Name,
-										PupVersion:     p.Version,
-									})
+								if !alreadyInstalled {
+									// Check if this provider is already in the available list
+									isDuplicate := false
+									for _, existing := range available {
+										if existing.SourceLocation == list.Config.Location &&
+											existing.PupName == p.Name &&
+											existing.PupVersion == p.Version {
+											isDuplicate = true
+											break
+										}
+									}
+
+									if !isDuplicate {
+										available = append(available, dogeboxd.PupManifestDependencySource{
+											SourceLocation: list.Config.Location,
+											PupName:        p.Name,
+											PupVersion:     p.Version,
+										})
+									}
 								}
 							}
 						}
 					}
 				}
+				// Sort available providers by version in descending order
+				sort.Slice(available, func(i, j int) bool {
+					vi, err := semver.NewVersion(available[i].PupVersion)
+					if err != nil {
+						return false
+					}
+					vj, err := semver.NewVersion(available[j].PupVersion)
+					if err != nil {
+						return false
+					}
+					return vi.GreaterThan(vj)
+				})
+				report.InstallableProviders = available
 			}
-			// Sort available providers by version in descending order
-			sort.Slice(available, func(i, j int) bool {
-				vi, err := semver.NewVersion(available[i].PupVersion)
-				if err != nil {
-					return false
-				}
-				vj, err := semver.NewVersion(available[j].PupVersion)
-				if err != nil {
-					return false
-				}
-				return vi.GreaterThan(vj)
-			})
-			report.InstallableProviders = available
 		}
 
 		// Is there a DefaultSourceProvider
