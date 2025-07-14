@@ -375,6 +375,7 @@ type SystemDisk struct {
 	BootMedia   bool                  `json:"bootMedia"`
 	Label       string                `json:"label"`
 	Path        string                `json:"path"`
+	MountPoints []string              `json:"mountPoints,omitempty"`
 	Children    []SystemDisk          `json:"children,omitempty"`
 }
 

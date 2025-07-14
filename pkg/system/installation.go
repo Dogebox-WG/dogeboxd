@@ -9,6 +9,7 @@ import (
 	"os"
 	"os/exec"
 	"path/filepath"
+	"slices"
 	"strings"
 
 	"github.com/dell/csi-baremetal/pkg/base/linuxutils/lsblk"
@@ -194,20 +195,22 @@ func GetSystemDisks() ([]dogeboxd.SystemDisk, error) {
 		}
 
 		// Get label information using lsblk
-		cmd := exec.Command("lsblk", device.Name, "-o", "name,label,path", "--json")
+		cmd := exec.Command("lsblk", device.Name, "-o", "name,label,path,mountpoints", "--json")
 		output, err := cmd.Output()
 		if err != nil {
 			log.Printf("Warning: failed to get label for device %s: %v", device.Name, err)
 		} else {
 			var result struct {
 				Blockdevices []struct {
-					Name     string `json:"name"`
-					Label    string `json:"label"`
-					Path     string `json:"path"`
-					Children []struct {
-						Name  string `json:"name"`
-						Label string `json:"label"`
-						Path  string `json:"path"`
+					Name        string   `json:"name"`
+					Label       string   `json:"label"`
+					Path        string   `json:"path"`
+					Mountpoints []string `json:"mountpoints"`
+					Children    []struct {
+						Name        string   `json:"name"`
+						Label       string   `json:"label"`
+						Path        string   `json:"path"`
+						Mountpoints []string `json:"mountpoints"`
 					} `json:"children,omitempty"`
 				} `json:"blockdevices"`
 			}
@@ -221,9 +224,10 @@ func GetSystemDisks() ([]dogeboxd.SystemDisk, error) {
 				// Convert children to SystemDisk format
 				for _, child := range result.Blockdevices[0].Children {
 					disk.Children = append(disk.Children, dogeboxd.SystemDisk{
-						Name:  child.Name,
-						Label: child.Label,
-						Path:  child.Path,
+						Name:        child.Name,
+						Label:       child.Label,
+						Path:        child.Path,
+						MountPoints: child.Mountpoints,
 					})
 				}
 			}
@@ -245,16 +249,7 @@ func GetSystemDisks() ([]dogeboxd.SystemDisk, error) {
 		// This block package only seems to return a single mount point.
 		// So we need to check if we're mounted at either / or /nix/store
 		// to "reliably" determine if this is our boot media.
-		if device.MountPoint == "/" || device.MountPoint == "/nix/store" || device.MountPoint == "/nix/.ro-store" {
-			disk.BootMedia = true
-		}
-
-		// Check if any of our children are mounted as boot.
-		for _, child := range device.Children {
-			if child.MountPoint == "/" || child.MountPoint == "/nix/store" || device.MountPoint == "/nix/.ro-store" {
-				disk.BootMedia = true
-			}
-		}
+		disk.BootMedia = IsDiskNixRoot(disk)
 
 		// Even for devices we don't class as "usable" for storage, if we're
 		// booting off it, we need to let the user select it (ie. no external storage)
@@ -276,6 +271,23 @@ func GetSystemDisks() ([]dogeboxd.SystemDisk, error) {
 	}
 
 	return disks, nil
+}
+
+func IsDiskNixRoot(disk dogeboxd.SystemDisk) bool {
+	nixRootMountPoints := []string{"/", "/nix/store", "/nix/.ro-store"}
+
+	for _, mountPoint := range nixRootMountPoints {
+		if slices.Contains(disk.MountPoints, mountPoint) {
+			return true
+		}
+	}
+
+	for _, child := range disk.Children {
+		if IsDiskNixRoot(child) {
+			return true
+		}
+	}
+	return false
 }
 
 func InitStorageDevice(dbxState dogeboxd.DogeboxState) (string, error) {
