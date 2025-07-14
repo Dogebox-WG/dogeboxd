@@ -4,32 +4,25 @@ import (
 	"crypto/rand"
 	"encoding/hex"
 	"net/http"
-	"sync"
+	"sync/atomic"
 
 	dogeboxd "github.com/dogeorg/dogeboxd/pkg"
 )
 
 var (
-	importInProgress bool
-	importMutex      sync.Mutex
+	importInProgress int32 // 0 = false, 1 = true
 )
 
 func (t api) importBlockchainData(w http.ResponseWriter, r *http.Request) {
-	// Prevent duplicate imports
-	importMutex.Lock()
-	if importInProgress {
-		importMutex.Unlock()
+	// Prevent duplicate imports using atomic compare-and-swap
+	if !atomic.CompareAndSwapInt32(&importInProgress, 0, 1) {
 		sendErrorResponse(w, http.StatusConflict, "Blockchain import already in progress")
 		return
 	}
-	importInProgress = true
-	importMutex.Unlock()
 
 	// Reset the flag when the function returns
 	defer func() {
-		importMutex.Lock()
-		importInProgress = false
-		importMutex.Unlock()
+		atomic.StoreInt32(&importInProgress, 0)
 	}()
 
 	// Generate a random ID for this import action

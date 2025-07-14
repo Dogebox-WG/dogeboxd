@@ -376,13 +376,13 @@ var importBlockchainDataCmd = &cobra.Command{
 	Short: "Import blockchain data to Dogecoin Core pup",
 	Long: `Import blockchain data to the Dogecoin Core pup if it's installed.
 This command will automatically detect if Dogecoin Core is installed and
-manage the import for that specific pup.
+run the blockchain import script for that specific pup.
 
 The command will:
 1. Check if Dogecoin Core is installed
-2. Stop the pup if it's running
-3. Run the blockchain import script
-4. Restart the pup if it was previously running
+2. Run the blockchain import script to copy blockchain data
+
+Note: Pup state management (stopping/starting) should be handled by the caller.
 
 Example:
   import-blockchain-data --data-dir /home/user/data`,
@@ -414,34 +414,6 @@ Example:
 		}
 
 		fmt.Printf("Found Dogecoin Core pup: %s (ID: %s)\n", dogecoinPup.Manifest.Meta.Name, dogecoinPup.ID)
-
-		// Check if pup is currently running
-		machineId := fmt.Sprintf("pup-%s", dogecoinPup.ID)
-		checkCmd := exec.Command("sudo", "machinectl", "status", machineId)
-		wasRunning := checkCmd.Run() == nil
-
-		// Stop the pup if it's running
-		if wasRunning {
-			if dryRun {
-				fmt.Println("[DRY RUN] Dogecoin Core pup is running, would stop before import...")
-			} else {
-				fmt.Println("Dogecoin Core pup is running, stopping before import...")
-				stopCmd := exec.Command("sudo", "machinectl", "stop", machineId)
-				stopCmd.Stdout = os.Stdout
-				stopCmd.Stderr = os.Stderr
-
-				if err := stopCmd.Run(); err != nil {
-					fmt.Fprintln(os.Stderr, "Error stopping pup:", err)
-					os.Exit(1)
-				}
-			}
-		} else {
-			if dryRun {
-				fmt.Println("[DRY RUN] Dogecoin Core pup is not running, no need to stop")
-			} else {
-				fmt.Println("Dogecoin Core pup is not running, proceeding with import...")
-			}
-		}
 
 		// Get pup storage path
 		storagePath := filepath.Join(dataDir, "pups", "storage", dogecoinPup.ID)
@@ -484,29 +456,6 @@ Example:
 		if err := importCmd.Run(); err != nil {
 			fmt.Fprintln(os.Stderr, "Error running import script:", err)
 			os.Exit(1)
-		}
-
-		// Restart the pup if it was previously running
-		if wasRunning {
-			if dryRun {
-				fmt.Println("[DRY RUN] Dogecoin Core pup was running, would restart after import...")
-			} else {
-				fmt.Println("Dogecoin Core pup was running, restarting after import...")
-				startCmd := exec.Command("sudo", "machinectl", "start", machineId)
-				startCmd.Stdout = os.Stdout
-				startCmd.Stderr = os.Stderr
-
-				if err := startCmd.Run(); err != nil {
-					fmt.Fprintln(os.Stderr, "Error restarting pup:", err)
-					os.Exit(1)
-				}
-			}
-		} else {
-			if dryRun {
-				fmt.Println("[DRY RUN] Dogecoin Core pup was not running, no need to restart")
-			} else {
-				fmt.Println("Dogecoin Core pup was not running, no restart needed")
-			}
 		}
 
 		if dryRun {
