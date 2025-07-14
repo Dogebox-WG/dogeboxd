@@ -10,19 +10,19 @@ import (
 )
 
 var (
-	importInProgress int32 // 0 = false, 1 = true
+	importInProgress atomic.Bool
 )
 
 func (t api) importBlockchainData(w http.ResponseWriter, r *http.Request) {
 	// Prevent duplicate imports using atomic compare-and-swap
-	if !atomic.CompareAndSwapInt32(&importInProgress, 0, 1) {
+	if !importInProgress.CompareAndSwap(false, true) {
 		sendErrorResponse(w, http.StatusConflict, "Blockchain import already in progress")
 		return
 	}
 
 	// Reset the flag when the function returns
 	defer func() {
-		atomic.StoreInt32(&importInProgress, 0)
+		importInProgress.Store(false)
 	}()
 
 	// Generate a random ID for this import action
