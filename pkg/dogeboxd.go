@@ -246,10 +246,10 @@ func (t Dogeboxd) jobDispatcher(j Job) {
 
 	// System actions
 	case InstallPup:
-		t.createPupFromManifest(j, a.PupName, a.PupVersion, a.SourceId)
+		t.createPupFromManifest(j, a.PupName, a.PupVersion, a.SourceId, a.Options)
 	case InstallPups:
 		for _, pup := range a {
-			t.createPupFromManifest(j, pup.PupName, pup.PupVersion, pup.SourceId)
+			t.createPupFromManifest(j, pup.PupName, pup.PupVersion, pup.SourceId, pup.Options)
 		}
 	case UninstallPup:
 		t.sendSystemJobWithPupDetails(j, a.PupID)
@@ -302,7 +302,7 @@ func (t Dogeboxd) jobDispatcher(j Job) {
 *
 * Future: support multiple pup instances per manifest
  */
-func (t *Dogeboxd) createPupFromManifest(j Job, pupName, pupVersion, sourceId string) {
+func (t *Dogeboxd) createPupFromManifest(j Job, pupName, pupVersion, sourceId string, pupOptions AdoptPupOptions) {
 	// Fetch the correct manifest from the source manager
 	manifest, source, err := t.sources.GetSourceManifest(sourceId, pupName, pupVersion)
 	if err != nil {
@@ -312,7 +312,7 @@ func (t *Dogeboxd) createPupFromManifest(j Job, pupName, pupVersion, sourceId st
 	}
 
 	// create a new pup for the manifest
-	pupID, err := t.Pups.AdoptPup(manifest, source)
+	pupID, err := t.Pups.AdoptPup(manifest, source, pupOptions)
 	if err != nil {
 		j.Err = fmt.Sprintf("Couldn't create pup: %s", err)
 		t.sendFinishedJob("action", j)
@@ -326,7 +326,7 @@ func (t *Dogeboxd) createPupFromManifest(j Job, pupName, pupVersion, sourceId st
 // Handle batch installation of multiple pups
 func (t *Dogeboxd) installPups(j Job, pups InstallPups) {
 	for _, pup := range pups {
-		t.createPupFromManifest(j, pup.PupName, pup.PupVersion, pup.SourceId)
+		t.createPupFromManifest(j, pup.PupName, pup.PupVersion, pup.SourceId, pup.Options)
 	}
 }
 

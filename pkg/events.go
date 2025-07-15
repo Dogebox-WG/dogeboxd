@@ -49,9 +49,11 @@ type Action any
 
 // Install a pup on the system
 type InstallPup struct {
-	PupName      string
-	PupVersion   string
-	SourceId     string
+	PupName    string
+	PupVersion string
+	SourceId   string
+	Options    AdoptPupOptions
+
 	SessionToken string
 }
 

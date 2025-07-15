@@ -76,6 +76,14 @@ func (nm nixManager) WritePupFile(
 	pupSpecificEnv := nm.pups.GetPupSpecificEnvironmentVariablesForContainer(state.ID)
 	globalEnv := dogeboxd.GetSystemEnvironmentVariablesForContainer()
 
+	sourceDirectory := filepath.Join(nm.config.DataDir, "pups", state.ID)
+	nixFile := filepath.Join(sourceDirectory, state.Manifest.Container.Build.NixFile)
+
+	if state.IsDevModeEnabled {
+		sourceDirectory = state.Source.Location
+		nixFile = filepath.Join(sourceDirectory, state.Manifest.Container.Build.NixFile)
+	}
+
 	values := dogeboxd.NixPupContainerTemplateValues{
 		DATA_DIR:          nm.config.DataDir,
 		CONTAINER_LOG_DIR: nm.config.ContainerLogDir,
@@ -87,11 +95,14 @@ func (nm nixManager) WritePupFile(
 			PUBLIC bool
 		}{},
 		STORAGE_PATH: filepath.Join(nm.config.DataDir, "pups/storage", state.ID),
-		PUP_PATH:     filepath.Join(nm.config.DataDir, "pups", state.ID),
-		NIX_FILE:     filepath.Join(nm.config.DataDir, "pups", state.ID, state.Manifest.Container.Build.NixFile),
+		PUP_PATH:     sourceDirectory,
+		NIX_FILE:     nixFile,
 		SERVICES:     services,
 		PUP_ENV:      toEnv(pupSpecificEnv),
 		GLOBAL_ENV:   toEnv(globalEnv),
+
+		IS_DEV_MODE:       state.IsDevModeEnabled,
+		DEV_MODE_SERVICES: state.DevModeServices,
 	}
 
 	rebuildFW := false

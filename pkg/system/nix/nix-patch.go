@@ -11,11 +11,18 @@ import (
 	"log"
 	"os"
 	"path/filepath"
+	"slices"
 	"text/template"
 	"time"
 
 	dogeboxd "github.com/dogeorg/dogeboxd/pkg"
 )
+
+var tmplFuncs = template.FuncMap{
+	"has": func(item string, list []string) bool {
+		return slices.Contains(list, item)
+	},
+}
 
 //go:embed templates/pup_container.nix
 var rawPupContainerTemplate []byte
@@ -258,19 +265,17 @@ func (np *nixPatch) UpdateStorageOverlay(values dogeboxd.NixStorageOverlayTempla
 }
 
 func (np *nixPatch) writeTemplate(filename string, _template []byte, values interface{}) error {
-	template, err := template.New(filename).Parse(string(_template))
+	tmpl, err := template.New(filename).Funcs(tmplFuncs).Parse(string(_template))
 	if err != nil {
 		return err
 	}
 
 	var contents bytes.Buffer
-	err = template.Execute(&contents, values)
-	if err != nil {
+	if err := tmpl.Execute(&contents, values); err != nil {
 		return err
 	}
 
-	err = np.writeDogeboxNixFile(filename, contents.String())
-	if err != nil {
+	if err := np.writeDogeboxNixFile(filename, contents.String()); err != nil {
 		return err
 	}
 

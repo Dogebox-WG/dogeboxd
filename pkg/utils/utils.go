@@ -2,11 +2,17 @@ package utils
 
 import (
 	"encoding/base64"
+	"encoding/json"
 	"fmt"
 	"io"
+	"log"
 	"os"
+	"os/exec"
 	"path/filepath"
+	"slices"
 	"strings"
+
+	dogeboxd "github.com/dogeorg/dogeboxd/pkg"
 )
 
 func ImageBytesToWebBase64(imgBytes []byte, filename string) (string, error) {
@@ -86,4 +92,52 @@ func CopyFiles(source string, destination string) error {
 	})
 
 	return err
+}
+
+func GetPupNixAttributes(config dogeboxd.ServerConfig, diskSourcePath string, pupID string, pupManifestBuild dogeboxd.PupManifestBuild) ([]string, error) {
+	nixFile := filepath.Join(diskSourcePath, pupManifestBuild.NixFile)
+
+	log.Println("sourceDirectory", diskSourcePath)
+	log.Println("nixFile", nixFile)
+
+	// quick sanity check
+	if _, err := os.Stat(nixFile); err != nil {
+		return nil, fmt.Errorf("nix file %q missing: %w", nixFile, err)
+	}
+
+	expr := fmt.Sprintf(`builtins.attrNames (import %q {})`, nixFile)
+
+	cmd := exec.Command("nix", "eval", "--json", "--expr", expr, "--impure")
+	cmd.Dir = diskSourcePath
+	out, err := cmd.Output()
+	if err != nil {
+		// wrap to keep the call-site stack tidy
+		return nil, fmt.Errorf("nix eval: %w", err)
+	}
+
+	var attrs []string
+	if err := json.Unmarshal(out, &attrs); err != nil {
+		return nil, fmt.Errorf("decoding nix eval output: %w", err)
+	}
+
+	return attrs, nil
+}
+
+func GetPupNixDevelopmentModeServices(config dogeboxd.ServerConfig, diskSourcePath string, pupID string, manifest dogeboxd.PupManifest) ([]string, error) {
+	pupNixAttributes, err := GetPupNixAttributes(config, diskSourcePath, pupID, manifest.Container.Build)
+	if err != nil {
+		return nil, err
+	}
+
+	devServices := []string{}
+
+	// If any of the services have a "-dev" variant, then development mode is available
+	for _, service := range manifest.Container.Services {
+		devServiceName := service.Name + "-dev"
+		if slices.Contains(pupNixAttributes, devServiceName) {
+			devServices = append(devServices, service.Name)
+		}
+	}
+
+	return devServices, nil
 }

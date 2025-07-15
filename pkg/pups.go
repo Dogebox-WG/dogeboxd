@@ -81,6 +81,9 @@ type PupState struct {
 	IP           string                      `json:"ip"`           // Internal IP for this pup
 	Version      string                      `json:"version"`
 	WebUIs       []PupWebUI                  `json:"webUIs"`
+
+	IsDevModeEnabled bool     `json:"isDevModeEnabled"`
+	DevModeServices  []string `json:"devModeServices"`
 }
 
 // Represents a Web UI exposed port from the manifest
@@ -182,6 +185,11 @@ func (b *Buffer[T]) MarshalJSON() ([]byte, error) {
 	return json.Marshal(b.GetValues())
 }
 
+type AdoptPupOptions struct {
+	/// Install pup with development features enabled
+	DevMode bool
+}
+
 /* The PupManager is responsible for all aspects of the pup lifecycle
  * see pkg/pup/manager.go
  */
@@ -205,7 +213,7 @@ type PupManager interface {
 	GetAssetsMap() map[string]PupAsset
 
 	// AdoptPup adds a new pup from a manifest. It returns the PupID and an error if any.
-	AdoptPup(m PupManifest, source ManifestSource) (string, error)
+	AdoptPup(m PupManifest, source ManifestSource, options AdoptPupOptions) (string, error)
 
 	// UpdatePup updates the state of a pup with provided update functions.
 	UpdatePup(id string, updates ...func(*PupState, *[]Pupdate)) (PupState, error)

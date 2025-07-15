@@ -251,6 +251,9 @@ type NixPupContainerTemplateValues struct {
 	SERVICES     []NixPupContainerServiceValues
 	PUP_ENV      []EnvEntry
 	GLOBAL_ENV   []EnvEntry
+
+	IS_DEV_MODE       bool
+	DEV_MODE_SERVICES []string
 }
 
 type NixSystemContainerConfigTemplatePupRequiresInternet struct {
