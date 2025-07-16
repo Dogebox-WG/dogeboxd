@@ -91,6 +91,12 @@ func (t SystemUpdater) Run(started, stopped chan bool, stop chan context.Context
 							j.Err = "Failed to disable pup"
 						}
 						t.done <- j
+					case dogeboxd.ImportBlockchainData:
+						err := t.importBlockchainData(j)
+						if err != nil {
+							j.Err = "Failed to import blockchain data"
+						}
+						t.done <- j
 					case dogeboxd.UpdatePendingSystemNetwork:
 						err := t.network.SetPendingNetwork(a.Network, j)
 						if err != nil {
@@ -386,5 +392,85 @@ func (t SystemUpdater) disablePup(j dogeboxd.Job) error {
 		return err
 	}
 
+	return nil
+}
+
+func (t SystemUpdater) importBlockchainData(j dogeboxd.Job) error {
+	log := j.Logger.Step("import-blockchain-data")
+	log.Log("Starting blockchain data import")
+
+	// Find the Dogecoin Core pup
+	var dogecoinPup *dogeboxd.PupState
+	pupStateMap := t.pupManager.GetStateMap()
+	for _, pup := range pupStateMap {
+		if pup.Manifest.Meta.Name == "Dogecoin Core" {
+			dogecoinPup = &pup
+			break
+		}
+	}
+
+	var wasEnabled bool
+	if dogecoinPup != nil {
+		log.Logf("Found Dogecoin Core pup: %s (ID: %s)", dogecoinPup.Manifest.Meta.Name, dogecoinPup.ID)
+		wasEnabled = dogecoinPup.Enabled
+
+		// If the pup is enabled, disable it to prevent auto-restart during import
+		if wasEnabled {
+			log.Log("Dogecoin Core pup is enabled, temporarily disabling during import...")
+			_, err := t.pupManager.UpdatePup(dogecoinPup.ID, dogeboxd.PupEnabled(false))
+			if err != nil {
+				log.Errf("Failed to disable pup: %v", err)
+				return err
+			}
+
+			// Stop the pup if it's running
+			stopCmd := exec.Command("sudo", "_dbxroot", "pup", "stop", "--pupId", dogecoinPup.ID)
+			log.LogCmd(stopCmd)
+			if err := stopCmd.Run(); err != nil {
+				log.Errf("Error stopping pup: %v", err)
+				// Re-enable the pup if we failed to stop it
+				t.pupManager.UpdatePup(dogecoinPup.ID, dogeboxd.PupEnabled(true))
+				return err
+			}
+		}
+	}
+
+	// Run the blockchain data import command
+	cmd := exec.Command("sudo", "_dbxroot", "import-blockchain-data", "--data-dir", t.config.DataDir)
+	log.LogCmd(cmd)
+
+	err := cmd.Run()
+	if err != nil {
+		log.Errf("Failed to import blockchain data: %v", err)
+	}
+
+	// Re-enable the pup if it was originally enabled
+	if dogecoinPup != nil && wasEnabled {
+		log.Log("Re-enabling Dogecoin Core pup...")
+		_, enableErr := t.pupManager.UpdatePup(dogecoinPup.ID, dogeboxd.PupEnabled(true))
+		if enableErr != nil {
+			log.Errf("Failed to re-enable pup: %v", enableErr)
+			if err == nil {
+				err = enableErr
+			}
+		} else {
+			// Apply nix patch to ensure the pup configuration is updated
+			dbxState := t.sm.Get().Dogebox
+			nixPatch := t.nix.NewPatch(log)
+			pupState, _, pupErr := t.pupManager.GetPup(dogecoinPup.ID)
+			if pupErr == nil {
+				t.nix.WritePupFile(nixPatch, pupState, dbxState)
+				if applyErr := nixPatch.Apply(); applyErr != nil {
+					log.Errf("Failed to apply nix patch: %v", applyErr)
+				}
+			}
+		}
+	}
+
+	if err != nil {
+		return err
+	}
+
+	log.Log("Blockchain data import completed successfully")
 	return nil
 }
