@@ -14,6 +14,7 @@ type ServerConfig struct {
 	UiPort           int
 	DevMode          bool
 	DisableReflector bool
+	UnixSocketPath   string
 }
 
 func GetSystemEnvironmentVariablesForContainer() map[string]string {

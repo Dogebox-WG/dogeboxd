@@ -5,6 +5,7 @@ import (
 	"encoding/gob"
 	"fmt"
 	"log"
+	"net"
 	"net/http"
 	"os"
 
@@ -127,9 +128,20 @@ func RESTAPI(
 		log.Printf("In recovery mode: Loading limited routes")
 	}
 
+	// If we have a Unix socket configured, create an unauthenticated mux for it
+	var unixMux *http.ServeMux
+	if config.UnixSocketPath != "" {
+		unixMux = http.NewServeMux()
+	}
+
 	for p, h := range routes {
 		a.mux.HandleFunc(p, authReq(dbx, sm, p, h))
+		if unixMux != nil {
+			unixMux.HandleFunc(p, h) // no auth on unix socket
+		}
 	}
+
+	a.unixMux = unixMux
 
 	return a
 }
@@ -145,17 +157,36 @@ type api struct {
 	lifecycle dogeboxd.LifecycleManager
 	nix       dogeboxd.NixManager
 	ws        WSRelay
+	unixMux   *http.ServeMux
 }
 
 func (t api) Run(started, stopped chan bool, stop chan context.Context) error {
 	go func() {
 		handler := cors.AllowAll().Handler(t.mux)
 		srv := &http.Server{Addr: fmt.Sprintf("%s:%d", t.config.Bind, t.config.Port), Handler: handler}
+		// Start TCP server
 		go func() {
 			if err := srv.ListenAndServe(); err != http.ErrServerClosed {
 				log.Fatalf("HTTP server public ListenAndServe: %v", err)
 			}
 		}()
+
+		// If unix socket enabled, start that server too
+		if t.unixMux != nil {
+			go func() {
+				// Ensure socket does not already exist
+				_ = os.Remove(t.config.UnixSocketPath)
+				ln, err := net.Listen("unix", t.config.UnixSocketPath)
+				if err != nil {
+					log.Fatalf("HTTP unix listen: %v", err)
+				}
+				os.Chmod(t.config.UnixSocketPath, 0660)
+				srvUnix := &http.Server{Handler: t.unixMux}
+				if err := srvUnix.Serve(ln); err != http.ErrServerClosed {
+					log.Fatalf("HTTP server unix Serve: %v", err)
+				}
+			}()
+		}
 
 		started <- true
 		ctx := <-stop
