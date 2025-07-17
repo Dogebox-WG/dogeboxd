@@ -41,23 +41,40 @@ func IsInstalled(t dogeboxd.Dogeboxd, config dogeboxd.ServerConfig, dbxState dog
 	return checkNixOSDisksForFile(t, config, "/opt/dbx-installed")
 }
 
-func GetInstallationMode(t dogeboxd.Dogeboxd, dbxState dogeboxd.DogeboxState) (dogeboxd.BootstrapInstallationMode, error) {
-	// If we've been configured, no install for you.
-	if dbxState.InitialState.HasFullyConfigured {
-		return dogeboxd.BootstrapInstallationModeCannotInstall, nil
-	}
-
-	// Check if we're running on RO installation media. If so, must install.
+// Dogebox OS installation state based on boot drive type is either:
+// From Installation Media (Read-Only mode):
+// - No Installed OS - BootstrapInstallationStateNotInstalled
+// - Installed, Unconfigured OS - BootstrapInstallationStateUnconfigured
+// - Installed, Configured OS - BootstrapInstallationStateConfigured
+// From Installed Location (not Read-Only mode):
+// - Installed, Unconfigured - BootstrapInstallationStateUnconfigured
+// - Installed, Configured - BootstrapInstallationStateConfigured
+func GetInstallationState(t dogeboxd.Dogeboxd, config dogeboxd.ServerConfig, dbxState dogeboxd.DogeboxState) (dogeboxd.BootstrapInstallationBootMedia, dogeboxd.BootstrapInstallationState, error) {
+	bootMedia := dogeboxd.BootstrapInstallationMediaReadWrite
 	isReadOnlyInstallationMedia, err := isReadOnlyInstallationMedia(t, "")
 	if err != nil {
-		return "", fmt.Errorf("error checking for RO installation media: %v", err)
+		return bootMedia, "", fmt.Errorf("error checking for RO installation media: %v", err)
 	}
 	if isReadOnlyInstallationMedia {
-		return dogeboxd.BootstrapInstallationModeMustInstall, nil
+		bootMedia = dogeboxd.BootstrapInstallationMediaReadOnly
 	}
 
-	// Otherwise, the user can optionally install.
-	return dogeboxd.BootstrapInstallationModeCanInstall, nil
+	// If we've been configured, no install for you.
+	if dbxState.InitialState.HasFullyConfigured {
+		return bootMedia, dogeboxd.BootstrapInstallationStateConfigured, nil
+	}
+
+	isInstalled, err := IsInstalled(t, config, dbxState)
+	if err != nil {
+		log.Printf("Could not determine if system is installed: %v", err)
+		isInstalled = false
+	}
+
+	if isInstalled {
+		return bootMedia, dogeboxd.BootstrapInstallationStateUnconfigured, nil
+	}
+
+	return bootMedia, dogeboxd.BootstrapInstallationStateNotInstalled, nil
 }
 
 func isReadOnlyInstallationMedia(t dogeboxd.Dogeboxd, mountPoint string) (bool, error) {
@@ -354,15 +371,6 @@ func InstallToDisk(t dogeboxd.Dogeboxd, config dogeboxd.ServerConfig, dbxState d
 
 	if !config.Recovery {
 		return fmt.Errorf("installation can only be done in recovery mode")
-	}
-
-	installMode, err := GetInstallationMode(t, dbxState)
-	if err != nil {
-		return err
-	}
-
-	if installMode != dogeboxd.BootstrapInstallationModeMustInstall && installMode != dogeboxd.BootstrapInstallationModeCanInstall {
-		return fmt.Errorf("installation is not possible with current system state: %s", installMode)
 	}
 
 	disks, err := GetSystemDisks()

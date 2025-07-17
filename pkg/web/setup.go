@@ -65,8 +65,8 @@ func (t api) getRawBS() BootstrapResponse {
 }
 
 type RecoveryFacts struct {
-	InstallationMode dogeboxd.BootstrapInstallationMode `json:"installationMode"`
-	IsInstalled      bool                               `json:"isInstalled"`
+	InstallationBootMedia dogeboxd.BootstrapInstallationBootMedia `json:"installationBootMedia"`
+	InstallationState     dogeboxd.BootstrapInstallationState     `json:"installationState"`
 }
 
 type BootstrapRecoveryResponse struct {
@@ -76,21 +76,16 @@ type BootstrapRecoveryResponse struct {
 func (t api) getRecoveryBS() BootstrapRecoveryResponse {
 	dbxState := t.sm.Get().Dogebox
 
-	installationMode, err := system.GetInstallationMode(t.dbx, dbxState)
+	installationMedia, installationState, err := system.GetInstallationState(t.dbx, t.config, dbxState)
 	if err != nil {
 		log.Printf("Could not determine installation mode: %v", err)
-		installationMode = dogeboxd.BootstrapInstallationModeCannotInstall
-	}
-	isInstalled, err := system.IsInstalled(t.dbx, t.config, dbxState)
-	if err != nil {
-		log.Printf("Could not determine if system is installed: %v", err)
-		isInstalled = false
+		installationState = dogeboxd.BootstrapInstallationStateNotInstalled
 	}
 
 	return BootstrapRecoveryResponse{
 		RecoveryFacts: RecoveryFacts{
-			InstallationMode: installationMode,
-			IsInstalled:      isInstalled,
+			InstallationBootMedia: installationMedia,
+			InstallationState:     installationState,
 		},
 	}
 }

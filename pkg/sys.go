@@ -392,10 +392,17 @@ type SystemDisk struct {
 	Children    []SystemDisk          `json:"children,omitempty"`
 }
 
-type BootstrapInstallationMode string
+type BootstrapInstallationBootMedia string
 
 const (
-	BootstrapInstallationModeCanInstall    BootstrapInstallationMode = "canInstall"
-	BootstrapInstallationModeMustInstall   BootstrapInstallationMode = "mustInstall"
-	BootstrapInstallationModeCannotInstall BootstrapInstallationMode = "cannotInstall"
+	BootstrapInstallationMediaReadOnly  BootstrapInstallationBootMedia = "ro" // SD or ISO
+	BootstrapInstallationMediaReadWrite BootstrapInstallationBootMedia = "rw" // installed to eMMC or other permanent storage in a VM
+)
+
+type BootstrapInstallationState string
+
+const (
+	BootstrapInstallationStateUnconfigured BootstrapInstallationState = "unconfigured"
+	BootstrapInstallationStateNotInstalled BootstrapInstallationState = "notInstalled"
+	BootstrapInstallationStateConfigured   BootstrapInstallationState = "configured"
 )
