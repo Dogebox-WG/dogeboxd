@@ -6,13 +6,15 @@ import (
 	"time"
 
 	dogeboxd "github.com/dogeorg/dogeboxd/pkg"
+	"github.com/dogeorg/dogeboxd/pkg/utils"
 	"golang.org/x/mod/semver"
 )
 
 type StoreListSourceEntryPup struct {
-	LatestVersion string                          `json:"latestVersion"`
-	LogoBase64    string                          `json:"logoBase64"`
-	Versions      map[string]dogeboxd.PupManifest `json:"versions"`
+	LatestVersion    string                          `json:"latestVersion"`
+	LogoBase64       string                          `json:"logoBase64"`
+	Versions         map[string]dogeboxd.PupManifest `json:"versions"`
+	DevModeAvailable bool                            `json:"devModeAvailable"`
 }
 
 type StoreListSourceEntry struct {
@@ -45,10 +47,22 @@ func (t api) getStoreList(w http.ResponseWriter, r *http.Request) {
 			if _, ok := pups[availablePup.Name]; !ok {
 				versions := map[string]dogeboxd.PupManifest{}
 
+				isDevModeAvailable := false
+
+				if entry.Config.Type == "disk" {
+					devModeServices, err := utils.GetPupNixDevelopmentModeServices(t.config, entry.Config.Location, availablePup.Name, availablePup.Manifest)
+					if err != nil {
+						log.Println("Error getting dev mode services:", err)
+					}
+
+					isDevModeAvailable = len(devModeServices) > 0
+				}
+
 				pups[availablePup.Name] = StoreListSourceEntryPup{
-					LatestVersion: availablePup.Version,
-					LogoBase64:    availablePup.LogoBase64,
-					Versions:      versions,
+					LatestVersion:    availablePup.Version,
+					LogoBase64:       availablePup.LogoBase64,
+					Versions:         versions,
+					DevModeAvailable: isDevModeAvailable,
 				}
 			}
 
