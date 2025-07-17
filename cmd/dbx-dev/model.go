@@ -3,10 +3,12 @@ package dbxdev
 import (
 	"bufio"
 	"context"
+	"fmt"
 	"io"
 	"os"
 	"os/exec"
 	"path/filepath"
+	"strings"
 	"time"
 
 	tea "github.com/charmbracelet/bubbletea"
@@ -35,13 +37,40 @@ type model struct {
 
 	searching   bool
 	searchQuery string
+
+	// Create pup flow
+	templates    []templateInfo
+	selectedTpl  int // selected template index
+	pupName      string
+	nameInputErr string
+	cloning      bool
+
+	// Auth flow
+	password       string
+	passwordErr    string
+	authToken      string
+	authenticating bool
+
+	// Connection state
+	connectionErr string
+	socketPath    string
+
+	// Task progress
+	tasks        []task
+	allTasksDone bool
+	taskLogs     []string
+	wsConnected  bool
+	targetPupID  string // Track pup by name initially, then by ID once available
+	installJobID string // Track the job ID for the installation
 }
 
-// Init satisfies tea.Model and starts the periodic ticker & initial fetch.
+// Init performs initial setup and returns a command to check dogeboxd connection
 func (m model) Init() tea.Cmd {
+	// Return a batch of commands to run on startup
 	return tea.Batch(
-		tea.Tick(time.Second, func(t time.Time) tea.Msg { return tickMsg(t) }),
+		checkBootstrapCmd(m.socketPath),
 		fetchPupsCmd(),
+		tea.Tick(time.Second, func(t time.Time) tea.Msg { return tickMsg(t) }),
 	)
 }
 
@@ -56,73 +85,175 @@ func (m *model) refreshMetrics() {
 	}
 }
 
-// Update handles all incoming BubbleTea messages and updates state.
+// Update handles messages and updates the model
 func (m model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 	switch msg := msg.(type) {
 	case tea.WindowSizeMsg:
-		m.width, m.height = msg.Width, msg.Height
+		m.width = msg.Width
+		m.height = msg.Height
 
 	case tea.KeyMsg:
+		// First, check if we're in any input mode
+		isInputMode := m.searching ||
+			(m.view == viewNameInput && !m.cloning) ||
+			(m.view == viewPasswordInput && !m.authenticating)
+
+		// Handle special keys that work in all modes
 		switch msg.String() {
 		case "ctrl+c":
+			stopTail()
 			return m, tea.Quit
-		case "q":
-			if m.searching {
-				m.searchQuery += "q"
-				break
-			}
-			return m, tea.Quit
-		case "r", "R":
-			if m.view == viewLanding && !m.searching {
-				m.logs = nil
-				m.view = viewRebuild
-				m.logs = []string{}
-				m.rebuildComplete = false
-				return m, startRebuildCmd()
-			}
-			if m.searching {
-				m.searchQuery += "r"
-				break
-			}
-			m.refreshMetrics()
-			return m, fetchPupsCmd()
-		case "s":
-			if m.view != viewLanding {
-				break
-			}
-			if !m.searching {
-				m.searching = true
+		case "esc":
+			if m.view == viewLogs || m.view == viewRebuild {
+				stopTail()
+				if m.view == viewLogs {
+					m.view = viewPupDetail
+				} else {
+					m.view = viewLanding
+				}
+			} else if m.view == viewPupDetail || m.view == viewCreatePup || m.view == viewTemplateSelect || m.view == viewNameInput || m.view == viewPasswordInput {
+				// Clear auth token if canceling create flow
+				if m.view == viewTemplateSelect || m.view == viewNameInput || m.view == viewPasswordInput {
+					m.authToken = ""
+				}
+				m.view = viewLanding
+			} else if m.view == viewTaskProgress && m.allTasksDone {
+				// Only allow escape when all tasks are done
+				m.view = viewLanding
+				// Clear auth token after completing create flow
+				m.authToken = ""
+				// Close websocket if still open
+				closeWebSocket()
+				// Refresh pup list if tasks were successful
+				allSuccess := true
+				for _, t := range m.tasks {
+					if t.Status != taskSuccess {
+						allSuccess = false
+						break
+					}
+				}
+				if allSuccess {
+					return m, fetchPupsCmd()
+				}
+			} else if m.searching {
+				m.searching = false
 				m.searchQuery = ""
-				break
 			}
-			if m.searching {
-				m.searchQuery += "s"
+		}
+
+		// If we have a connection error, don't process any other keys except quit
+		if m.view == viewConnectionError {
+			switch msg.String() {
+			case "q":
+				return m, tea.Quit
+			case "r":
+				// Retry connection
+				return m, tea.Batch(
+					checkBootstrapCmd(m.socketPath),
+					fetchPupsCmd(),
+				)
 			}
-		case "up":
-			if m.view == viewLanding && !m.searching && len(m.pups) > 0 {
+			return m, nil
+		}
+
+		// If we're in task progress view, only allow escape when done
+		if m.view == viewTaskProgress && !m.allTasksDone {
+			// Tasks still running, ignore all input
+			return m, nil
+		}
+
+		// If we're in input mode, handle text input
+		if isInputMode {
+			switch msg.String() {
+			case "enter":
+				if m.searching {
+					// Search mode stays active after enter
+				} else if m.view == viewNameInput && m.pupName != "" {
+					// Validate name
+					if len(m.pupName) < 3 {
+						m.nameInputErr = "Name must be at least 3 characters"
+					} else if strings.ContainsAny(m.pupName, " /\\") {
+						m.nameInputErr = "Name cannot contain spaces or slashes"
+					} else {
+						// Initialize tasks
+						m.tasks = []task{
+							{Name: "Clone template", Status: taskPending},
+							{Name: "Add Pup as source", Status: taskPending},
+							{Name: "Install pup", Status: taskPending},
+						}
+						m.allTasksDone = false
+						m.taskLogs = []string{}
+						m.wsConnected = false
+						// Move to task progress view
+						m.view = viewTaskProgress
+						// Start first task
+						m.tasks[0].Status = taskRunning
+						template := m.templates[m.selectedTpl]
+						return m, cloneTemplateCmd(template, m.pupName)
+					}
+				} else if m.view == viewPasswordInput && m.password != "" && !m.authenticating {
+					// Start authentication
+					m.authenticating = true
+					return m, authenticateCmd(m.password)
+				}
+			default:
+				// Handle text input for each mode
+				if m.searching {
+					switch msg.Type {
+					case tea.KeyBackspace, tea.KeyDelete:
+						if len(m.searchQuery) > 0 {
+							m.searchQuery = m.searchQuery[:len(m.searchQuery)-1]
+						}
+					case tea.KeyRunes:
+						m.searchQuery += msg.String()
+					}
+				} else if m.view == viewNameInput && !m.cloning {
+					switch msg.Type {
+					case tea.KeyBackspace, tea.KeyDelete:
+						if len(m.pupName) > 0 {
+							m.pupName = m.pupName[:len(m.pupName)-1]
+							m.nameInputErr = ""
+						}
+					case tea.KeyRunes:
+						m.pupName += msg.String()
+						m.nameInputErr = ""
+					}
+				} else if m.view == viewPasswordInput && !m.authenticating {
+					switch msg.Type {
+					case tea.KeyBackspace, tea.KeyDelete:
+						if len(m.password) > 0 {
+							m.password = m.password[:len(m.password)-1]
+							m.passwordErr = ""
+						}
+					case tea.KeyRunes:
+						m.password += msg.String()
+						m.passwordErr = ""
+					}
+				}
+			}
+			// Don't process action keys when in input mode
+			return m, nil
+		}
+
+		// Now handle action keys (only when NOT in input mode)
+		switch msg.String() {
+		case "up", "k":
+			if m.view == viewLanding && len(m.pups) > 0 {
 				m.selected = (m.selected - 1 + len(m.pups)) % len(m.pups)
 			} else if m.view == viewPupDetail {
 				m.selDetail = (m.selDetail - 1 + detailActionsCount) % detailActionsCount
+			} else if m.view == viewTemplateSelect && len(m.templates) > 0 {
+				m.selectedTpl = (m.selectedTpl - 1 + len(m.templates)) % len(m.templates)
 			}
-		case "down":
-			if m.view == viewLanding && !m.searching && len(m.pups) > 0 {
+		case "down", "j":
+			if m.view == viewLanding && len(m.pups) > 0 {
 				m.selected = (m.selected + 1) % len(m.pups)
 			} else if m.view == viewPupDetail {
 				m.selDetail = (m.selDetail + 1) % detailActionsCount
+			} else if m.view == viewTemplateSelect && len(m.templates) > 0 {
+				m.selectedTpl = (m.selectedTpl + 1) % len(m.templates)
 			}
-		case "k":
-			if m.searching {
-				m.searchQuery += "k"
-			} else if m.view == viewLanding && len(m.pups) > 0 {
-				m.selected = (m.selected - 1 + len(m.pups)) % len(m.pups)
-			}
-		case "j":
-			if m.searching {
-				m.searchQuery += "j"
-			} else if m.view == viewLanding && len(m.pups) > 0 {
-				m.selected = (m.selected + 1) % len(m.pups)
-			}
-		case "enter":
+		case "enter", "l":
 			if m.view == viewLanding && len(m.pups) > 0 {
 				m.view = viewPupDetail
 				m.detail = m.pups[m.selected]
@@ -143,50 +274,82 @@ func (m model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 					}
 					return m, tea.Batch(pupActionCmd(m.detail.ID, act), fetchPupsCmd())
 				}
+			} else if m.view == viewTemplateSelect && len(m.templates) > 0 {
+				// Move to name input
+				m.view = viewNameInput
 			}
 		case "c":
-			if m.searching || m.view != viewLanding {
-				break
+			if m.view == viewLanding {
+				// Reset create pup state
+				m.templates = nil
+				m.selectedTpl = 0
+				m.pupName = ""
+				m.nameInputErr = ""
+				m.password = ""
+				m.passwordErr = ""
+				m.authToken = ""
+				// Go to password input first
+				m.view = viewPasswordInput
 			}
-			m.view = viewCreatePup
-		case "esc":
-			if m.view == viewLogs || m.view == viewRebuild {
-				stopTail()
-				if m.view == viewLogs {
-					m.view = viewPupDetail
-				} else {
-					m.view = viewLanding
+		case "r":
+			if m.view == viewLanding {
+				m.view = viewRebuild
+				m.rebuildComplete = false
+				cmd := startRebuildCmd()
+				return m, cmd
+			}
+		case "d":
+			if m.view == viewLanding && len(m.pups) > 0 && m.pups[m.selected].DevAvailable {
+				mode := "enable"
+				if m.pups[m.selected].DevEnabled {
+					mode = "disable"
 				}
-			} else if m.view == viewPupDetail || m.view == viewCreatePup {
-				m.view = viewLanding
-			} else if m.searching {
-				m.searching = false
+				return m, tea.Batch(pupActionCmd(m.pups[m.selected].ID, "dev-mode-"+mode), fetchPupsCmd())
+			}
+		case "/":
+			if m.view == viewLanding {
+				m.searching = true
 				m.searchQuery = ""
 			}
-		default:
-			if m.searching {
-				switch msg.Type {
-				case tea.KeyBackspace, tea.KeyDelete:
-					if len(m.searchQuery) > 0 {
-						m.searchQuery = m.searchQuery[:len(m.searchQuery)-1]
-					}
-				case tea.KeyRunes:
-					m.searchQuery += msg.String()
+		case "h", "left":
+			if m.view == viewPupDetail {
+				m.view = viewLanding
+			}
+		case "q":
+			return m, tea.Quit
+		case "R":
+			m.refreshMetrics()
+			return m, fetchPupsCmd()
+		}
+
+	case tickMsg:
+		// Update metrics
+		m.refreshMetrics()
+
+		// Force update if we have running tasks to animate spinner
+		hasRunningTasks := false
+		if m.view == viewTaskProgress {
+			for _, t := range m.tasks {
+				if t.Status == taskRunning {
+					hasRunningTasks = true
+					break
 				}
 			}
 		}
 
-	case tickMsg:
-		// Refresh system metrics
-		if cpus, _ := cpu.PercentWithContext(context.Background(), 0, false); len(cpus) > 0 {
-			m.cpuPercent = cpus[0]
+		// Continue ticking
+		cmds := []tea.Cmd{
+			tea.Tick(time.Second, func(t time.Time) tea.Msg { return tickMsg(t) }),
 		}
-		if v, _ := mem.VirtualMemory(); v != nil {
-			m.memUsed = v.Used / (1024 * 1024)
-			m.memTotal = v.Total / (1024 * 1024)
+
+		// Add a faster tick for spinner animation when tasks are running
+		if hasRunningTasks {
+			cmds = append(cmds, tea.Tick(100*time.Millisecond, func(t time.Time) tea.Msg {
+				return tea.WindowSizeMsg{Width: m.width, Height: m.height}
+			}))
 		}
-		// Schedule next tick
-		return m, tea.Tick(time.Second, func(t time.Time) tea.Msg { return tickMsg(t) })
+
+		return m, tea.Batch(cmds...)
 
 	case pupsMsg:
 		if msg.err == nil {
@@ -204,6 +367,171 @@ func (m model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		globalActive = false
 		m.rebuildComplete = true
 		return m, nil
+	case templatesMsg:
+		if msg.err != nil {
+			// Handle error - go back to landing
+			m.view = viewLanding
+		} else {
+			m.templates = msg.templates
+		}
+		return m, nil
+	case cloneCompleteMsg:
+		m.cloning = false
+		if msg.err != nil {
+			// Update task status
+			if m.view == viewTaskProgress && len(m.tasks) > 0 {
+				m.tasks[0].Status = taskFailed
+				m.tasks[0].Error = msg.err.Error()
+				m.allTasksDone = true
+			} else {
+				m.nameInputErr = msg.err.Error()
+			}
+		} else {
+			// Success - update task and proceed
+			if m.view == viewTaskProgress && len(m.tasks) > 0 {
+				m.tasks[0].Status = taskSuccess
+				m.taskLogs = append(m.taskLogs, "Template cloned successfully")
+
+				// Connect websocket before starting next task
+				if m.authToken != "" {
+					return m, connectWebSocketCmd(m.authToken)
+				}
+			}
+		}
+	case authMsg:
+		m.authenticating = false
+		if msg.err != nil {
+			m.passwordErr = msg.err.Error()
+		} else {
+			m.authToken = msg.token
+			// If we're in the create pup flow (haven't selected a template yet)
+			if m.templates == nil && m.pupName == "" {
+				// Move to template selection
+				m.view = viewTemplateSelect
+				return m, fetchTemplatesCmd()
+			}
+		}
+	case wsConnectedMsg:
+		if msg.err != nil {
+			m.taskLogs = append(m.taskLogs, fmt.Sprintf("Warning: WebSocket connection failed: %v", msg.err))
+		} else {
+			m.wsConnected = true
+			m.taskLogs = append(m.taskLogs, "WebSocket connected")
+		}
+
+		// Continue with source addition regardless of websocket status
+		if m.view == viewTaskProgress && len(m.tasks) > 1 {
+			m.tasks[1].Status = taskRunning
+
+			// Determine the dev directory for source location
+			var devDir string
+			if dataDir := os.Getenv("DATA_DIR"); dataDir != "" {
+				devDir = filepath.Join(dataDir, "dev")
+			} else {
+				homeDir, _ := os.UserHomeDir()
+				devDir = filepath.Join(homeDir, "dev")
+			}
+			sourceLocation := filepath.Join(devDir, m.pupName)
+			// Add the source
+			return m, addSourceCmd(sourceLocation, m.authToken)
+		}
+	case wsLogMsg:
+		// Add log message to our log buffer
+		if m.view == viewTaskProgress {
+			m.taskLogs = append(m.taskLogs, msg.message)
+			// Keep only last 100 lines
+			if len(m.taskLogs) > 100 {
+				m.taskLogs = m.taskLogs[len(m.taskLogs)-100:]
+			}
+		}
+	case actionCompleteMsg:
+		// Check if this is our installation job completing
+		if m.view == viewTaskProgress && msg.jobID == m.installJobID {
+			if msg.success && msg.pupID != "" {
+				// Update our target pup ID now that we have it
+				m.targetPupID = msg.pupID
+				m.taskLogs = append(m.taskLogs, fmt.Sprintf("Pup created with ID: %s", msg.pupID))
+			} else if !msg.success {
+				// Installation failed
+				if len(m.tasks) > 2 && m.tasks[2].Status == taskRunning {
+					m.tasks[2].Status = taskFailed
+					m.tasks[2].Error = msg.error
+					m.allTasksDone = true
+					m.taskLogs = append(m.taskLogs, fmt.Sprintf("Installation failed: %s", msg.error))
+					closeWebSocket()
+				}
+			}
+		}
+	case pupStateMsg:
+		// Check if this is our pup and if it's ready
+		// We can match by either ID or name
+		if m.view == viewTaskProgress && (msg.pupID == m.targetPupID || msg.pupName == m.pupName) {
+			if msg.state == "ready" {
+				// Mark installation as complete
+				if len(m.tasks) > 2 && m.tasks[2].Status == taskRunning {
+					m.tasks[2].Status = taskSuccess
+					m.allTasksDone = true
+					m.taskLogs = append(m.taskLogs, "Pup installation complete!")
+					closeWebSocket()
+					// Refresh pup list in the background
+					return m, fetchPupsCmd()
+				}
+			} else if msg.state == "broken" {
+				// Installation failed
+				if len(m.tasks) > 2 && m.tasks[2].Status == taskRunning {
+					m.tasks[2].Status = taskFailed
+					m.tasks[2].Error = "Installation failed - pup is in broken state"
+					m.allTasksDone = true
+					closeWebSocket()
+				}
+			}
+		}
+	case sourceAddedMsg:
+		// Update task status
+		if m.view == viewTaskProgress && len(m.tasks) > 1 {
+			if msg.err != nil {
+				m.tasks[1].Status = taskFailed
+				m.tasks[1].Error = msg.err.Error()
+				m.allTasksDone = true
+				closeWebSocket()
+			} else {
+				m.tasks[1].Status = taskSuccess
+				m.taskLogs = append(m.taskLogs, "Source added successfully")
+				// Start next task
+				if len(m.tasks) > 2 {
+					m.tasks[2].Status = taskRunning
+					// Initially track by name until we get the actual pup ID
+					m.targetPupID = m.pupName
+					// Trigger pup installation
+					return m, installPupCmd(msg.sourceId, m.pupName, m.authToken)
+				}
+			}
+		}
+	case pupInstalledMsg:
+		// This just means we triggered the installation
+		if m.view == viewTaskProgress && len(m.tasks) > 2 {
+			if msg.err != nil {
+				m.tasks[2].Status = taskFailed
+				m.tasks[2].Error = msg.err.Error()
+				m.allTasksDone = true
+				closeWebSocket()
+			} else {
+				// Installation started, wait for state change via websocket
+				m.installJobID = msg.jobID
+				m.taskLogs = append(m.taskLogs, "Installation started, monitoring progress...")
+			}
+		}
+	case bootstrapCheckMsg:
+		if msg.err != nil {
+			m.connectionErr = msg.err.Error()
+			m.socketPath = msg.socketPath
+			m.view = viewConnectionError
+		} else {
+			// Connection successful, ensure we're not showing error view
+			if m.view == viewConnectionError {
+				m.view = viewLanding
+			}
+		}
 	}
 	return m, nil
 }

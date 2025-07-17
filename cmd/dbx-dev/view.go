@@ -2,8 +2,11 @@ package dbxdev
 
 import (
 	"fmt"
+	"os"
+	"path/filepath"
 	"sort"
 	"strings"
+	"time"
 
 	"github.com/charmbracelet/lipgloss"
 	"github.com/dogeorg/dogeboxd/pkg/version"
@@ -102,6 +105,8 @@ func (m model) View() string {
 	}
 
 	switch m.view {
+	case viewConnectionError:
+		return m.renderConnectionErrorView()
 	case viewPupDetail:
 		return m.renderPupDetailView()
 	case viewCreatePup:
@@ -110,6 +115,14 @@ func (m model) View() string {
 		return m.renderLogsView()
 	case viewRebuild:
 		return m.renderRebuildView()
+	case viewTemplateSelect:
+		return m.renderTemplateSelectView()
+	case viewNameInput:
+		return m.renderNameInputView()
+	case viewPasswordInput:
+		return m.renderPasswordInputView()
+	case viewTaskProgress:
+		return m.renderTaskProgressView()
 	default:
 		return m.renderLandingView()
 	}
@@ -398,4 +411,276 @@ func (m model) renderDetail() string {
 		lines = append(lines, "Error: "+p.Error)
 	}
 	return strings.Join(lines, "\n")
+}
+
+// renderTemplateSelectView shows the list of available pup templates
+func (m model) renderTemplateSelectView() string {
+	banner, bannerLines := buildBannerWithVersion()
+
+	var body string
+	if m.templates == nil {
+		body = "Loading templates..."
+	} else if len(m.templates) == 0 {
+		body = "No templates found."
+	} else {
+		title := headerStyle.Render("Select a Pup Template:")
+
+		// Create template list
+		var items []string
+		for i, tpl := range m.templates {
+			prefix := "  "
+			if i == m.selectedTpl {
+				prefix = "> "
+			}
+
+			line := prefix + tpl.Name
+			if i == m.selectedTpl {
+				line = lipgloss.NewStyle().Foreground(lipgloss.Color("10")).Render(line)
+			}
+			items = append(items, line)
+		}
+
+		list := strings.Join(items, "\n")
+		body = title + "\n\n" + list
+	}
+
+	metrics := fmt.Sprintf("CPU %.0f%%  Mem %d/%dMB", m.cpuPercent, m.memUsed, m.memTotal)
+	help := statusBarStyle.Width(m.width - 1).Render(metrics + "  |  ↑/↓: select   enter: confirm   esc: cancel")
+
+	// Calculate padding
+	bodyLines := strings.Count(body, "\n") + 1
+	totalLines := bannerLines + 2 + bodyLines + 1
+	padding := ""
+	if totalLines < m.height {
+		padding = strings.Repeat("\n"+leftIndent, m.height-totalLines)
+	}
+
+	return indentLines(banner) + "\n\n" + indentLines(body) + padding + "\n" + indentLines(help)
+}
+
+// renderNameInputView shows the name input screen
+func (m model) renderNameInputView() string {
+	banner, bannerLines := buildBannerWithVersion()
+
+	selectedTemplate := ""
+	if m.selectedTpl < len(m.templates) {
+		selectedTemplate = m.templates[m.selectedTpl].Name
+	}
+
+	title := headerStyle.Render(fmt.Sprintf("Creating pup from template: %s", selectedTemplate))
+
+	// Determine target directory
+	var devDir string
+	if dataDir := os.Getenv("DATA_DIR"); dataDir != "" {
+		devDir = filepath.Join(dataDir, "dev")
+	} else {
+		homeDir, _ := os.UserHomeDir()
+		devDir = filepath.Join(homeDir, "dev")
+	}
+
+	prompt := "Enter pup name: " + m.pupName
+	if m.cloning {
+		prompt = "Cloning template... Please wait."
+	}
+
+	location := lipgloss.NewStyle().Foreground(lipgloss.Color("241")).Render(fmt.Sprintf("Location: %s/<name>", devDir))
+
+	var errLine string
+	if m.nameInputErr != "" {
+		errLine = "\n" + lipgloss.NewStyle().Foreground(lipgloss.Color("9")).Render("Error: "+m.nameInputErr)
+	}
+
+	body := title + "\n\n" + location + "\n\n" + prompt + errLine
+
+	metrics := fmt.Sprintf("CPU %.0f%%  Mem %d/%dMB", m.cpuPercent, m.memUsed, m.memTotal)
+	helpText := "type name   enter: create   esc: cancel"
+	if m.cloning {
+		helpText = "cloning..."
+	}
+	help := statusBarStyle.Width(m.width - 1).Render(metrics + "  |  " + helpText)
+
+	// Calculate padding
+	bodyLines := strings.Count(body, "\n") + 1
+	totalLines := bannerLines + 2 + bodyLines + 1
+	padding := ""
+	if totalLines < m.height {
+		padding = strings.Repeat("\n"+leftIndent, m.height-totalLines)
+	}
+
+	return indentLines(banner) + "\n\n" + indentLines(body) + padding + "\n" + indentLines(help)
+}
+
+// renderPasswordInputView shows the password input screen
+func (m model) renderPasswordInputView() string {
+	banner, bannerLines := buildBannerWithVersion()
+
+	var title, subtitle string
+	if m.templates == nil && m.pupName == "" {
+		// Initial authentication for create pup flow
+		title = headerStyle.Render("Create New Pup")
+		subtitle = "Enter your Dogebox password to continue"
+	} else {
+		// This is the fallback case (shouldn't happen in new flow)
+		title = headerStyle.Render("Authentication Required")
+		subtitle = "Enter your Dogebox password to install the pup"
+	}
+
+	// Show asterisks for password
+	var maskedPassword string
+	for range m.password {
+		maskedPassword += "*"
+	}
+
+	prompt := "Password: " + maskedPassword
+	if m.authenticating {
+		prompt = "Authenticating... Please wait."
+	}
+
+	var errLine string
+	if m.passwordErr != "" {
+		errLine = "\n" + lipgloss.NewStyle().Foreground(lipgloss.Color("9")).Render("Error: "+m.passwordErr)
+	}
+
+	body := title + "\n\n" + subtitle + "\n\n" + prompt + errLine
+
+	metrics := fmt.Sprintf("CPU %.0f%%  Mem %d/%dMB", m.cpuPercent, m.memUsed, m.memTotal)
+	helpText := "type password   enter: authenticate   esc: cancel"
+	if m.authenticating {
+		helpText = "authenticating..."
+	}
+	help := statusBarStyle.Width(m.width - 1).Render(metrics + "  |  " + helpText)
+
+	// Calculate padding
+	bodyLines := strings.Count(body, "\n") + 1
+	totalLines := bannerLines + 2 + bodyLines + 1
+	padding := ""
+	if totalLines < m.height {
+		padding = strings.Repeat("\n"+leftIndent, m.height-totalLines)
+	}
+
+	return indentLines(banner) + "\n\n" + indentLines(body) + padding + "\n" + indentLines(help)
+}
+
+// renderTaskProgressView shows the task progress screen
+func (m model) renderTaskProgressView() string {
+	banner, bannerLines := buildBannerWithVersion()
+
+	title := headerStyle.Render("Creating Pup: " + m.pupName)
+
+	// Spinner animation frames
+	spinnerFrames := []string{"⠋", "⠙", "⠹", "⠸", "⠼", "⠴", "⠦", "⠧", "⠇", "⠏"}
+	spinnerFrame := spinnerFrames[int(time.Now().UnixMilli()/100)%len(spinnerFrames)]
+
+	var tasks []string
+	for _, task := range m.tasks {
+		var icon string
+		var color lipgloss.Color
+
+		switch task.Status {
+		case taskPending:
+			icon = "[ ]"
+			color = "7" // default
+		case taskRunning:
+			icon = "[" + spinnerFrame + "]"
+			color = "11" // yellow
+		case taskSuccess:
+			icon = "[✓]"
+			color = "10" // green
+		case taskFailed:
+			icon = "[✗]"
+			color = "9" // red
+		}
+
+		line := lipgloss.NewStyle().Foreground(color).Render(icon) + " " + task.Name
+		tasks = append(tasks, line)
+
+		// Add error message if task failed
+		if task.Status == taskFailed && task.Error != "" {
+			errLine := "    " + lipgloss.NewStyle().Foreground(lipgloss.Color("9")).Render("Error: "+task.Error)
+			tasks = append(tasks, errLine)
+		}
+	}
+
+	taskSection := title + "\n\n" + strings.Join(tasks, "\n")
+
+	// Calculate heights for split view
+	totalHeight := m.height - bannerLines - 3 // -3 for help bar and margins
+	taskHeight := len(tasks) + 3              // +3 for title and spacing
+
+	// Split remaining space between tasks and logs
+	logsHeight := totalHeight - taskHeight
+	if logsHeight < 5 {
+		logsHeight = 5
+	}
+	if logsHeight > totalHeight/2 {
+		logsHeight = totalHeight / 2
+	}
+
+	// Create logs section
+	logsTitle := "Installation Logs:"
+	var logsContent []string
+
+	// Show last N lines that fit in the log area
+	logLines := logsHeight - 2 // -2 for title and separator
+	if logLines > 0 && len(m.taskLogs) > 0 {
+		start := 0
+		if len(m.taskLogs) > logLines {
+			start = len(m.taskLogs) - logLines
+		}
+		for i := start; i < len(m.taskLogs); i++ {
+			logsContent = append(logsContent, m.taskLogs[i])
+		}
+	}
+
+	logSection := logsTitle + "\n" + strings.Repeat("─", m.width-2) + "\n" + strings.Join(logsContent, "\n")
+
+	metrics := fmt.Sprintf("CPU %.0f%%  Mem %d/%dMB", m.cpuPercent, m.memUsed, m.memTotal)
+	helpText := "please wait..."
+	if m.allTasksDone {
+		helpText = "esc: back to main"
+	}
+	help := statusBarStyle.Width(m.width - 1).Render(metrics + "  |  " + helpText)
+
+	// Calculate padding between sections
+	usedLines := bannerLines + 2 + len(tasks) + 3 + 2 + len(logsContent) + 3 + 1
+	padding := ""
+	if usedLines < m.height {
+		paddingLines := m.height - usedLines
+		padding = strings.Repeat("\n"+leftIndent, paddingLines)
+	}
+
+	return indentLines(banner) + "\n\n" + indentLines(taskSection) + "\n\n" + indentLines(logSection) + padding + "\n" + indentLines(help)
+}
+
+// renderConnectionErrorView shows the connection error screen
+func (m model) renderConnectionErrorView() string {
+	banner, bannerLines := buildBannerWithVersion()
+
+	title := headerStyle.Render("Connection Error")
+
+	socketPath := m.socketPath
+	if socketPath == "" {
+		socketPath = "<unknown>"
+	}
+
+	errorMsg := fmt.Sprintf("Cannot connect to Dogeboxd unix socket at %s", socketPath)
+
+	var details string
+	if m.connectionErr != "" {
+		details = "\n\n" + lipgloss.NewStyle().Foreground(lipgloss.Color("241")).Render("Error: "+m.connectionErr)
+	}
+
+	body := title + "\n\n" + errorMsg + details
+
+	help := statusBarStyle.Width(m.width - 1).Render("r: retry   q: quit   ctrl+c: quit")
+
+	// Calculate padding
+	bodyLines := strings.Count(body, "\n") + 1
+	totalLines := bannerLines + 2 + bodyLines + 1
+	padding := ""
+	if totalLines < m.height {
+		padding = strings.Repeat("\n"+leftIndent, m.height-totalLines)
+	}
+
+	return indentLines(banner) + "\n\n" + indentLines(body) + padding + "\n" + indentLines(help)
 }
