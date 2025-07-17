@@ -62,6 +62,13 @@ type model struct {
 	wsConnected  bool
 	targetPupID  string // Track pup by name initially, then by ID once available
 	installJobID string // Track the job ID for the installation
+
+	// Source management
+	sources        []sourceInfo
+	selectedSource int
+	sourceInput    string
+	creatingSource bool
+	deletingSource bool
 }
 
 // Init performs initial setup and returns a command to check dogeboxd connection
@@ -96,7 +103,8 @@ func (m model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		// First, check if we're in any input mode
 		isInputMode := m.searching ||
 			(m.view == viewNameInput && !m.cloning) ||
-			(m.view == viewPasswordInput && !m.authenticating)
+			(m.view == viewPasswordInput && !m.authenticating) ||
+			m.view == viewSourceCreate
 
 		// Handle special keys that work in all modes
 		switch msg.String() {
@@ -117,6 +125,12 @@ func (m model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 					m.authToken = ""
 				}
 				m.view = viewLanding
+			} else if m.view == viewSourceList {
+				m.view = viewLanding
+			} else if m.view == viewSourceCreate && !m.creatingSource {
+				m.view = viewSourceList
+			} else if m.view == viewSourceDetail && !m.deletingSource {
+				m.view = viewSourceList
 			} else if m.view == viewTaskProgress && m.allTasksDone {
 				// Only allow escape when all tasks are done
 				m.view = viewLanding
@@ -195,6 +209,10 @@ func (m model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 					// Start authentication
 					m.authenticating = true
 					return m, authenticateCmd(m.password)
+				} else if m.view == viewSourceCreate && m.sourceInput != "" && !m.creatingSource {
+					// Create source with the URL
+					m.creatingSource = true
+					return m, createSourceCmd(m.sourceInput)
 				}
 			default:
 				// Handle text input for each mode
@@ -229,6 +247,15 @@ func (m model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 						m.password += msg.String()
 						m.passwordErr = ""
 					}
+				} else if m.view == viewSourceCreate && !m.creatingSource {
+					switch msg.Type {
+					case tea.KeyBackspace, tea.KeyDelete:
+						if len(m.sourceInput) > 0 {
+							m.sourceInput = m.sourceInput[:len(m.sourceInput)-1]
+						}
+					case tea.KeyRunes:
+						m.sourceInput += msg.String()
+					}
 				}
 			}
 			// Don't process action keys when in input mode
@@ -244,6 +271,8 @@ func (m model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 				m.selDetail = (m.selDetail - 1 + detailActionsCount) % detailActionsCount
 			} else if m.view == viewTemplateSelect && len(m.templates) > 0 {
 				m.selectedTpl = (m.selectedTpl - 1 + len(m.templates)) % len(m.templates)
+			} else if m.view == viewSourceList && len(m.sources) > 0 {
+				m.selectedSource = (m.selectedSource - 1 + len(m.sources)) % len(m.sources)
 			}
 		case "down", "j":
 			if m.view == viewLanding && len(m.pups) > 0 {
@@ -252,12 +281,16 @@ func (m model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 				m.selDetail = (m.selDetail + 1) % detailActionsCount
 			} else if m.view == viewTemplateSelect && len(m.templates) > 0 {
 				m.selectedTpl = (m.selectedTpl + 1) % len(m.templates)
+			} else if m.view == viewSourceList && len(m.sources) > 0 {
+				m.selectedSource = (m.selectedSource + 1) % len(m.sources)
 			}
 		case "enter", "l":
 			if m.view == viewLanding && len(m.pups) > 0 {
 				m.view = viewPupDetail
 				m.detail = m.pups[m.selected]
 				m.selDetail = 0
+			} else if m.view == viewSourceList && len(m.sources) > 0 {
+				m.view = viewSourceDetail
 			} else if m.view == viewPupDetail {
 				switch m.selDetail {
 				case 0:
@@ -290,6 +323,10 @@ func (m model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 				m.authToken = ""
 				// Go to password input first
 				m.view = viewPasswordInput
+			} else if m.view == viewSourceList {
+				// Switch to source creation mode
+				m.view = viewSourceCreate
+				m.sourceInput = ""
 			}
 		case "r":
 			if m.view == viewLanding {
@@ -298,6 +335,14 @@ func (m model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 				cmd := startRebuildCmd()
 				return m, cmd
 			}
+		case "u":
+			if m.view == viewLanding {
+				// Go to source list view
+				m.view = viewSourceList
+				m.sources = nil
+				m.selectedSource = 0
+				return m, fetchSourcesCmd()
+			}
 		case "d":
 			if m.view == viewLanding && len(m.pups) > 0 && m.pups[m.selected].DevAvailable {
 				mode := "enable"
@@ -305,6 +350,11 @@ func (m model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 					mode = "disable"
 				}
 				return m, tea.Batch(pupActionCmd(m.pups[m.selected].ID, "dev-mode-"+mode), fetchPupsCmd())
+			} else if m.view == viewSourceDetail && m.selectedSource < len(m.sources) && !m.deletingSource {
+				// Delete the selected source
+				source := m.sources[m.selectedSource]
+				m.deletingSource = true
+				return m, deleteSourceCmd(source.ID)
 			}
 		case "/":
 			if m.view == viewLanding {
@@ -314,6 +364,8 @@ func (m model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		case "h", "left":
 			if m.view == viewPupDetail {
 				m.view = viewLanding
+			} else if m.view == viewSourceDetail {
+				m.view = viewSourceList
 			}
 		case "q":
 			return m, tea.Quit
@@ -355,6 +407,33 @@ func (m model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		if msg.err == nil {
 			m.pups = msg.list
 		}
+		return m, nil
+	case sourcesMsg:
+		if msg.err == nil {
+			m.sources = msg.sources
+			if m.selectedSource >= len(m.sources) {
+				m.selectedSource = 0
+			}
+		}
+		return m, nil
+	case sourceCreatedMsg:
+		m.creatingSource = false
+		if msg.err == nil {
+			// Source created successfully, go back to source list
+			m.view = viewSourceList
+			m.sourceInput = ""
+			return m, fetchSourcesCmd()
+		}
+		// TODO: handle error display
+		return m, nil
+	case sourceDeletedMsg:
+		m.deletingSource = false
+		if msg.err == nil {
+			// Source deleted successfully, go back to source list
+			m.view = viewSourceList
+			return m, fetchSourcesCmd()
+		}
+		// TODO: handle error display
 		return m, nil
 	case logLineMsg:
 		m.logs = append(m.logs, string(msg))

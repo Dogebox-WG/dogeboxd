@@ -20,6 +20,7 @@ var (
 	statusBarStyle   = lipgloss.NewStyle().Foreground(lipgloss.Color("0")).Background(lipgloss.Color("240")).Padding(0, 1)
 	pupBoxStyle      = lipgloss.NewStyle().Border(lipgloss.RoundedBorder()).Padding(0, 1).Margin(0, 0, 1, 0)
 	nameStyle        = lipgloss.NewStyle().Bold(true)
+	dimStyle         = lipgloss.NewStyle().Foreground(lipgloss.Color("240"))
 )
 
 // ASCII banner
@@ -123,6 +124,12 @@ func (m model) View() string {
 		return m.renderPasswordInputView()
 	case viewTaskProgress:
 		return m.renderTaskProgressView()
+	case viewSourceList:
+		return m.renderSourceListView()
+	case viewSourceCreate:
+		return m.renderSourceCreateView()
+	case viewSourceDetail:
+		return m.renderSourceDetailView()
 	default:
 		return m.renderLandingView()
 	}
@@ -131,7 +138,7 @@ func (m model) View() string {
 // renderLandingView composes the main landing page.
 func (m model) renderLandingView() string {
 	headerLine := headerStyle.Render("Available Actions:")
-	actions := []string{"c: create pup", "s: search pups", "r: rebuild system"}
+	actions := []string{"c: create pup", "s: search pups", "r: rebuild system", "u: sources"}
 	actionsLine := strings.Join(actions, "\n")
 	if m.searching {
 		actionsLine += "\nSearch: " + m.searchQuery
@@ -140,7 +147,7 @@ func (m model) renderLandingView() string {
 	body := m.renderPups()
 
 	metrics := fmt.Sprintf("CPU %.0f%%  Mem %d/%dMB", m.cpuPercent, m.memUsed, m.memTotal)
-	helpText := "q: quit   c: create pup   s: search   r: rebuild   ↑/↓: select   enter: details"
+	helpText := "q: quit   c: create   s: search   r: rebuild   u: sources   ↑/↓: select   enter: details"
 	if m.searching {
 		helpText = "esc: cancel   type to search"
 	}
@@ -683,4 +690,133 @@ func (m model) renderConnectionErrorView() string {
 	}
 
 	return indentLines(banner) + "\n\n" + indentLines(body) + padding + "\n" + indentLines(help)
+}
+
+// renderSourceListView renders the source list screen
+func (m model) renderSourceListView() string {
+	banner, bannerLines := buildBannerWithVersion()
+	title := headerStyle.Render("Source List")
+
+	// Add Available Actions section
+	actionsHeader := headerStyle.Render("Available Actions:")
+	actions := []string{"c: create source", "enter: view details", "esc: back to main"}
+	actionsLine := strings.Join(actions, "\n")
+
+	// Build source list
+	var content strings.Builder
+	if len(m.sources) == 0 {
+		content.WriteString(leftIndent + lipgloss.NewStyle().Foreground(lipgloss.Color("241")).Render(" No sources configured") + "\n")
+	} else {
+		for i, source := range m.sources {
+			cursor := "  "
+			var style lipgloss.Style
+			if i == m.selectedSource {
+				cursor = "→ "
+				style = lipgloss.NewStyle().Foreground(lipgloss.Color("10"))
+			} else {
+				style = lipgloss.NewStyle()
+			}
+
+			line := fmt.Sprintf("%s%s %s", leftIndent, cursor, source.Name)
+			if source.Type != "" {
+				line += fmt.Sprintf(" (%s)", source.Type)
+			}
+			content.WriteString(style.Render(line) + "\n")
+
+			// Show description and location for selected source
+			if i == m.selectedSource && source.Description != "" {
+				content.WriteString(leftIndent + "    " + lipgloss.NewStyle().Foreground(lipgloss.Color("241")).Render(source.Description) + "\n")
+			}
+			if i == m.selectedSource {
+				content.WriteString(leftIndent + "    " + lipgloss.NewStyle().Foreground(lipgloss.Color("241")).Render(source.Location) + "\n")
+			}
+		}
+	}
+
+	help := statusBarStyle.Width(m.width - 1).Render("c: create   enter: details   esc: back   q: quit")
+
+	// Calculate padding
+	body := leftIndent + title + "\n\n" + leftIndent + actionsHeader + "\n" + indentLines(actionsLine) + "\n\n" + content.String()
+	bodyLines := strings.Count(body, "\n") + 1
+	totalLines := bannerLines + bodyLines + 1
+	padding := ""
+	if totalLines < m.height {
+		padding = strings.Repeat("\n"+leftIndent, m.height-totalLines)
+	}
+
+	return leftIndent + banner + "\n\n" + body + padding + help
+}
+
+// renderSourceCreateView renders the source creation screen
+func (m model) renderSourceCreateView() string {
+	banner, bannerLines := buildBannerWithVersion()
+	title := headerStyle.Render("Create New Source")
+
+	var content string
+	var helpText string
+
+	if m.creatingSource {
+		content = leftIndent + "Creating source... Please wait."
+		helpText = "creating..."
+	} else {
+		content = leftIndent + "Enter source URL:\n\n"
+		content += leftIndent + "> " + m.sourceInput
+		helpText = "enter: create   esc: cancel"
+	}
+
+	help := statusBarStyle.Width(m.width - 1).Render(helpText)
+
+	// Calculate padding
+	body := leftIndent + title + "\n\n" + content
+	bodyLines := strings.Count(body, "\n") + 1
+	totalLines := bannerLines + bodyLines + 1
+	padding := ""
+	if totalLines < m.height {
+		padding = strings.Repeat("\n"+leftIndent, m.height-totalLines)
+	}
+
+	return leftIndent + banner + "\n\n" + body + padding + help
+}
+
+// renderSourceDetailView renders the source detail screen
+func (m model) renderSourceDetailView() string {
+	banner, bannerLines := buildBannerWithVersion()
+
+	if m.selectedSource >= len(m.sources) {
+		return leftIndent + banner + "\n\n" + leftIndent + "Invalid source"
+	}
+
+	source := m.sources[m.selectedSource]
+	title := headerStyle.Render("Source Details")
+
+	var content strings.Builder
+
+	if m.deletingSource {
+		content.WriteString(leftIndent + "Deleting source... Please wait.\n")
+	} else {
+		content.WriteString(leftIndent + "Name: " + source.Name + "\n")
+		if source.Description != "" {
+			content.WriteString(leftIndent + "Description: " + source.Description + "\n")
+		}
+		content.WriteString(leftIndent + "Type: " + source.Type + "\n")
+		content.WriteString(leftIndent + "Location: " + source.Location + "\n")
+		content.WriteString(leftIndent + "ID: " + dimStyle.Render(source.ID) + "\n")
+	}
+
+	helpText := "d: delete   esc: back   q: quit"
+	if m.deletingSource {
+		helpText = "deleting..."
+	}
+	help := statusBarStyle.Width(m.width - 1).Render(helpText)
+
+	// Calculate padding
+	body := leftIndent + title + "\n\n" + content.String()
+	bodyLines := strings.Count(body, "\n") + 1
+	totalLines := bannerLines + bodyLines + 1
+	padding := ""
+	if totalLines < m.height {
+		padding = strings.Repeat("\n"+leftIndent, m.height-totalLines)
+	}
+
+	return leftIndent + banner + "\n\n" + body + padding + help
 }

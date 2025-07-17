@@ -272,3 +272,77 @@ func installPupCmd(sourceId, pupName, token string) tea.Cmd {
 		return pupInstalledMsg{jobID: jobID, err: nil}
 	}
 }
+
+// createSourceCmd creates a new source
+func createSourceCmd(location string) tea.Cmd {
+	return func() tea.Msg {
+		socketPath := os.Getenv("DBX_SOCKET")
+		if socketPath == "" {
+			socketPath = filepath.Join(os.Getenv("HOME"), "data", "dbx-socket")
+		}
+
+		tr := &http.Transport{
+			DialContext: func(ctx context.Context, _, _ string) (net.Conn, error) {
+				return net.Dial("unix", socketPath)
+			},
+		}
+		client := &http.Client{Transport: tr, Timeout: 5 * time.Second}
+
+		payload := map[string]interface{}{
+			"location": location,
+		}
+		body, _ := json.Marshal(payload)
+
+		req, err := http.NewRequest(http.MethodPut, "http://dogeboxd/source", bytes.NewReader(body))
+		if err != nil {
+			return sourceCreatedMsg{err: err}
+		}
+		req.Header.Set("Content-Type", "application/json")
+
+		resp, err := client.Do(req)
+		if err != nil {
+			return sourceCreatedMsg{err: err}
+		}
+		defer resp.Body.Close()
+
+		if resp.StatusCode != http.StatusOK {
+			return sourceCreatedMsg{err: fmt.Errorf("failed to create source: %d", resp.StatusCode)}
+		}
+
+		return sourceCreatedMsg{err: nil}
+	}
+}
+
+// deleteSourceCmd deletes a source
+func deleteSourceCmd(sourceID string) tea.Cmd {
+	return func() tea.Msg {
+		socketPath := os.Getenv("DBX_SOCKET")
+		if socketPath == "" {
+			socketPath = filepath.Join(os.Getenv("HOME"), "data", "dbx-socket")
+		}
+
+		tr := &http.Transport{
+			DialContext: func(ctx context.Context, _, _ string) (net.Conn, error) {
+				return net.Dial("unix", socketPath)
+			},
+		}
+		client := &http.Client{Transport: tr, Timeout: 5 * time.Second}
+
+		req, err := http.NewRequest(http.MethodDelete, fmt.Sprintf("http://dogeboxd/source/%s", sourceID), nil)
+		if err != nil {
+			return sourceDeletedMsg{err: err}
+		}
+
+		resp, err := client.Do(req)
+		if err != nil {
+			return sourceDeletedMsg{err: err}
+		}
+		defer resp.Body.Close()
+
+		if resp.StatusCode != http.StatusOK {
+			return sourceDeletedMsg{err: fmt.Errorf("failed to delete source: %d", resp.StatusCode)}
+		}
+
+		return sourceDeletedMsg{err: nil}
+	}
+}

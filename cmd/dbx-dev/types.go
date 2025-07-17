@@ -39,6 +39,9 @@ const (
 	viewPasswordInput
 	viewConnectionError
 	viewTaskProgress
+	viewSourceList
+	viewSourceCreate
+	viewSourceDetail
 )
 
 // rebuildFinishedMsg signals when rebuild completes
@@ -137,4 +140,29 @@ type actionCompleteMsg struct {
 type bootstrapCheckMsg struct {
 	socketPath string
 	err        error
+}
+
+// sourceInfo holds information about a single source
+type sourceInfo struct {
+	ID          string
+	Name        string
+	Description string
+	Location    string
+	Type        string
+}
+
+// sourcesMsg is returned by fetchSourcesCmd
+type sourcesMsg struct {
+	sources []sourceInfo
+	err     error
+}
+
+// sourceCreatedMsg is returned when a source is created
+type sourceCreatedMsg struct {
+	err error
+}
+
+// sourceDeletedMsg is returned when a source is deleted
+type sourceDeletedMsg struct {
+	err error
 }
