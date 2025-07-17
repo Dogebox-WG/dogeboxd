@@ -64,6 +64,7 @@ type InstallPupRequest struct {
 	SourceId                string `json:"sourceId"`
 	SessionToken            string
 	AutoInstallDependencies bool `json:"autoInstallDependencies"`
+	EnableDevMode           bool `json:"installWithDevModeEnabled"`
 }
 
 // calculateDependencies creates a temporary pup state and calculates its dependencies
@@ -122,10 +123,12 @@ func (t api) installPup(w http.ResponseWriter, r *http.Request) {
 
 		// Add the batch installation action
 		id := t.dbx.AddAction(dogeboxd.InstallPup{
-			PupName:      req.PupName,
-			PupVersion:   req.PupVersion,
-			SourceId:     req.SourceId,
-			Options:      dogeboxd.AdoptPupOptions{},
+			PupName:    req.PupName,
+			PupVersion: req.PupVersion,
+			SourceId:   req.SourceId,
+			Options: dogeboxd.AdoptPupOptions{
+				DevMode: req.EnableDevMode,
+			},
 			SessionToken: req.SessionToken,
 		})
 
@@ -152,10 +155,12 @@ func (t api) installPup(w http.ResponseWriter, r *http.Request) {
 
 	// If auto-install is disabled, just install the main pup
 	id := t.dbx.AddAction(dogeboxd.InstallPup{
-		PupName:      req.PupName,
-		PupVersion:   req.PupVersion,
-		SourceId:     req.SourceId,
-		Options:      dogeboxd.AdoptPupOptions{},
+		PupName:    req.PupName,
+		PupVersion: req.PupVersion,
+		SourceId:   req.SourceId,
+		Options: dogeboxd.AdoptPupOptions{
+			DevMode: req.EnableDevMode,
+		},
 		SessionToken: req.SessionToken,
 	})
 	sendResponse(w, map[string]string{"id": id})
