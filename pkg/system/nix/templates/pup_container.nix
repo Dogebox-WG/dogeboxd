@@ -67,7 +67,7 @@ in
         "PUP" = {
           mountPoint = "/pup";
           hostPath   = "{{ .PUP_PATH }}";
-          isReadOnly = true;
+          isReadOnly = !{{.IS_DEV_MODE}};
         };
       }
       (lib.mkIf pupEnclave {
@@ -165,12 +165,21 @@ in
 
       # Create a systemd service for any unmanaged binary the pup wants to start.
       {{range .SERVICES}}
+
+      {{$IS_SERVICE_DEV_MODE := and $.IS_DEV_MODE (has .NAME $.DEV_MODE_SERVICES)}}
+      {{$SERVICE_NAME := .NAME}}
+
+      {{if $IS_SERVICE_DEV_MODE}}
+        {{$SERVICE_NAME = printf "%s-dev" .NAME}}
+      {{end}}
+
+      # We keep this as the base service name, even if we're in development mode.
       systemd.services.{{.NAME}} = {
         after = [ "network.target" ];
         wantedBy = [ "multi-user.target" ];
 
         serviceConfig = {
-          ExecStart = "${pkgs.pup.{{.NAME}}}{{.EXEC}}";
+          ExecStart = "${pkgs.pup.{{$SERVICE_NAME}}}{{.EXEC}}";
           Restart = "always";
           User = "pup";
           Group = "pup";

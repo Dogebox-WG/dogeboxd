@@ -36,7 +36,7 @@ func Server(sm dogeboxd.StateManager, store *dogeboxd.StoreManager, config dogeb
 func (t server) Start() {
 	systemMonitor := system.NewSystemMonitor(t.config)
 
-	pups, err := pup.NewPupManager(t.config.DataDir, t.config.TmpDir, systemMonitor)
+	pups, err := pup.NewPupManager(t.config, systemMonitor)
 	if err != nil {
 		log.Fatalf("Failed to load Pup state: %+v", err)
 	}

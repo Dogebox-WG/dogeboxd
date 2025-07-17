@@ -27,8 +27,8 @@ const (
  */
 
 type PupManager struct {
+	config            dogeboxd.ServerConfig
 	pupDir            string // Where pup state is stored
-	tmpDir            string // Where temporary files are stored
 	lastIP            net.IP // last issued IP address
 	lastPort          int    // last issued Port
 	mu                *sync.Mutex
@@ -40,8 +40,8 @@ type PupManager struct {
 	sourceManager     dogeboxd.SourceManager
 }
 
-func NewPupManager(dataDir string, tmpDir string, monitor dogeboxd.SystemMonitor) (*PupManager, error) {
-	pupDir := filepath.Join(dataDir, "pups")
+func NewPupManager(config dogeboxd.ServerConfig, monitor dogeboxd.SystemMonitor) (*PupManager, error) {
+	pupDir := filepath.Join(config.DataDir, "pups")
 
 	if _, err := os.Stat(pupDir); os.IsNotExist(err) {
 		log.Printf("Pup directory %q not found, creating it", pupDir)
@@ -53,8 +53,8 @@ func NewPupManager(dataDir string, tmpDir string, monitor dogeboxd.SystemMonitor
 
 	mu := sync.Mutex{}
 	p := PupManager{
+		config:            config,
 		pupDir:            pupDir,
-		tmpDir:            tmpDir,
 		state:             map[string]*dogeboxd.PupState{},
 		stats:             map[string]*dogeboxd.PupStats{},
 		updateSubscribers: map[chan dogeboxd.Pupdate]bool{},

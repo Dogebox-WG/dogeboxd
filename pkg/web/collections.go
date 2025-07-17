@@ -63,6 +63,7 @@ func processPupCollections(sm dogeboxd.StateManager, dbx dogeboxd.Dogeboxd, sess
 			PupName:      pup.Name,
 			PupVersion:   pup.Version,
 			SourceId:     pup.SourceId,
+			Options:      dogeboxd.AdoptPupOptions{},
 			SessionToken: sessionToken,
 		}
 	}

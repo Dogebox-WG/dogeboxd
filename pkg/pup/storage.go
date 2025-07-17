@@ -53,7 +53,7 @@ func (t PupManager) loadPups() error {
 /* saves a pup to storage */
 func (t PupManager) savePup(p *dogeboxd.PupState) error {
 	path := filepath.Join(t.pupDir, fmt.Sprintf("pup_%s.gob", p.ID))
-	tempFile, err := os.CreateTemp(t.tmpDir, fmt.Sprintf("temp_%s", p.ID))
+	tempFile, err := os.CreateTemp(t.config.TmpDir, fmt.Sprintf("temp_%s", p.ID))
 	if err != nil {
 		return fmt.Errorf("cannot create temporary file: %w", err)
 	}

@@ -54,17 +54,22 @@ var canPupStartCmd = &cobra.Command{
 			return
 		}
 
-		// Ideally we wouldn't have to init all these things.
-		systemMonitor := system.NewSystemMonitor(dogeboxd.ServerConfig{})
+		config := dogeboxd.ServerConfig{
+			DataDir: dataDir,
+			TmpDir:  "/tmp",
+		}
 
-		pupManager, err := pup.NewPupManager(dataDir, "/tmp", systemMonitor)
+		// Ideally we wouldn't have to init all these things.
+		systemMonitor := system.NewSystemMonitor(config)
+
+		pupManager, err := pup.NewPupManager(config, systemMonitor)
 		if err != nil {
 			log.Println("Failed to load PupManager: ", err)
 			utils.ExitBad(systemd)
 			return
 		}
 
-		sourceManager := source.NewSourceManager(dogeboxd.ServerConfig{}, sm, pupManager)
+		sourceManager := source.NewSourceManager(config, sm, pupManager)
 		pupManager.SetSourceManager(sourceManager)
 
 		canStart, err := pupManager.CanPupStart(pupId)

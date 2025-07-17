@@ -7,6 +7,7 @@ import (
 	"net"
 
 	dogeboxd "github.com/dogeorg/dogeboxd/pkg"
+	"github.com/dogeorg/dogeboxd/pkg/utils"
 )
 
 /* This method is used to add a new pup from a manifest
@@ -18,7 +19,7 @@ import (
 *
 * Returns PupID, error
  */
-func (t PupManager) AdoptPup(m dogeboxd.PupManifest, source dogeboxd.ManifestSource) (string, error) {
+func (t PupManager) AdoptPup(m dogeboxd.PupManifest, source dogeboxd.ManifestSource, options dogeboxd.AdoptPupOptions) (string, error) {
 	// Firstly (for now), check if we already have this manifest installed
 	for _, p := range t.state {
 		if m.Meta.Name == p.Manifest.Meta.Name && m.Meta.Version == p.Manifest.Meta.Version && p.Source.ID == source.Config().ID {
@@ -70,10 +71,26 @@ func (t PupManager) AdoptPup(m dogeboxd.PupManifest, source dogeboxd.ManifestSou
 		}
 	}
 
+	devModeServices := []string{}
+	sourceConfig := source.Config()
+
+	if sourceConfig.Type == "disk" {
+		devModeServices, err = utils.GetPupNixDevelopmentModeServices(t.config, sourceConfig.Location, PupID, m)
+		if err != nil {
+			return PupID, err
+		}
+	}
+
+	isDevModeAvailable := len(devModeServices) > 0
+
+	if options.DevMode && !isDevModeAvailable {
+		return PupID, errors.New("development mode is not available for this pup")
+	}
+
 	// Set up initial PupState and save it to disk
 	p := dogeboxd.PupState{
 		ID:           PupID,
-		Source:       source.Config(),
+		Source:       sourceConfig,
 		Manifest:     m,
 		Config:       map[string]string{},
 		Installation: dogeboxd.STATE_INSTALLING,
@@ -83,6 +100,9 @@ func (t PupManager) AdoptPup(m dogeboxd.PupManifest, source dogeboxd.ManifestSou
 		IP:           t.lastIP.String(),
 		Version:      m.Meta.Version,
 		WebUIs:       uis,
+
+		IsDevModeEnabled: options.DevMode,
+		DevModeServices:  devModeServices,
 	}
 
 	// Now save it to disk

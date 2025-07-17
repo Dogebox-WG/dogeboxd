@@ -125,6 +125,7 @@ func (t api) installPup(w http.ResponseWriter, r *http.Request) {
 			PupName:      req.PupName,
 			PupVersion:   req.PupVersion,
 			SourceId:     req.SourceId,
+			Options:      dogeboxd.AdoptPupOptions{},
 			SessionToken: req.SessionToken,
 		})
 
@@ -154,6 +155,7 @@ func (t api) installPup(w http.ResponseWriter, r *http.Request) {
 		PupName:      req.PupName,
 		PupVersion:   req.PupVersion,
 		SourceId:     req.SourceId,
+		Options:      dogeboxd.AdoptPupOptions{},
 		SessionToken: req.SessionToken,
 	})
 	sendResponse(w, map[string]string{"id": id})
@@ -277,6 +279,7 @@ func (t api) installPups(w http.ResponseWriter, r *http.Request) {
 				PupName:      pup.PupName,
 				PupVersion:   pup.PupVersion,
 				SourceId:     pup.SourceId,
+				Options:      dogeboxd.AdoptPupOptions{},
 				SessionToken: pup.SessionToken,
 			})
 
@@ -291,6 +294,7 @@ func (t api) installPups(w http.ResponseWriter, r *http.Request) {
 							PupName:      provider.PupName,
 							PupVersion:   provider.PupVersion,
 							SourceId:     pup.SourceId, // Use same source for dependencies
+							Options:      dogeboxd.AdoptPupOptions{},
 							SessionToken: pup.SessionToken,
 						})
 					}
