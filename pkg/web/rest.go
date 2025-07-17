@@ -111,6 +111,10 @@ func RESTAPI(
 		"POST /system/welcome-complete":       a.setWelcomeComplete,
 		"POST /system/install-pup-collection": a.installPupCollection,
 		"GET /missing-deps/{PupID}":           a.getMissingDeps,
+
+		"GET /system/binary-caches":        a.getBinaryCaches,
+		"PUT /system/binary-cache":         a.addBinaryCache,
+		"DELETE /system/binary-cache/{id}": a.removeBinaryCache,
 	}
 
 	// We always want to load recovery routes.
