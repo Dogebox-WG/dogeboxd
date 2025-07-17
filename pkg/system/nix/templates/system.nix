@@ -36,13 +36,15 @@
     };
   };
 
-  {{ range .BINARY_CACHE_SUBS }}
+  {{ if gt (len .BINARY_CACHE_SUBS) 0 }}
   nix.settings.substituters = [
-    "{{.}}"
-  ];{{ end }}
+    {{ range .BINARY_CACHE_SUBS }}"{{.}}"{{ end }}
+  ];
+  {{ end }}
 
-  {{ range .BINARY_CACHE_KEYS }}
+  {{ if gt (len .BINARY_CACHE_KEYS) 0 }}
   nix.settings.trusted-public-keys = [
-    "{{.}}"
-  ];{{ end }}
+    {{ range .BINARY_CACHE_KEYS }}"{{.}}"{{ end }}
+  ];
+  {{ end }}
 }
