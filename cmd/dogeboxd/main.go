@@ -27,6 +27,7 @@ func main() {
 	var forcedRecovery bool
 	var dangerousDevMode bool
 	var disableReflector bool
+	var unixSocket string
 
 	flag.IntVar(&port, "port", 8080, "REST API Port")
 	flag.StringVar(&bind, "addr", "127.0.0.1", "Address to bind to")
@@ -39,6 +40,7 @@ func main() {
 	flag.BoolVar(&forcedRecovery, "force-recovery", false, "Force recovery mode")
 	flag.BoolVar(&dangerousDevMode, "danger-dev", false, "Enable dangerous development mode")
 	flag.BoolVar(&disableReflector, "disable-reflector", false, "Disable submitting to reflector")
+	flag.StringVar(&unixSocket, "unix-socket", "", "Path to unix socket for local API access (default datadir/dbx-socket)")
 	flag.BoolVar(&verbose, "v", false, "Be verbose")
 	flag.BoolVar(&help, "h", false, "Get help")
 	flag.Parse()
@@ -75,6 +77,11 @@ func main() {
 		if err != nil {
 			log.Fatalf("Failed to create nixdir: %v", err)
 		}
+	}
+
+	// Compute default unix socket path if not provided
+	if unixSocket == "" {
+		unixSocket = fmt.Sprintf("%s/dbx-socket", dataDir)
 	}
 
 	store, err := dogeboxd.NewStoreManager(fmt.Sprintf("%s/dogebox.db", dataDir))
@@ -123,6 +130,7 @@ func main() {
 		InternalPort:     internalPort,
 		DevMode:          dangerousDevMode,
 		DisableReflector: disableReflector,
+		UnixSocketPath:   unixSocket,
 	}
 
 	srv := Server(stateManager, store, config)

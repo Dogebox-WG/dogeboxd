@@ -1,29 +1,25 @@
 package cmd
 
 import (
-	"fmt"
+	"log"
 
+	tea "github.com/charmbracelet/bubbletea"
+	dbxdev "github.com/dogeorg/dogeboxd/cmd/dbx-dev"
 	"github.com/spf13/cobra"
 )
 
 var devCmd = &cobra.Command{
 	Use:   "dev",
-	Short: "Development commands",
+	Short: "Start the developer TUI",
 	Run: func(cmd *cobra.Command, args []string) {
-		fmt.Println("dev command called")
+		p := tea.NewProgram(dbxdev.NewModel(), dbxdev.ProgramOptions()...)
+		dbxdev.SetProgram(p)
+		if _, err := p.Run(); err != nil {
+			log.Fatalf("failed to run TUI: %v", err)
+		}
 	},
 }
 
 func init() {
 	rootCmd.AddCommand(devCmd)
-
-	// Here you will define your flags and configuration settings.
-
-	// Cobra supports Persistent Flags which will work for this command
-	// and all subcommands, e.g.:
-	// pupCmd.PersistentFlags().String("foo", "", "A help for foo")
-
-	// Cobra supports local flags which will only run when this command
-	// is called directly, e.g.:
-	// pupCmd.Flags().BoolP("toggle", "t", false, "Help message for toggle")
 }

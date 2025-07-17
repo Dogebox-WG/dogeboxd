@@ -47,3 +47,8 @@ delete-loop-device:
 
 delete-loop-device-2:
 	sudo losetup -d /dev/loop1 && sudo rm /loop1.img
+
+.PHONY: dbxdev
+
+dbxdev:
+	DBX_SOCKET=~/data/dbx-socket DBX_CONTAINER_LOG_DIR=~/data/containerlogs go run ./cmd/dbx dev

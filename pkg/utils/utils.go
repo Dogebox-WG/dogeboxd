@@ -5,7 +5,6 @@ import (
 	"encoding/json"
 	"fmt"
 	"io"
-	"log"
 	"os"
 	"os/exec"
 	"path/filepath"
@@ -96,9 +95,6 @@ func CopyFiles(source string, destination string) error {
 
 func GetPupNixAttributes(config dogeboxd.ServerConfig, diskSourcePath string, pupID string, pupManifestBuild dogeboxd.PupManifestBuild) ([]string, error) {
 	nixFile := filepath.Join(diskSourcePath, pupManifestBuild.NixFile)
-
-	log.Println("sourceDirectory", diskSourcePath)
-	log.Println("nixFile", nixFile)
 
 	// quick sanity check
 	if _, err := os.Stat(nixFile); err != nil {
