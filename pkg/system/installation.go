@@ -9,6 +9,7 @@ import (
 	"os"
 	"os/exec"
 	"path/filepath"
+	"regexp"
 	"slices"
 	"strings"
 
@@ -328,11 +329,13 @@ func InitStorageDevice(dbxState dogeboxd.DogeboxState) (string, error) {
 
 	lines := strings.Split(strings.TrimSpace(output), "\n")
 	partitionName := ""
-	if len(lines) > 0 {
-		lastLine := lines[len(lines)-1]
-		parts := strings.Split(lastLine, " ")
-		if len(parts) > 0 {
-			partitionName = parts[len(parts)-1]
+	re := regexp.MustCompile(`prepared partition: (.?)`)
+	for i := len(lines) - 1; i >= 0; i-- {
+		line := lines[i]
+		submatch := re.FindSubmatch([]byte(line))
+		if len(submatch) == 2 {
+			partitionName = string(submatch[1])
+			break
 		}
 	}
 
