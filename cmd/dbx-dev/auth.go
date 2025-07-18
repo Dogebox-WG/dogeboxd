@@ -190,17 +190,7 @@ func installPupCmd(sourceId, pupName, token string) tea.Cmd {
 			return pupInstalledMsg{err: err}
 		}
 
-		socketPath := os.Getenv("DBX_SOCKET")
-		if socketPath == "" {
-			socketPath = filepath.Join(os.Getenv("HOME"), "data", "dbx-socket")
-		}
-
-		tr := &http.Transport{
-			DialContext: func(ctx context.Context, _, _ string) (net.Conn, error) {
-				return net.Dial("unix", socketPath)
-			},
-		}
-		client := &http.Client{Transport: tr, Timeout: 5 * time.Second}
+		client := getSocketClient()
 
 		payload := map[string]interface{}{
 			"pupName":                 pupName,

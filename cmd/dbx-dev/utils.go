@@ -5,7 +5,6 @@ import (
 	"net"
 	"net/http"
 	"os"
-	"path/filepath"
 	"time"
 )
 
@@ -21,8 +20,8 @@ func getSocketPath() string {
 }
 
 func getDevDir() (string, error) {
-	if dataDir := os.Getenv("DEV_DIR"); dataDir != "" {
-		return filepath.Join(dataDir, "dev"), nil
+	if devDir := os.Getenv("DEV_DIR"); devDir != "" {
+		return devDir, nil
 	}
 
 	return "/opt/dev", nil
