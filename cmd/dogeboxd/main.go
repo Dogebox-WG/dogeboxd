@@ -40,7 +40,7 @@ func main() {
 	flag.BoolVar(&forcedRecovery, "force-recovery", false, "Force recovery mode")
 	flag.BoolVar(&dangerousDevMode, "danger-dev", false, "Enable dangerous development mode")
 	flag.BoolVar(&disableReflector, "disable-reflector", false, "Disable submitting to reflector")
-	flag.StringVar(&unixSocket, "unix-socket", "", "Path to unix socket for local API access (default datadir/dbx-socket)")
+	flag.StringVar(&unixSocket, "unix-socket", "/tmp/dbx-socket", "Path to unix socket for local API access (default /tmp/dbx-socket)")
 	flag.BoolVar(&verbose, "v", false, "Be verbose")
 	flag.BoolVar(&help, "h", false, "Get help")
 	flag.Parse()
@@ -77,11 +77,6 @@ func main() {
 		if err != nil {
 			log.Fatalf("Failed to create nixdir: %v", err)
 		}
-	}
-
-	// Compute default unix socket path if not provided
-	if unixSocket == "" {
-		unixSocket = fmt.Sprintf("%s/dbx-socket", dataDir)
 	}
 
 	store, err := dogeboxd.NewStoreManager(fmt.Sprintf("%s/dogebox.db", dataDir))
