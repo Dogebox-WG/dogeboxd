@@ -8,6 +8,8 @@ import (
 	"os/exec"
 	"path/filepath"
 	"strings"
+
+	"github.com/dogeorg/dogeboxd/pkg/version"
 )
 
 func IsAlphanumeric(s string) bool {
@@ -100,7 +102,17 @@ func GetRebuildCommand(action string, isDev bool) (string, []string, error) {
 		return "", nil, fmt.Errorf("failed to get flake path: %w", err)
 	}
 
-	return "nixos-rebuild", []string{action, "--flake", flakePath, "--impure"}, nil
+	commandArgs := []string{action, "--flake", flakePath, "--impure"}
+
+	versionInformation := version.GetDBXRelease()
+
+	for pkg, tuple := range versionInformation.Packages {
+		// Only support dogebox-wg thing for now.
+		repo := fmt.Sprintf("github:dogebox-wg/%s/%s", pkg, tuple.Rev)
+		commandArgs = append(commandArgs, "--override-input", pkg, repo)
+	}
+
+	return "nixos-rebuild", commandArgs, nil
 }
 
 func CopyFiles(source string, destination string) error {
