@@ -2,14 +2,9 @@ package dbxdev
 
 import (
 	"bytes"
-	"context"
 	"encoding/json"
 	"fmt"
-	"net"
 	"net/http"
-	"os"
-	"path/filepath"
-	"time"
 
 	tea "github.com/charmbracelet/bubbletea"
 )
@@ -17,12 +12,7 @@ import (
 // checkBootstrapCmd verifies connection to dogeboxd by calling the bootstrap endpoint
 func checkBootstrapCmd(socketPath string) tea.Cmd {
 	return func() tea.Msg {
-		tr := &http.Transport{
-			DialContext: func(ctx context.Context, _, _ string) (net.Conn, error) {
-				return net.Dial("unix", socketPath)
-			},
-		}
-		client := &http.Client{Transport: tr, Timeout: 2 * time.Second}
+		client := getSocketClient()
 
 		req, err := http.NewRequest(http.MethodGet, "http://dogeboxd/system/bootstrap", nil)
 		if err != nil {
@@ -43,17 +33,7 @@ func checkBootstrapCmd(socketPath string) tea.Cmd {
 // authenticateCmd calls the dogeboxd authenticate endpoint
 func authenticateCmd(password string) tea.Cmd {
 	return func() tea.Msg {
-		socketPath := os.Getenv("DBX_SOCKET")
-		if socketPath == "" {
-			socketPath = filepath.Join(os.Getenv("HOME"), "data", "dbx-socket")
-		}
-
-		tr := &http.Transport{
-			DialContext: func(ctx context.Context, _, _ string) (net.Conn, error) {
-				return net.Dial("unix", socketPath)
-			},
-		}
-		client := &http.Client{Transport: tr, Timeout: 5 * time.Second}
+		client := getSocketClient()
 
 		payload := map[string]string{"password": password}
 		body, _ := json.Marshal(payload)
@@ -88,20 +68,10 @@ func authenticateCmd(password string) tea.Cmd {
 	}
 }
 
-// addSourceCmd adds a new source to dogeboxd
+// addSourceCmd adds a new source to the system
 func addSourceCmd(location, token string) tea.Cmd {
 	return func() tea.Msg {
-		socketPath := os.Getenv("DBX_SOCKET")
-		if socketPath == "" {
-			socketPath = filepath.Join(os.Getenv("HOME"), "data", "dbx-socket")
-		}
-
-		tr := &http.Transport{
-			DialContext: func(ctx context.Context, _, _ string) (net.Conn, error) {
-				return net.Dial("unix", socketPath)
-			},
-		}
-		client := &http.Client{Transport: tr, Timeout: 10 * time.Second}
+		client := getSocketClient()
 
 		payload := map[string]string{"location": location}
 		body, _ := json.Marshal(payload)
@@ -135,17 +105,7 @@ func addSourceCmd(location, token string) tea.Cmd {
 
 // findSourceId gets the list of sources and finds the ID for our location
 func findSourceId(location, token string) (string, error) {
-	socketPath := os.Getenv("DBX_SOCKET")
-	if socketPath == "" {
-		socketPath = filepath.Join(os.Getenv("HOME"), "data", "dbx-socket")
-	}
-
-	tr := &http.Transport{
-		DialContext: func(ctx context.Context, _, _ string) (net.Conn, error) {
-			return net.Dial("unix", socketPath)
-		},
-	}
-	client := &http.Client{Transport: tr, Timeout: 5 * time.Second}
+	client := getSocketClient()
 
 	req, err := http.NewRequest(http.MethodGet, "http://dogeboxd/sources", nil)
 	if err != nil {
@@ -163,7 +123,7 @@ func findSourceId(location, token string) (string, error) {
 		Sources []struct {
 			ID       string `json:"id"`
 			Location string `json:"location"`
-		} `json:"sources"`
+		}
 	}
 	if err := json.NewDecoder(resp.Body).Decode(&result); err != nil {
 		return "", err
@@ -175,174 +135,5 @@ func findSourceId(location, token string) (string, error) {
 		}
 	}
 
-	return "", fmt.Errorf("source not found after adding")
-}
-
-// readManifestVersion reads the version from manifest.json in the pup directory
-func readManifestVersion(pupDir string) (string, error) {
-	manifestPath := filepath.Join(pupDir, "manifest.json")
-	data, err := os.ReadFile(manifestPath)
-	if err != nil {
-		return "", fmt.Errorf("failed to read manifest.json: %w", err)
-	}
-
-	var manifest struct {
-		Meta struct {
-			Version string `json:"version"`
-		} `json:"meta"`
-	}
-	if err := json.Unmarshal(data, &manifest); err != nil {
-		return "", fmt.Errorf("failed to parse manifest.json: %w", err)
-	}
-
-	if manifest.Meta.Version == "" {
-		return "", fmt.Errorf("no version found in manifest.json")
-	}
-
-	return manifest.Meta.Version, nil
-}
-
-// installPupCmd triggers pup installation
-func installPupCmd(sourceId, pupName, token string) tea.Cmd {
-	return func() tea.Msg {
-		// Determine the dev directory to read manifest
-		var devDir string
-		if dataDir := os.Getenv("DATA_DIR"); dataDir != "" {
-			devDir = filepath.Join(dataDir, "dev")
-		} else {
-			homeDir, err := os.UserHomeDir()
-			if err != nil {
-				return pupInstalledMsg{err: fmt.Errorf("failed to get home directory: %w", err)}
-			}
-			devDir = filepath.Join(homeDir, "dev")
-		}
-
-		pupDir := filepath.Join(devDir, pupName)
-
-		// Read version from manifest.json
-		version, err := readManifestVersion(pupDir)
-		if err != nil {
-			return pupInstalledMsg{err: err}
-		}
-
-		socketPath := os.Getenv("DBX_SOCKET")
-		if socketPath == "" {
-			socketPath = filepath.Join(os.Getenv("HOME"), "data", "dbx-socket")
-		}
-
-		tr := &http.Transport{
-			DialContext: func(ctx context.Context, _, _ string) (net.Conn, error) {
-				return net.Dial("unix", socketPath)
-			},
-		}
-		client := &http.Client{Transport: tr, Timeout: 5 * time.Second}
-
-		payload := map[string]interface{}{
-			"pupName":                 pupName,
-			"pupVersion":              version,
-			"sourceId":                sourceId,
-			"autoInstallDependencies": false,
-		}
-		body, _ := json.Marshal(payload)
-
-		req, err := http.NewRequest(http.MethodPut, "http://dogeboxd/pup", bytes.NewReader(body))
-		if err != nil {
-			return pupInstalledMsg{err: err}
-		}
-		req.Header.Set("Content-Type", "application/json")
-		req.Header.Set("Authorization", "Bearer "+token)
-
-		resp, err := client.Do(req)
-		if err != nil {
-			return pupInstalledMsg{err: err}
-		}
-		defer resp.Body.Close()
-
-		if resp.StatusCode != http.StatusOK {
-			return pupInstalledMsg{err: fmt.Errorf("failed to install pup: %d", resp.StatusCode)}
-		}
-
-		// Read the response to get the job ID
-		var result map[string]string
-		if err := json.NewDecoder(resp.Body).Decode(&result); err != nil {
-			return pupInstalledMsg{err: fmt.Errorf("failed to decode response: %w", err)}
-		}
-
-		jobID := result["id"]
-		return pupInstalledMsg{jobID: jobID, err: nil}
-	}
-}
-
-// createSourceCmd creates a new source
-func createSourceCmd(location string) tea.Cmd {
-	return func() tea.Msg {
-		socketPath := os.Getenv("DBX_SOCKET")
-		if socketPath == "" {
-			socketPath = filepath.Join(os.Getenv("HOME"), "data", "dbx-socket")
-		}
-
-		tr := &http.Transport{
-			DialContext: func(ctx context.Context, _, _ string) (net.Conn, error) {
-				return net.Dial("unix", socketPath)
-			},
-		}
-		client := &http.Client{Transport: tr, Timeout: 5 * time.Second}
-
-		payload := map[string]interface{}{
-			"location": location,
-		}
-		body, _ := json.Marshal(payload)
-
-		req, err := http.NewRequest(http.MethodPut, "http://dogeboxd/source", bytes.NewReader(body))
-		if err != nil {
-			return sourceCreatedMsg{err: err}
-		}
-		req.Header.Set("Content-Type", "application/json")
-
-		resp, err := client.Do(req)
-		if err != nil {
-			return sourceCreatedMsg{err: err}
-		}
-		defer resp.Body.Close()
-
-		if resp.StatusCode != http.StatusOK {
-			return sourceCreatedMsg{err: fmt.Errorf("failed to create source: %d", resp.StatusCode)}
-		}
-
-		return sourceCreatedMsg{err: nil}
-	}
-}
-
-// deleteSourceCmd deletes a source
-func deleteSourceCmd(sourceID string) tea.Cmd {
-	return func() tea.Msg {
-		socketPath := os.Getenv("DBX_SOCKET")
-		if socketPath == "" {
-			socketPath = filepath.Join(os.Getenv("HOME"), "data", "dbx-socket")
-		}
-
-		tr := &http.Transport{
-			DialContext: func(ctx context.Context, _, _ string) (net.Conn, error) {
-				return net.Dial("unix", socketPath)
-			},
-		}
-		client := &http.Client{Transport: tr, Timeout: 5 * time.Second}
-
-		req, err := http.NewRequest(http.MethodDelete, fmt.Sprintf("http://dogeboxd/source/%s", sourceID), nil)
-		if err != nil {
-			return sourceDeletedMsg{err: err}
-		}
-
-		resp, err := client.Do(req)
-		if err != nil {
-			return sourceDeletedMsg{err: err}
-		}
-		defer resp.Body.Close()
-
-		if resp.StatusCode != http.StatusOK {
-			return sourceDeletedMsg{err: fmt.Errorf("failed to delete source: %d", resp.StatusCode)}
-		}
-
-		return sourceDeletedMsg{err: nil}
-	}
+	return "", fmt.Errorf("source not found")
 }

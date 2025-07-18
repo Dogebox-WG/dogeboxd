@@ -1,13 +1,7 @@
 package dbxdev
 
 import (
-	"context"
 	"encoding/json"
-	"net"
-	"net/http"
-	"os"
-	"path/filepath"
-	"time"
 
 	tea "github.com/charmbracelet/bubbletea"
 )
@@ -15,17 +9,7 @@ import (
 // fetchPupsCmd retrieves pup information via the unix socket.
 func fetchPupsCmd() tea.Cmd {
 	return func() tea.Msg {
-		socketPath := os.Getenv("DBX_SOCKET")
-		if socketPath == "" {
-			socketPath = filepath.Join(os.Getenv("HOME"), "data", "dbx-socket")
-		}
-
-		tr := &http.Transport{
-			DialContext: func(ctx context.Context, _, _ string) (net.Conn, error) {
-				return net.Dial("unix", socketPath)
-			},
-		}
-		client := &http.Client{Transport: tr, Timeout: 2 * time.Second}
+		client := getSocketClient()
 
 		resp, err := client.Get("http://dogeboxd/system/bootstrap")
 		if err != nil {
@@ -74,17 +58,7 @@ func fetchPupsCmd() tea.Cmd {
 // fetchSourcesCmd retrieves source information via the unix socket.
 func fetchSourcesCmd() tea.Cmd {
 	return func() tea.Msg {
-		socketPath := os.Getenv("DBX_SOCKET")
-		if socketPath == "" {
-			socketPath = filepath.Join(os.Getenv("HOME"), "data", "dbx-socket")
-		}
-
-		tr := &http.Transport{
-			DialContext: func(ctx context.Context, _, _ string) (net.Conn, error) {
-				return net.Dial("unix", socketPath)
-			},
-		}
-		client := &http.Client{Transport: tr, Timeout: 2 * time.Second}
+		client := getSocketClient()
 
 		resp, err := client.Get("http://dogeboxd/sources")
 		if err != nil {

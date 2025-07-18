@@ -1,9 +1,6 @@
 package dbxdev
 
 import (
-	"os"
-	"path/filepath"
-
 	tea "github.com/charmbracelet/bubbletea"
 	"github.com/charmbracelet/ssh"
 )
@@ -23,14 +20,8 @@ func ProgramOptions() []tea.ProgramOption {
 
 // NewModel creates a new TUI model instance.
 func NewModel() tea.Model {
-	// Determine socket path
-	socketPath := os.Getenv("DBX_SOCKET")
-	if socketPath == "" {
-		socketPath = filepath.Join(os.Getenv("HOME"), "data", "dbx-socket")
-	}
-
 	return model{
-		socketPath: socketPath,
+		socketPath: getSocketPath(),
 	}
 }
 

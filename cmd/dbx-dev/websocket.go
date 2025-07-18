@@ -3,9 +3,6 @@ package dbxdev
 import (
 	"fmt"
 	"log"
-	"net"
-	"os"
-	"path/filepath"
 
 	tea "github.com/charmbracelet/bubbletea"
 	"golang.org/x/net/websocket"
@@ -14,11 +11,6 @@ import (
 // connectWebSocketCmd establishes websocket connection to dogeboxd
 func connectWebSocketCmd(token string) tea.Cmd {
 	return func() tea.Msg {
-		socketPath := os.Getenv("DBX_SOCKET")
-		if socketPath == "" {
-			socketPath = filepath.Join(os.Getenv("HOME"), "data", "dbx-socket")
-		}
-
 		// Create websocket config
 		wsURL := fmt.Sprintf("ws://dogeboxd/ws/state/?token=%s", token)
 		origin := "http://dogeboxd"
@@ -28,7 +20,7 @@ func connectWebSocketCmd(token string) tea.Cmd {
 		}
 
 		// Connect to unix socket
-		conn, err := net.Dial("unix", socketPath)
+		conn, err := getSocketConn()
 		if err != nil {
 			return wsConnectedMsg{connected: false, err: err}
 		}
