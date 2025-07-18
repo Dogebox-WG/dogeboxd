@@ -36,19 +36,16 @@ func pupActionCmd(id, action string) tea.Cmd {
 func templateFilesCmd(pupName, templateName string) tea.Cmd {
 	return func() tea.Msg {
 		// Determine the dev directory
-		var devDir string
-		if dataDir := os.Getenv("DATA_DIR"); dataDir != "" {
-			devDir = filepath.Join(dataDir, "dev")
-		} else {
-			homeDir, _ := os.UserHomeDir()
-			devDir = filepath.Join(homeDir, "dev")
+		devDir, err := getDataDir()
+		if err != nil {
+			return templateCompleteMsg{err: err}
 		}
 
 		pupDir := filepath.Join(devDir, pupName)
 		searchPattern := fmt.Sprintf("pup_%s", templateName)
 
 		// Walk through all files in the directory
-		err := filepath.Walk(pupDir, func(path string, info os.FileInfo, err error) error {
+		err = filepath.Walk(pupDir, func(path string, info os.FileInfo, err error) error {
 			if err != nil {
 				return err
 			}
@@ -88,12 +85,9 @@ func templateFilesCmd(pupName, templateName string) tea.Cmd {
 func updateManifestHashCmd(pupName string) tea.Cmd {
 	return func() tea.Msg {
 		// Determine the dev directory
-		var devDir string
-		if dataDir := os.Getenv("DATA_DIR"); dataDir != "" {
-			devDir = filepath.Join(dataDir, "dev")
-		} else {
-			homeDir, _ := os.UserHomeDir()
-			devDir = filepath.Join(homeDir, "dev")
+		devDir, err := getDataDir()
+		if err != nil {
+			return manifestUpdateMsg{err: err}
 		}
 
 		pupDir := filepath.Join(devDir, pupName)
@@ -175,12 +169,9 @@ func validatePupNameCmd(pupName string, existingPups []pupInfo) tea.Cmd {
 		}
 
 		// Check if directory already exists
-		var devDir string
-		if dataDir := os.Getenv("DATA_DIR"); dataDir != "" {
-			devDir = filepath.Join(dataDir, "dev")
-		} else {
-			homeDir, _ := os.UserHomeDir()
-			devDir = filepath.Join(homeDir, "dev")
+		devDir, err := getDataDir()
+		if err != nil {
+			return pupNameValidationMsg{err: err}
 		}
 
 		targetDir := filepath.Join(devDir, pupName)

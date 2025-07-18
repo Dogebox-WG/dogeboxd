@@ -2,8 +2,6 @@ package dbxdev
 
 import (
 	"fmt"
-	"os"
-	"path/filepath"
 	"sort"
 	"strings"
 	"time"
@@ -477,12 +475,9 @@ func (m model) renderNameInputView() string {
 	title := headerStyle.Render(fmt.Sprintf("Creating pup from template: %s", selectedTemplate))
 
 	// Determine target directory
-	var devDir string
-	if dataDir := os.Getenv("DATA_DIR"); dataDir != "" {
-		devDir = filepath.Join(dataDir, "dev")
-	} else {
-		homeDir, _ := os.UserHomeDir()
-		devDir = filepath.Join(homeDir, "dev")
+	devDir, err := getDataDir()
+	if err != nil {
+		devDir = "error getting dev directory"
 	}
 
 	prompt := "Enter pup name: " + m.pupName

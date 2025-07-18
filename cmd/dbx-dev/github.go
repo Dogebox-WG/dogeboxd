@@ -71,15 +71,9 @@ func fetchTemplatesCmd() tea.Cmd {
 func cloneTemplateCmd(template templateInfo, pupName string) tea.Cmd {
 	return func() tea.Msg {
 		// Determine the dev directory based on DATA_DIR env var
-		var devDir string
-		if dataDir := os.Getenv("DATA_DIR"); dataDir != "" {
-			devDir = filepath.Join(dataDir, "dev")
-		} else {
-			homeDir, err := os.UserHomeDir()
-			if err != nil {
-				return cloneCompleteMsg{err: fmt.Errorf("failed to get home directory: %w", err)}
-			}
-			devDir = filepath.Join(homeDir, "dev")
+		devDir, err := getDataDir()
+		if err != nil {
+			return cloneCompleteMsg{err: fmt.Errorf("failed to get dev directory: %w", err)}
 		}
 
 		targetDir := filepath.Join(devDir, pupName)

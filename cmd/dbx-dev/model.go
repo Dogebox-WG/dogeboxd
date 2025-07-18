@@ -496,12 +496,10 @@ func (m model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 			m.tasks[3].Status = taskRunning
 
 			// Determine the dev directory for source location
-			var devDir string
-			if dataDir := os.Getenv("DATA_DIR"); dataDir != "" {
-				devDir = filepath.Join(dataDir, "dev")
-			} else {
-				homeDir, _ := os.UserHomeDir()
-				devDir = filepath.Join(homeDir, "dev")
+			devDir, err := getDataDir()
+			if err != nil {
+				// Handle error - could return an error message or use fallback
+				return m, nil
 			}
 			sourceLocation := filepath.Join(devDir, m.pupName)
 			// Add the source

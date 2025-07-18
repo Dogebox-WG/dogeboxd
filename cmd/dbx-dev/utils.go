@@ -5,6 +5,7 @@ import (
 	"net"
 	"net/http"
 	"os"
+	"path/filepath"
 	"time"
 )
 
@@ -17,6 +18,14 @@ func getSocketPath() string {
 		socketPath = "/tmp/dbx-socket"
 	}
 	return socketPath
+}
+
+func getDataDir() (string, error) {
+	if dataDir := os.Getenv("DATA_DIR"); dataDir != "" {
+		return filepath.Join(dataDir, "dev"), nil
+	}
+
+	return "/opt/dogebox", nil
 }
 
 // getSocketClient returns an HTTP client configured to communicate over the DBX unix socket.
