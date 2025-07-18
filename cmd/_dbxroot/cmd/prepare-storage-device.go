@@ -70,7 +70,7 @@ Example:
 		log.Println("Finished preparing storage device.")
 
 		if print {
-			log.Printf(partition)
+			log.Printf("prepared partition: %s", partition)
 		}
 	},
 }
