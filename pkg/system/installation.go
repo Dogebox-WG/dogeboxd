@@ -329,7 +329,7 @@ func InitStorageDevice(dbxState dogeboxd.DogeboxState) (string, error) {
 
 	lines := strings.Split(strings.TrimSpace(output), "\n")
 	partitionName := ""
-	re := regexp.MustCompile(`prepared partition: (.?)`)
+	re := regexp.MustCompile(`prepared partition: (.+)`)
 	for i := len(lines) - 1; i >= 0; i-- {
 		line := lines[i]
 		submatch := re.FindSubmatch([]byte(line))
