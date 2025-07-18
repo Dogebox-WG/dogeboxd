@@ -170,16 +170,9 @@ func readManifestVersion(pupDir string) (string, error) {
 // installPupCmd triggers pup installation
 func installPupCmd(sourceId, pupName, token string) tea.Cmd {
 	return func() tea.Msg {
-		// Determine the dev directory to read manifest
-		var devDir string
-		if dataDir := os.Getenv("DATA_DIR"); dataDir != "" {
-			devDir = filepath.Join(dataDir, "dev")
-		} else {
-			homeDir, err := os.UserHomeDir()
-			if err != nil {
-				return pupInstalledMsg{err: fmt.Errorf("failed to get home directory: %w", err)}
-			}
-			devDir = filepath.Join(homeDir, "dev")
+		devDir, err := getDevDir()
+		if err != nil {
+			return pupInstalledMsg{err: err}
 		}
 
 		pupDir := filepath.Join(devDir, pupName)
