@@ -191,8 +191,8 @@ func (m model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 						m.nameInputErr = "Name must be at least 3 characters"
 					} else if len(m.pupName) > 30 {
 						m.nameInputErr = "Name must be 30 characters or less"
-					} else if !regexp.MustCompile(`^[a-z0-9]+$`).MatchString(m.pupName) {
-						m.nameInputErr = "Name must contain only lowercase letters and numbers (a-z, 0-9)"
+					} else if !regexp.MustCompile(`^[a-z0-9_-]+$`).MatchString(m.pupName) {
+						m.nameInputErr = "Name must contain only lowercase letters, numbers, underscores, and dashes (a-z, 0-9, _, -)"
 					} else {
 						// Run async validation for existing pup/directory check
 						return m, validatePupNameCmd(m.pupName, m.pups)

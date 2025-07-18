@@ -173,10 +173,10 @@ func validatePupNameCmd(pupName string, existingPups []pupInfo) tea.Cmd {
 			return pupNameValidationMsg{err: fmt.Errorf("name must be 30 characters or less")}
 		}
 
-		// Check format (a-z0-9 only)
-		validName := regexp.MustCompile(`^[a-z0-9]+$`)
+		// Check format (a-z0-9, underscores, dashes only)
+		validName := regexp.MustCompile(`^[a-z0-9_-]+$`)
 		if !validName.MatchString(pupName) {
-			return pupNameValidationMsg{err: fmt.Errorf("name must contain only lowercase letters and numbers (a-z, 0-9)")}
+			return pupNameValidationMsg{err: fmt.Errorf("name must contain only lowercase letters, numbers, underscores, and dashes (a-z, 0-9, _, -)")}
 		}
 
 		// Check if pup already exists
