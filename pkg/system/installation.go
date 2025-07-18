@@ -291,7 +291,7 @@ func GetSystemDisks() ([]dogeboxd.SystemDisk, error) {
 }
 
 func IsDiskNixRoot(disk dogeboxd.SystemDisk) bool {
-	nixRootMountPoints := []string{"/", "/nix/store", "/nix/.ro-store"}
+	nixRootMountPoints := []string{"/", "/nix/store", "/nix/.ro-store", "/iso"}
 
 	for _, mountPoint := range nixRootMountPoints {
 		if slices.Contains(disk.MountPoints, mountPoint) {
