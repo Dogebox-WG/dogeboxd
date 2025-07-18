@@ -8,7 +8,7 @@ import (
 	"os"
 	"os/exec"
 	"path/filepath"
-	"strings"
+	"regexp"
 	"time"
 
 	tea "github.com/charmbracelet/bubbletea"
@@ -69,6 +69,9 @@ type model struct {
 	sourceInput    string
 	creatingSource bool
 	deletingSource bool
+
+	// Store template name for use in templating
+	selectedTemplateName string
 }
 
 // Init performs initial setup and returns a command to check dogeboxd connection
@@ -183,27 +186,16 @@ func (m model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 				if m.searching {
 					// Search mode stays active after enter
 				} else if m.view == viewNameInput && m.pupName != "" {
-					// Validate name
+					// Validate name with new stricter rules
 					if len(m.pupName) < 3 {
 						m.nameInputErr = "Name must be at least 3 characters"
-					} else if strings.ContainsAny(m.pupName, " /\\") {
-						m.nameInputErr = "Name cannot contain spaces or slashes"
+					} else if len(m.pupName) > 30 {
+						m.nameInputErr = "Name must be 30 characters or less"
+					} else if !regexp.MustCompile(`^[a-z0-9]+$`).MatchString(m.pupName) {
+						m.nameInputErr = "Name must contain only lowercase letters and numbers (a-z, 0-9)"
 					} else {
-						// Initialize tasks
-						m.tasks = []task{
-							{Name: "Clone template", Status: taskPending},
-							{Name: "Add Pup as source", Status: taskPending},
-							{Name: "Install pup", Status: taskPending},
-						}
-						m.allTasksDone = false
-						m.taskLogs = []string{}
-						m.wsConnected = false
-						// Move to task progress view
-						m.view = viewTaskProgress
-						// Start first task
-						m.tasks[0].Status = taskRunning
-						template := m.templates[m.selectedTpl]
-						return m, cloneTemplateCmd(template, m.pupName)
+						// Run async validation for existing pup/directory check
+						return m, validatePupNameCmd(m.pupName, m.pups)
 					}
 				} else if m.view == viewPasswordInput && m.password != "" && !m.authenticating {
 					// Start authentication
@@ -466,14 +458,15 @@ func (m model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 				m.nameInputErr = msg.err.Error()
 			}
 		} else {
-			// Success - update task and proceed
+			// Success - update task and proceed to templating
 			if m.view == viewTaskProgress && len(m.tasks) > 0 {
 				m.tasks[0].Status = taskSuccess
 				m.taskLogs = append(m.taskLogs, "Template cloned successfully")
 
-				// Connect websocket before starting next task
-				if m.authToken != "" {
-					return m, connectWebSocketCmd(m.authToken)
+				// Start templating task
+				if len(m.tasks) > 1 {
+					m.tasks[1].Status = taskRunning
+					return m, templateFilesCmd(m.pupName, m.selectedTemplateName)
 				}
 			}
 		}
@@ -499,8 +492,8 @@ func (m model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		}
 
 		// Continue with source addition regardless of websocket status
-		if m.view == viewTaskProgress && len(m.tasks) > 1 {
-			m.tasks[1].Status = taskRunning
+		if m.view == viewTaskProgress && len(m.tasks) > 3 {
+			m.tasks[3].Status = taskRunning
 
 			// Determine the dev directory for source location
 			var devDir string
@@ -532,9 +525,9 @@ func (m model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 				m.taskLogs = append(m.taskLogs, fmt.Sprintf("Pup created with ID: %s", msg.pupID))
 			} else if !msg.success {
 				// Installation failed
-				if len(m.tasks) > 2 && m.tasks[2].Status == taskRunning {
-					m.tasks[2].Status = taskFailed
-					m.tasks[2].Error = msg.error
+				if len(m.tasks) > 4 && m.tasks[4].Status == taskRunning {
+					m.tasks[4].Status = taskFailed
+					m.tasks[4].Error = msg.error
 					m.allTasksDone = true
 					m.taskLogs = append(m.taskLogs, fmt.Sprintf("Installation failed: %s", msg.error))
 					closeWebSocket()
@@ -547,8 +540,8 @@ func (m model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		if m.view == viewTaskProgress && (msg.pupID == m.targetPupID || msg.pupName == m.pupName) {
 			if msg.state == "ready" {
 				// Mark installation as complete
-				if len(m.tasks) > 2 && m.tasks[2].Status == taskRunning {
-					m.tasks[2].Status = taskSuccess
+				if len(m.tasks) > 4 && m.tasks[4].Status == taskRunning {
+					m.tasks[4].Status = taskSuccess
 					m.allTasksDone = true
 					m.taskLogs = append(m.taskLogs, "Pup installation complete!")
 					closeWebSocket()
@@ -557,28 +550,88 @@ func (m model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 				}
 			} else if msg.state == "broken" {
 				// Installation failed
-				if len(m.tasks) > 2 && m.tasks[2].Status == taskRunning {
-					m.tasks[2].Status = taskFailed
-					m.tasks[2].Error = "Installation failed - pup is in broken state"
+				if len(m.tasks) > 4 && m.tasks[4].Status == taskRunning {
+					m.tasks[4].Status = taskFailed
+					m.tasks[4].Error = "Installation failed - pup is in broken state"
 					m.allTasksDone = true
 					closeWebSocket()
 				}
 			}
 		}
-	case sourceAddedMsg:
-		// Update task status
+	case templateCompleteMsg:
 		if m.view == viewTaskProgress && len(m.tasks) > 1 {
 			if msg.err != nil {
 				m.tasks[1].Status = taskFailed
 				m.tasks[1].Error = msg.err.Error()
 				m.allTasksDone = true
-				closeWebSocket()
 			} else {
 				m.tasks[1].Status = taskSuccess
-				m.taskLogs = append(m.taskLogs, "Source added successfully")
-				// Start next task
+				m.taskLogs = append(m.taskLogs, "Files templated successfully")
+
+				// Start manifest update task
 				if len(m.tasks) > 2 {
 					m.tasks[2].Status = taskRunning
+					return m, updateManifestHashCmd(m.pupName)
+				}
+			}
+		}
+
+	case manifestUpdateMsg:
+		if m.view == viewTaskProgress && len(m.tasks) > 2 {
+			if msg.err != nil {
+				m.tasks[2].Status = taskFailed
+				m.tasks[2].Error = msg.err.Error()
+				m.allTasksDone = true
+			} else {
+				m.tasks[2].Status = taskSuccess
+				m.taskLogs = append(m.taskLogs, "Manifest updated successfully")
+
+				// Connect websocket before starting next task
+				if m.authToken != "" {
+					return m, connectWebSocketCmd(m.authToken)
+				}
+			}
+		}
+	case pupNameValidationMsg:
+		if msg.err != nil {
+			m.nameInputErr = msg.err.Error()
+		} else {
+			// Validation passed, proceed with creation
+			// Store the template name for later use
+			m.selectedTemplateName = m.templates[m.selectedTpl].Name
+
+			// Initialize tasks with the new ones
+			m.tasks = []task{
+				{Name: "Clone template", Status: taskPending},
+				{Name: "Template files", Status: taskPending},
+				{Name: "Update manifest", Status: taskPending},
+				{Name: "Add Pup as source", Status: taskPending},
+				{Name: "Install pup", Status: taskPending},
+			}
+			m.allTasksDone = false
+			m.taskLogs = []string{}
+			m.wsConnected = false
+			// Move to task progress view
+			m.view = viewTaskProgress
+			// Start first task
+			m.tasks[0].Status = taskRunning
+			template := m.templates[m.selectedTpl]
+			return m, cloneTemplateCmd(template, m.pupName)
+		}
+	case sourceAddedMsg:
+		// Update task status
+		if m.view == viewTaskProgress && len(m.tasks) > 3 {
+			if msg.err != nil {
+				m.tasks[3].Status = taskFailed
+				m.tasks[3].Error = msg.err.Error()
+				m.allTasksDone = true
+				closeWebSocket()
+			} else {
+				m.tasks[3].Status = taskSuccess
+				m.taskLogs = append(m.taskLogs, "Source added successfully")
+				// Start next task
+				if len(m.tasks) > 4 {
+					m.tasks[4].Status = taskRunning
 					// Initially track by name until we get the actual pup ID
 					m.targetPupID = m.pupName
 					// Trigger pup installation
@@ -588,10 +641,10 @@ func (m model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		}
 	case pupInstalledMsg:
 		// This just means we triggered the installation
-		if m.view == viewTaskProgress && len(m.tasks) > 2 {
+		if m.view == viewTaskProgress && len(m.tasks) > 4 {
 			if msg.err != nil {
-				m.tasks[2].Status = taskFailed
-				m.tasks[2].Error = msg.err.Error()
+				m.tasks[4].Status = taskFailed
+				m.tasks[4].Error = msg.err.Error()
 				m.allTasksDone = true
 				closeWebSocket()
 			} else {

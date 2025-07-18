@@ -166,3 +166,18 @@ type sourceCreatedMsg struct {
 type sourceDeletedMsg struct {
 	err error
 }
+
+// templateCompleteMsg signals when template file replacement is done
+type templateCompleteMsg struct {
+	err error
+}
+
+// manifestUpdateMsg signals when manifest hash update is done
+type manifestUpdateMsg struct {
+	err error
+}
+
+// pupNameValidationMsg is returned when pup name validation completes
+type pupNameValidationMsg struct {
+	err error
+}
