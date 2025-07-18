@@ -118,6 +118,11 @@ func cloneTemplateCmd(template templateInfo, pupName string) tea.Cmd {
 			}
 		}
 
+		// Change ownership to shibe:dogebox recursively
+		if err := exec.Command("chown", "-R", "shibe:dogebox", targetDir).Run(); err != nil {
+			return cloneCompleteMsg{err: fmt.Errorf("failed to change ownership to shibe:dogebox: %w", err)}
+		}
+
 		return cloneCompleteMsg{err: nil}
 	}
 }
