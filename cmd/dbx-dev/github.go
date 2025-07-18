@@ -71,7 +71,7 @@ func fetchTemplatesCmd() tea.Cmd {
 func cloneTemplateCmd(template templateInfo, pupName string) tea.Cmd {
 	return func() tea.Msg {
 		// Determine the dev directory based on DATA_DIR env var
-		devDir, err := getDataDir()
+		devDir, err := getDevDir()
 		if err != nil {
 			return cloneCompleteMsg{err: fmt.Errorf("failed to get dev directory: %w", err)}
 		}

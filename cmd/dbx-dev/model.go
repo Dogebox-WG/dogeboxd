@@ -496,7 +496,7 @@ func (m model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 			m.tasks[3].Status = taskRunning
 
 			// Determine the dev directory for source location
-			devDir, err := getDataDir()
+			devDir, err := getDevDir()
 			if err != nil {
 				// Handle error - could return an error message or use fallback
 				return m, nil

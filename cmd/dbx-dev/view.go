@@ -475,7 +475,7 @@ func (m model) renderNameInputView() string {
 	title := headerStyle.Render(fmt.Sprintf("Creating pup from template: %s", selectedTemplate))
 
 	// Determine target directory
-	devDir, err := getDataDir()
+	devDir, err := getDevDir()
 	if err != nil {
 		devDir = "error getting dev directory"
 	}

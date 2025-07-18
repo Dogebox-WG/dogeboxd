@@ -36,7 +36,7 @@ func pupActionCmd(id, action string) tea.Cmd {
 func templateFilesCmd(pupName, templateName string) tea.Cmd {
 	return func() tea.Msg {
 		// Determine the dev directory
-		devDir, err := getDataDir()
+		devDir, err := getDevDir()
 		if err != nil {
 			return templateCompleteMsg{err: err}
 		}
@@ -85,7 +85,7 @@ func templateFilesCmd(pupName, templateName string) tea.Cmd {
 func updateManifestHashCmd(pupName string) tea.Cmd {
 	return func() tea.Msg {
 		// Determine the dev directory
-		devDir, err := getDataDir()
+		devDir, err := getDevDir()
 		if err != nil {
 			return manifestUpdateMsg{err: err}
 		}
@@ -169,7 +169,7 @@ func validatePupNameCmd(pupName string, existingPups []pupInfo) tea.Cmd {
 		}
 
 		// Check if directory already exists
-		devDir, err := getDataDir()
+		devDir, err := getDevDir()
 		if err != nil {
 			return pupNameValidationMsg{err: err}
 		}

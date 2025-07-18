@@ -28,6 +28,15 @@ func getDataDir() (string, error) {
 	return "/opt/dogebox", nil
 }
 
+func getDevDir() (string, error) {
+	dataDir, err := getDataDir()
+	if err != nil {
+		return "", err
+	}
+
+	return filepath.Join(dataDir, "dev"), nil
+}
+
 // getSocketClient returns an HTTP client configured to communicate over the DBX unix socket.
 func getSocketClient() *http.Client {
 	socketPath := getSocketPath()
