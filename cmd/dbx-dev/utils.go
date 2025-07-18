@@ -20,21 +20,12 @@ func getSocketPath() string {
 	return socketPath
 }
 
-func getDataDir() (string, error) {
-	if dataDir := os.Getenv("DATA_DIR"); dataDir != "" {
+func getDevDir() (string, error) {
+	if dataDir := os.Getenv("DEV_DIR"); dataDir != "" {
 		return filepath.Join(dataDir, "dev"), nil
 	}
 
-	return "/opt/dogebox", nil
-}
-
-func getDevDir() (string, error) {
-	dataDir, err := getDataDir()
-	if err != nil {
-		return "", err
-	}
-
-	return filepath.Join(dataDir, "dev"), nil
+	return "/opt/dev", nil
 }
 
 // getSocketClient returns an HTTP client configured to communicate over the DBX unix socket.
