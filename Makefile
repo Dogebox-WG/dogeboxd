@@ -28,7 +28,7 @@ multipassdev:
 	go run ./cmd/dogeboxd -v -addr 0.0.0.0 -pups ~/
 
 dev:
-	make && /run/wrappers/bin/dogeboxd -v --addr 0.0.0.0 --danger-dev --data ~/data --nix ~/data/nix --containerlogdir ~/data/containerlogs --port 3000 --uiport 8080 $(ARGS)
+	make && /run/wrappers/bin/dogeboxd -v --addr 0.0.0.0 --danger-dev --data ~/data --nix ~/data/nix --containerlogdir ~/data/containerlogs --port 3000 --uiport 8080 --unix-socket ~/data/dbx-socket $(ARGS)
 
 recovery:
 	ARGS=--force-recovery make dev
@@ -51,4 +51,4 @@ delete-loop-device-2:
 .PHONY: dbxdev
 
 dbxdev:
-	DBX_SOCKET=~/data/dbx-socket DBX_CONTAINER_LOG_DIR=~/data/containerlogs go run ./cmd/dbx dev
+	DEV_DIR=~/data/dev DBX_SOCKET=~/data/dbx-socket DBX_CONTAINER_LOG_DIR=~/data/containerlogs go run ./cmd/dbx dev

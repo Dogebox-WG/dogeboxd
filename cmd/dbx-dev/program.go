@@ -20,7 +20,9 @@ func ProgramOptions() []tea.ProgramOption {
 
 // NewModel creates a new TUI model instance.
 func NewModel() tea.Model {
-	return model{}
+	return model{
+		socketPath: getSocketPath(),
+	}
 }
 
 // WishHandler exposes the TUI over an SSH session.

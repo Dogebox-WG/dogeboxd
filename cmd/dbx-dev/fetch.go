@@ -1,13 +1,7 @@
 package dbxdev
 
 import (
-	"context"
 	"encoding/json"
-	"net"
-	"net/http"
-	"os"
-	"path/filepath"
-	"time"
 
 	tea "github.com/charmbracelet/bubbletea"
 )
@@ -15,17 +9,7 @@ import (
 // fetchPupsCmd retrieves pup information via the unix socket.
 func fetchPupsCmd() tea.Cmd {
 	return func() tea.Msg {
-		socketPath := os.Getenv("DBX_SOCKET")
-		if socketPath == "" {
-			socketPath = filepath.Join(os.Getenv("HOME"), "data", "dbx-socket")
-		}
-
-		tr := &http.Transport{
-			DialContext: func(ctx context.Context, _, _ string) (net.Conn, error) {
-				return net.Dial("unix", socketPath)
-			},
-		}
-		client := &http.Client{Transport: tr, Timeout: 2 * time.Second}
+		client := getSocketClient()
 
 		resp, err := client.Get("http://dogeboxd/system/bootstrap")
 		if err != nil {
@@ -68,5 +52,43 @@ func fetchPupsCmd() tea.Cmd {
 			})
 		}
 		return pupsMsg{list: out}
+	}
+}
+
+// fetchSourcesCmd retrieves source information via the unix socket.
+func fetchSourcesCmd() tea.Cmd {
+	return func() tea.Msg {
+		client := getSocketClient()
+
+		resp, err := client.Get("http://dogeboxd/sources")
+		if err != nil {
+			return sourcesMsg{err: err}
+		}
+		defer resp.Body.Close()
+
+		var payload struct {
+			Sources []struct {
+				ID          string `json:"id"`
+				Name        string `json:"name"`
+				Description string `json:"description"`
+				Location    string `json:"location"`
+				Type        string `json:"type"`
+			} `json:"sources"`
+		}
+		if err := json.NewDecoder(resp.Body).Decode(&payload); err != nil {
+			return sourcesMsg{err: err}
+		}
+
+		sources := make([]sourceInfo, len(payload.Sources))
+		for i, s := range payload.Sources {
+			sources[i] = sourceInfo{
+				ID:          s.ID,
+				Name:        s.Name,
+				Description: s.Description,
+				Location:    s.Location,
+				Type:        s.Type,
+			}
+		}
+		return sourcesMsg{sources: sources}
 	}
 }
