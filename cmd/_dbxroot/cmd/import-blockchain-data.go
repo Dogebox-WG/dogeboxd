@@ -303,7 +303,27 @@ func copyBlockchainData(sourceDir, destDir, ownerUID, ownerGID string) error {
 
 // copyDirectoryFresh copies all contents from source directory to destination directory
 func copyDirectoryFresh(sourceDir, destDir string) error {
-	return filepath.Walk(sourceDir, func(path string, info os.FileInfo, err error) error {
+	// First pass: count total files
+	totalFiles := 0
+	err := filepath.Walk(sourceDir, func(path string, info os.FileInfo, err error) error {
+		if err != nil {
+			return err
+		}
+		if !info.IsDir() {
+			totalFiles++
+		}
+		return nil
+	})
+	if err != nil {
+		return fmt.Errorf("failed to count files: %w", err)
+	}
+
+	fmt.Printf("Found %d files to copy\n", totalFiles)
+
+	// Second pass: copy files with progress
+	fileCount := 0
+
+	err = filepath.Walk(sourceDir, func(path string, info os.FileInfo, err error) error {
 		if err != nil {
 			return err
 		}
@@ -326,6 +346,13 @@ func copyDirectoryFresh(sourceDir, destDir string) error {
 		}
 
 		// Copy file
+		fileCount++
+
+		// Show progress every 50 files
+		if fileCount%50 == 0 {
+			fmt.Printf("Copied %d/%d files...\n", fileCount, totalFiles)
+		}
+
 		src, err := os.Open(path)
 		if err != nil {
 			return err
@@ -341,6 +368,13 @@ func copyDirectoryFresh(sourceDir, destDir string) error {
 		_, err = io.Copy(dst, src)
 		return err
 	})
+
+	// Show final count
+	if err == nil {
+		fmt.Printf("Successfully copied %d/%d files\n", fileCount, totalFiles)
+	}
+
+	return err
 }
 
 // setOwnership sets the ownership of a directory recursively
