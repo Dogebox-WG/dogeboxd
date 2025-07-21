@@ -7,6 +7,7 @@ import (
 	"os"
 	"os/exec"
 	"path/filepath"
+	"strings"
 	"syscall"
 
 	"github.com/spf13/cobra"
@@ -79,6 +80,18 @@ Example:
 			fmt.Printf("Error: Pup storage directory does not exist: %s\n", storagePath)
 			os.Exit(1)
 		}
+
+		// Mount any unmounted disks to /media
+		fmt.Println("Looking for unmounted disks to temporarily mount...")
+		mountedDisks := findAndMountUnmountedDisks()
+
+		// Schedule cleanup of mounted disks
+		defer func() {
+			if len(mountedDisks) > 0 {
+				fmt.Println("Cleaning up temporarily mounted disks...")
+				unmountTemporaryDisks(mountedDisks)
+			}
+		}()
 
 		// Find source directory
 		sourceDir, err := getSourceDirectory()
@@ -375,6 +388,108 @@ func copyDirectoryFresh(sourceDir, destDir string) error {
 	}
 
 	return err
+}
+
+// findAndMountUnmountedDisks finds unmounted disks (excluding boot disks) and temporarily mounts them to /media
+func findAndMountUnmountedDisks() []string {
+	// Ensure /media directory exists
+	if err := os.MkdirAll("/media", 0755); err != nil {
+		fmt.Printf("Warning: Failed to create /media directory: %v\n", err)
+		return nil
+	}
+
+	mountedDisks := make([]string, 0)
+
+	// Use lsblk to get unmounted block devices
+	cmd := exec.Command("lsblk", "-rno", "NAME,MOUNTPOINT,TYPE")
+	output, err := cmd.Output()
+	if err != nil {
+		fmt.Printf("Warning: Failed to list block devices: %v\n", err)
+		return mountedDisks
+	}
+
+	lines := strings.Split(string(output), "\n")
+	for _, line := range lines {
+		if line == "" {
+			continue
+		}
+
+		fields := strings.Fields(line)
+		if len(fields) < 2 {
+			continue
+		}
+
+		deviceName := fields[0]
+		mountPoint := fields[1]
+		deviceType := ""
+		if len(fields) >= 3 {
+			deviceType = fields[2]
+		}
+
+		// Skip if already mounted
+		if mountPoint != "" {
+			continue
+		}
+
+		// Only process disks and partitions, skip loop devices and others
+		if deviceType != "disk" && deviceType != "part" {
+			continue
+		}
+
+		devicePath := "/dev/" + deviceName
+		if mountPoint := tryMountDevice(devicePath); mountPoint != "" {
+			mountedDisks = append(mountedDisks, mountPoint)
+		}
+	}
+
+	if len(mountedDisks) > 0 {
+		fmt.Printf("Successfully mounted %d unmounted disk(s) to /media\n", len(mountedDisks))
+	} else {
+		fmt.Println("No unmounted disks found to mount.")
+	}
+
+	return mountedDisks
+}
+
+// tryMountDevice attempts to mount a device to /media and returns the mount point on success
+func tryMountDevice(devicePath string) string {
+	// Create mount point name based on device name
+	deviceName := strings.TrimPrefix(devicePath, "/dev/")
+	mountPointName := strings.ReplaceAll(deviceName, "/", "_")
+	mountPoint := filepath.Join("/media", mountPointName)
+
+	// Create the mount point directory
+	if err := os.MkdirAll(mountPoint, 0755); err != nil {
+		fmt.Printf("Warning: Failed to create mount point %s: %v\n", mountPoint, err)
+		return ""
+	}
+
+	// Try to mount the device
+	mountCmd := exec.Command("mount", devicePath, mountPoint)
+	if err := mountCmd.Run(); err != nil {
+		// Clean up the empty mount point directory if mount failed
+		os.Remove(mountPoint)
+		return ""
+	}
+
+	fmt.Printf("Mounted %s to %s\n", devicePath, mountPoint)
+	return mountPoint
+}
+
+// unmountTemporaryDisks unmounts the given mounted disk paths
+func unmountTemporaryDisks(mountedDisks []string) {
+	for _, mountPoint := range mountedDisks {
+		umountCmd := exec.Command("umount", mountPoint)
+		if err := umountCmd.Run(); err != nil {
+			fmt.Printf("Warning: Failed to unmount %s: %v\n", mountPoint, err)
+		} else {
+			fmt.Printf("Unmounted %s\n", mountPoint)
+			// Clean up the empty mount point directory
+			if err := os.Remove(mountPoint); err != nil {
+				fmt.Printf("Warning: Failed to remove mount point directory %s: %v\n", mountPoint, err)
+			}
+		}
+	}
 }
 
 // setOwnership sets the ownership of a directory recursively
