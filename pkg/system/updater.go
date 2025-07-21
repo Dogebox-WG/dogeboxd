@@ -491,7 +491,7 @@ func (t SystemUpdater) importBlockchainData(j dogeboxd.Job) error {
 		return err
 	}
 
-	log.Log("Blockchain data import completed successfully")
+	log.Log("Blockchain data import completed")
 	return nil
 }
 
