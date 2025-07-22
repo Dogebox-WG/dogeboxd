@@ -1,6 +1,6 @@
 ![Dogebox Logo](/docs/dogebox-logo.png)
 
-# Dogeboxd
+# Dogeboxe
 
 Dogeboxd is the core system manager service for [Dogebox OS](https://dogebox.org), a Linux distribution designed for the Dogecoin community. It provides a secure, user-friendly platform for running decentralized applications (called "Pups") with a focus on Dogecoin services.
 
