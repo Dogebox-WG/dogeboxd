@@ -401,7 +401,7 @@ func findAndMountUnmountedDisks() []string {
 	mountedDisks := make([]string, 0)
 
 	// Use lsblk to get unmounted block devices
-	cmd := exec.Command("lsblk", "-rno", "NAME,MOUNTPOINT,TYPE")
+	cmd := exec.Command("lsblk", "-rno", "NAME,TYPE,MOUNTPOINT")
 	output, err := cmd.Output()
 	if err != nil {
 		fmt.Printf("Warning: Failed to list block devices: %v\n", err)
@@ -415,15 +415,16 @@ func findAndMountUnmountedDisks() []string {
 		}
 
 		fields := strings.Fields(line)
+		fmt.Printf("fields: %v\n", fields)
 		if len(fields) < 2 {
 			continue
 		}
 
 		deviceName := fields[0]
-		mountPoint := fields[1]
-		deviceType := ""
+		deviceType := fields[1]
+		mountPoint := ""
 		if len(fields) >= 3 {
-			deviceType = fields[2]
+			mountPoint = fields[2]
 		}
 
 		// Skip if already mounted
@@ -437,8 +438,10 @@ func findAndMountUnmountedDisks() []string {
 		}
 
 		devicePath := "/dev/" + deviceName
+		fmt.Printf("trying to mount: %s\n", devicePath)
 		if mountPoint := tryMountDevice(devicePath); mountPoint != "" {
 			mountedDisks = append(mountedDisks, mountPoint)
+			fmt.Printf("mounted: %s\n", mountPoint)
 		}
 	}
 
