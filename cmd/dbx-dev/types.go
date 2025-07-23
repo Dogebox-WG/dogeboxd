@@ -42,6 +42,7 @@ const (
 	viewSourceList
 	viewSourceCreate
 	viewSourceDetail
+	viewSetupRequired
 )
 
 // rebuildFinishedMsg signals when rebuild completes
@@ -138,8 +139,9 @@ type actionCompleteMsg struct {
 
 // bootstrapCheckMsg is returned when checking connection to dogeboxd
 type bootstrapCheckMsg struct {
-	socketPath string
-	err        error
+	socketPath            string
+	err                   error
+	configurationComplete bool
 }
 
 // sourceInfo holds information about a single source
