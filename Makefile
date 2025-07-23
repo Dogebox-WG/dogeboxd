@@ -52,3 +52,8 @@ delete-loop-device-2:
 
 dbxdev:
 	DEV_DIR=~/data/dev DBX_SOCKET=~/data/dbx-socket DBX_CONTAINER_LOG_DIR=~/data/containerlogs go run ./cmd/dbx dev
+
+.PHONY: dbxsetup
+
+dbxsetup:
+	DEV_SEED_WORD_INDEX=1 DEV_DIR=~/data/dev DBX_SOCKET=~/data/dbx-socket go run ./cmd/dbx setup
