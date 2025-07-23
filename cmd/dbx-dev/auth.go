@@ -30,8 +30,27 @@ func checkBootstrapCmd(socketPath string) tea.Cmd {
 		}
 		defer resp.Body.Close()
 
-		// We don't need to parse the response, just check if we can connect
-		return bootstrapCheckMsg{socketPath: socketPath, err: nil}
+		// Parse the response to check setup status
+		var result struct {
+			SetupFacts struct {
+				HasCompletedInitialConfiguration bool `json:"hasCompletedInitialConfiguration"`
+			} `json:"setupFacts"`
+		}
+
+		if err := json.NewDecoder(resp.Body).Decode(&result); err != nil {
+			return bootstrapCheckMsg{socketPath: socketPath, err: fmt.Errorf("failed to parse bootstrap response: %w", err)}
+		}
+
+		// Check if initial configuration is complete
+		if !result.SetupFacts.HasCompletedInitialConfiguration {
+			return bootstrapCheckMsg{
+				socketPath:            socketPath,
+				err:                   nil,
+				configurationComplete: false,
+			}
+		}
+
+		return bootstrapCheckMsg{socketPath: socketPath, err: nil, configurationComplete: true}
 	}
 }
 

@@ -173,6 +173,21 @@ func (m model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 			return m, nil
 		}
 
+		// If we have setup required error, don't process any other keys except quit
+		if m.view == viewSetupRequired {
+			switch msg.String() {
+			case "q":
+				return m, tea.Quit
+			case "r":
+				// Retry connection to check if setup is complete
+				return m, tea.Batch(
+					checkBootstrapCmd(m.socketPath),
+					fetchPupsCmd(),
+				)
+			}
+			return m, nil
+		}
+
 		// If we're in task progress view, only allow escape when done
 		if m.view == viewTaskProgress && !m.allTasksDone {
 			// Tasks still running, ignore all input
@@ -656,9 +671,12 @@ func (m model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 			m.connectionErr = msg.err.Error()
 			m.socketPath = msg.socketPath
 			m.view = viewConnectionError
+		} else if !msg.configurationComplete {
+			// Configuration not complete - show setup required view
+			m.view = viewSetupRequired
 		} else {
-			// Connection successful, ensure we're not showing error view
-			if m.view == viewConnectionError {
+			// Connection successful and configuration complete
+			if m.view == viewConnectionError || m.view == viewSetupRequired {
 				m.view = viewLanding
 			}
 		}
