@@ -508,12 +508,15 @@ func (t api) initialBootstrap(w http.ResponseWriter, r *http.Request) {
 
 	dbxs := t.sm.Get().Dogebox
 	dbxs.InitialState.HasFullyConfigured = true
+	log.Log("Setting HasFullyConfigured")
 	if err := t.sm.SetDogebox(dbxs); err != nil {
 		// What should we do here? We've already turned off AP mode so any errors
 		// won't get send back to the client. I guess we just reboot?
 		// That'll force recovery mode again. We can't even persist this error though.
+		log.Logf("Error saving Dogebox state: %v", err)
 		sendErrorResponse(w, http.StatusInternalServerError, "Error persisting flags")
 	}
+	log.Logf("Getting HasFullyConfigured: %v", t.sm.Get().Dogebox.InitialState.HasFullyConfigured)
 
 	sendResponse(w, map[string]any{"status": "OK"})
 
