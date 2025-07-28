@@ -238,6 +238,7 @@ func GetSystemDisks() ([]dogeboxd.SystemDisk, error) {
 			} else if len(result.Blockdevices) > 0 {
 				disk.Label = result.Blockdevices[0].Label
 				disk.Path = result.Blockdevices[0].Path
+				disk.MountPoints = result.Blockdevices[0].Mountpoints
 
 				// Convert children to SystemDisk format
 				for _, child := range result.Blockdevices[0].Children {
@@ -402,17 +403,7 @@ func InstallToDisk(t dogeboxd.Dogeboxd, config dogeboxd.ServerConfig, dbxState d
 
 	log.Printf("Starting to install to disk %s", name)
 
-	var installFn func(string, dogeboxd.Dogeboxd) error
-
-	installFn = dbxrootInstallToDisk
-
-	// For the T6, we need to write the bootloader and partitions
-	// to specific offsets.
-	if buildType == "nanopc-t6" {
-		installFn = dbxrootInstallToT6
-	}
-
-	if err := installFn(name, t); err != nil {
+	if err := dbxrootInstallToDisk(name, t, buildType); err != nil {
 		log.Printf("Failed to install to disk: %v", err)
 		return err
 	}
@@ -454,16 +445,8 @@ func (w *lineStreamWriter) Write(p []byte) (n int, err error) {
 	return len(p), nil
 }
 
-func dbxrootInstallToDisk(disk string, t dogeboxd.Dogeboxd) error {
-	cmd := exec.Command("sudo", "_dbxroot", "install-to-disk", "--disk", disk, "--dbx-secret", DBXRootSecret)
-	cmd.Stdout = newLineStreamWriter(t, "install-output")
-	cmd.Stderr = newLineStreamWriter(t, "install-output")
-
-	return cmd.Run()
-}
-
-func dbxrootInstallToT6(disk string, t dogeboxd.Dogeboxd) error {
-	cmd := exec.Command("sudo", "_dbxroot", "install-to-t6", "--target-disk", disk, "--dbx-secret", DBXRootSecret)
+func dbxrootInstallToDisk(disk string, t dogeboxd.Dogeboxd, buildType string) error {
+	cmd := exec.Command("sudo", "_dbxroot", "install-to-disk", "--variant", buildType, "--disk", disk, "--dbx-secret", DBXRootSecret)
 	cmd.Stdout = newLineStreamWriter(t, "install-output")
 	cmd.Stderr = newLineStreamWriter(t, "install-output")
 
