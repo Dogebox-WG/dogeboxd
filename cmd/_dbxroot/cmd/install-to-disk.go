@@ -47,16 +47,17 @@ var installToDiskCmd = &cobra.Command{
 	Short: "Install Dogebox to a disk.",
 	Long: `Install Dogebox to a disk.
 Example:
-  _dbxroot install-to-disk --variant --disk /dev/sdb --dbx-secret ?
+  _dbxroot install-to-disk --variant iso --disk /dev/sdb --dbx-secret ?
 
      --variant    -t install variant to use. "iso", "nanopc-t6", "qemu"
 	 --disk       -d target disk for install
 	 --dbx-secret -s dbx secret `,
 	Run: func(cmd *cobra.Command, args []string) {
-		var variant = builderIso // Default value for variant even though it isn't optional
+		variant := builderIso
 		disk, _ := cmd.Flags().GetString("disk")
 		dbxSecret, _ := cmd.Flags().GetString("dbx-secret")
-		cmd.Flags().VarP(&variant, "variant", "t", "Install variant to use. One of: \"iso\", \"nanopc-t6\", \"qemu\"")
+		variantString, _ := cmd.Flags().GetString("variant")
+		variant.Set(variantString)
 
 		if dbxSecret != system.DBXRootSecret {
 			log.Printf("Invalid dbx secret")
@@ -119,7 +120,7 @@ Example:
 		if variant == builderT6 {
 			create_t6_boot(disk, bootMediaDisk, partitionPrefix)
 		} else {
-			create_normal_boot(disk, bootMediaDisk, partitionPrefix)
+			create_normal_boot(disk, partitionPrefix)
 		}
 
 		// Copy our NixOS configuration over
@@ -205,7 +206,7 @@ func create_t6_boot(disk string, bootMediaDisk dogeboxd.SystemDisk, partitionPre
 	utils.RunCommand("mount", rootPartition, "/mnt")
 }
 
-func create_normal_boot(disk string, bootMediaDisk dogeboxd.SystemDisk, partitionPrefix string) {
+func create_normal_boot(disk string, partitionPrefix string) {
 	// Create partition table
 	utils.RunParted(disk, "mklabel", "gpt")
 	utils.RunParted(disk, "mkpart", "root", "ext4", "512MB", "-8GB")

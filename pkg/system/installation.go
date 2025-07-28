@@ -238,6 +238,7 @@ func GetSystemDisks() ([]dogeboxd.SystemDisk, error) {
 			} else if len(result.Blockdevices) > 0 {
 				disk.Label = result.Blockdevices[0].Label
 				disk.Path = result.Blockdevices[0].Path
+				disk.MountPoints = result.Blockdevices[0].Mountpoints
 
 				// Convert children to SystemDisk format
 				for _, child := range result.Blockdevices[0].Children {
