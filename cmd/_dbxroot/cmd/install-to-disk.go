@@ -57,7 +57,11 @@ Example:
 		disk, _ := cmd.Flags().GetString("disk")
 		dbxSecret, _ := cmd.Flags().GetString("dbx-secret")
 		variantString, _ := cmd.Flags().GetString("variant")
-		variant.Set(variantString)
+		err := (&variant).Set(variantString)
+		if err != nil {
+			log.Printf("failed to parse variant: %v\n%v\n", variantString, err)
+			os.Exit(1)
+		}
 
 		if dbxSecret != system.DBXRootSecret {
 			log.Printf("Invalid dbx secret")
@@ -158,8 +162,7 @@ func init() {
 	installToDiskCmd.Flags().StringP("dbx-secret", "s", "", "?")
 	installToDiskCmd.MarkFlagRequired("dbx-secret")
 
-	var variant = builderIso
-	installToDiskCmd.Flags().VarP(&variant, "variant", "t", "Install variant to use. One of: \"iso\", \"nanopc-t6\", \"qemu\"")
+	installToDiskCmd.Flags().StringP("variant", "t", "", "Install variant to use. One of: \"iso\", \"nanopc-t6\", \"qemu\"")
 	installToDiskCmd.MarkFlagRequired("variant")
 }
 
