@@ -147,7 +147,11 @@ Example:
 
 		// Install
 		utils.RunCommand("nixos-install", "--flake", flakePath, "--no-root-passwd", "--root", "/mnt")
-		utils.RunCommand("umount", "/mnt")
+		// TODO (ando - 28/07/2025) - Figure out if we need umount here, since
+		//                            it did break iso install with `target busy`
+		if variant != builderIso {
+			utils.RunCommand("umount", "/mnt")
+		}
 
 		log.Println("Finished installing. Please remove installation media and reboot.")
 	},
