@@ -1,6 +1,7 @@
 package cmd
 
 import (
+	"errors"
 	"fmt"
 	"log"
 	"os"
@@ -12,20 +13,50 @@ import (
 	"github.com/spf13/cobra"
 )
 
+type builderType string
+
+const (
+	builderIso  builderType = "iso"
+	builderT6   builderType = "nanopc-t6"
+	builderQemu builderType = "qemu"
+)
+
+// String is used both by fmt.Print and by Cobra in help text
+func (e *builderType) String() string {
+	return string(*e)
+}
+
+// Set must have pointer receiver so it doesn't change the value of a copy
+func (e *builderType) Set(v string) error {
+	switch v {
+	case "iso", "nanopc-t6", "qemu":
+		*e = builderType(v)
+		return nil
+	default:
+		return errors.New(`must be one of "iso", "nanopc-t6", or "qemu"`)
+	}
+}
+
+// Type is only used in help text
+func (e *builderType) Type() string {
+	return "builderType"
+}
+
 var installToDiskCmd = &cobra.Command{
 	Use:   "install-to-disk",
 	Short: "Install Dogebox to a disk.",
 	Long: `Install Dogebox to a disk.
 Example:
-  _dbxroot install-to-disk [--variant generic] --disk /dev/sdb --dbx-secret ?
+  _dbxroot install-to-disk --variant --disk /dev/sdb --dbx-secret ?
 
-     --variant    -t install variant to use (optional) 't6' for NanoPC T6, or 'generic'
+     --variant    -t install variant to use. "iso", "nanopc-t6", "qemu"
 	 --disk       -d target disk for install
 	 --dbx-secret -s dbx secret `,
 	Run: func(cmd *cobra.Command, args []string) {
+		var variant = builderIso // Default value for variant even though it isn't optional
 		disk, _ := cmd.Flags().GetString("disk")
 		dbxSecret, _ := cmd.Flags().GetString("dbx-secret")
-		variant, _ := cmd.Flags().GetString("variant")
+		cmd.Flags().VarP(&variant, "variant", "t", "Install variant to use. One of: \"iso\", \"nanopc-t6\", \"qemu\"")
 
 		if dbxSecret != system.DBXRootSecret {
 			log.Printf("Invalid dbx secret")
@@ -85,7 +116,7 @@ Example:
 		// Ensure /mnt exists before we actually mount into it.
 		utils.RunCommand("mkdir", "-p", "/mnt")
 
-		if variant == "t6" {
+		if variant == builderT6 {
 			create_t6_boot(disk, bootMediaDisk, partitionPrefix)
 		} else {
 			create_normal_boot(disk, bootMediaDisk, partitionPrefix)
@@ -126,7 +157,9 @@ func init() {
 	installToDiskCmd.Flags().StringP("dbx-secret", "s", "", "?")
 	installToDiskCmd.MarkFlagRequired("dbx-secret")
 
-	installToDiskCmd.Flags().StringP("variant", "t", "", "Install type")
+	var variant = builderIso
+	installToDiskCmd.Flags().VarP(&variant, "variant", "t", "Install variant to use. One of: \"iso\", \"nanopc-t6\", \"qemu\"")
+	installToDiskCmd.MarkFlagRequired("variant")
 }
 
 func create_t6_boot(disk string, bootMediaDisk dogeboxd.SystemDisk, partitionPrefix string) {
