@@ -250,8 +250,15 @@ func (t Dogeboxd) jobDispatcher(j Job) {
 	case InstallPups:
 		for _, pup := range a {
 			// Create a separate job for each pup in the batch
-			pupJob := j
-			pupJob.A = pup // Change the action to the individual pup
+			pupJob := Job{
+				ID:      j.ID,
+				A:       pup,
+				Err:     j.Err,
+				Success: j.Success,
+				Start:   j.Start,
+				Logger:  j.Logger,
+				State:   j.State,
+			}
 			t.createPupFromManifest(pupJob, pup.PupName, pup.PupVersion, pup.SourceId, pup.Options)
 		}
 	case UninstallPup:
