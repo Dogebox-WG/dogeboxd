@@ -248,8 +248,20 @@ func (t Dogeboxd) jobDispatcher(j Job) {
 	case InstallPup:
 		t.createPupFromManifest(j, a.PupName, a.PupVersion, a.SourceId, a.Options)
 	case InstallPups:
-		for _, pup := range a {
-			t.createPupFromManifest(j, pup.PupName, pup.PupVersion, pup.SourceId, pup.Options)
+		for i, pup := range a {
+			pupJobID := fmt.Sprintf("%s-%d", j.ID, i+1)
+
+			// Create a separate job for each pup in the batch
+			pupJob := Job{
+				ID:      pupJobID,
+				A:       pup,
+				Err:     j.Err,
+				Success: j.Success,
+				Start:   j.Start,
+				Logger:  NewActionLogger(Job{ID: pupJobID}, "", t),
+				State:   j.State,
+			}
+			t.createPupFromManifest(pupJob, pup.PupName, pup.PupVersion, pup.SourceId, pup.Options)
 		}
 	case UninstallPup:
 		t.sendSystemJobWithPupDetails(j, a.PupID)
@@ -449,6 +461,7 @@ func (t Dogeboxd) sendSystemJobWithPupDetails(j Job, PupID string) {
 		t.sendFinishedJob("action", j)
 		return
 	}
+
 	j.State = &p
 	j.Logger.PupID = PupID
 
