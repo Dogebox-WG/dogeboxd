@@ -101,7 +101,7 @@ Example:
 		utils.RunParted(targetDisk, "set", "8", "boot", "on")
 		utils.RunParted(targetDisk, "set", "8", "legacy_boot", "on")
 
-		# Raw copy idbloader from boot media to target disk.  idbloader sits between the end of the partition table and the start of the first partition.
+		// Raw copy idbloader from boot media to target disk.  idbloader sits between the end of the partition table and the start of the first partition.
 		utils.RunCommand("dd", "if="+bootMediaDisk.Name, "of="+targetDisk, "skip=64", "seek=64", "bs=100k", "count=4", "status=progress")
 
 		hasPartitionPrefix := strings.HasPrefix(targetDisk, "/dev/nvme") || strings.HasPrefix(targetDisk, "/dev/mmcblk")
@@ -111,8 +111,8 @@ Example:
 			partitionPrefix = "p"
 		}
 
-		# Raw copy u-boot from boot media partition 1 to target disk partition 1
-		utils.RunCommand("dd", "if="+fmt.Sprintf("%s%s1", bootMediaDisk.Name, partitionPrefix) "of="+fmt.Sprintf("%s%s1", targetDisk, partitionPrefix), "status=progress")
+		// Raw copy u-boot from boot media partition 1 to target disk partition 1
+		utils.RunCommand("dd", "if="+fmt.Sprintf("%s%s1", bootMediaDisk.Name, partitionPrefix), "of="+fmt.Sprintf("%s%s1", targetDisk, partitionPrefix), "status=progress")
 
 		rootPartition := fmt.Sprintf("%s%s8", targetDisk, partitionPrefix)
 		utils.RunCommand("mkfs.ext4", "-L", "nixos", rootPartition)
