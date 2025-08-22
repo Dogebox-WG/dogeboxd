@@ -81,8 +81,8 @@ func DoSystemUpdate(pkg string, updateVersion string) error {
 		return err
 	}
 
-	// We _only_ support the "dogebox" package for now.
-	if pkg != "dogebox" {
+	// We _only_ support the "os" package for now.
+	if pkg != "os" {
 		return fmt.Errorf("Invalid package to upgrade: %s", pkg)
 	}
 
@@ -99,16 +99,38 @@ func DoSystemUpdate(pkg string, updateVersion string) error {
 	}
 
 	// Update our filesystem with our new package version tags.
+	oldCWD, err := os.Getwd()
+	if err := os.Chdir("/etc/nixos"); err != nil {
+		return fmt.Errorf("problem entering system config directory /etc/nixos: %w", err)
+	}
 
-	// TODO:
-	// version.SetPackageVersion("dogeboxd", updateVersion)
-	// version.SetPackageVersion("dpanel", updateVersion)
-	// version.SetPackageVersion("dkm", updateVersion)
+	cmd := exec.Command("git", "reset", "--hard")
+	cmd.Stderr = os.Stderr
+	cmd.Stdout = os.Stdout
+	if err := cmd.Run(); err != nil {
+		return fmt.Errorf("failed to reset os git repo in /etc/nixos to a known clean state: %w", err)
+	}
 
-	// TODO: We might need to run `nix flake update` here? Would need to be a new _dbxroot command.
+	exec.Command("git", "fetch", "--tags")
+	cmd.Stderr = os.Stderr
+	cmd.Stdout = os.Stdout
+	if err := cmd.Run(); err != nil {
+		return fmt.Errorf("failed to fetch tags for os git repo: %w", err)
+	}
+
+	exec.Command("git", "checkout", updateVersion)
+	cmd.Stderr = os.Stderr
+	cmd.Stdout = os.Stdout
+	if err := cmd.Run(); err != nil {
+		return fmt.Errorf("failed to checkout desired desired updateVersion of %s: %w", updateVersion, err)
+	}
+
+	version.SetPackageVersion("dogeboxd", updateVersion)
+	version.SetPackageVersion("dpanel", updateVersion)
+	version.SetPackageVersion("dkm", updateVersion)
 
 	// Trigger a rebuild of the system. This will read our new version information.
-	cmd := exec.Command("sudo", "_dbxroot", "nix", "rs")
+	cmd = exec.Command("sudo", "_dbxroot", "nix", "rs")
 	cmd.Stderr = os.Stderr
 	cmd.Stdout = os.Stdout
 	if err := cmd.Run(); err != nil {
@@ -116,5 +138,6 @@ func DoSystemUpdate(pkg string, updateVersion string) error {
 	}
 
 	// We probably won't even get here if dogeboxd is restarted/upgraded during this process.
+	err = os.Chdir(oldCWD)
 	return nil
 }
