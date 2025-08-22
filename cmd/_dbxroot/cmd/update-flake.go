@@ -18,7 +18,7 @@ var updateFlakeCmd = &cobra.Command{
 		updateFlakeCmd := exec.Command("nix", "update-flake", "/etc/nixos")
 		updateFlakeCmd.Stdout = os.Stdout
 		updateFlakeCmd.Stderr = os.Stderr
-		err = updateFlakeCmd.Run()
+		err := updateFlakeCmd.Run()
 		if err != nil {
 			fmt.Fprintf(os.Stderr, "Error executing : %v\n", err)
 			os.Exit(1)
