@@ -57,13 +57,13 @@ var listCmd = &cobra.Command{
 		}
 
 		// Print header
-		fmt.Printf("%-30s %-20s %-15s\n", "NAME", "ID", "STATUS")
-		fmt.Printf("%-30s %-20s %-15s\n", strings.Repeat("-", 30), strings.Repeat("-", 20), strings.Repeat("-", 15))
+		fmt.Printf("%-30s %-32s %-15s\n", "NAME", "ID", "STATUS")
+		fmt.Printf("%-30s %-32s %-15s\n", strings.Repeat("-", 30), strings.Repeat("-", 32), strings.Repeat("-", 15))
 
 		// Print each pup
 		for _, pup := range pupStates {
 			status := getStatusDisplay(pup)
-			fmt.Printf("%-30s %-20s %-15s\n", pup.Manifest.Meta.Name, pup.ID, status)
+			fmt.Printf("%-30s %-32s %-15s\n", pup.Manifest.Meta.Name, pup.ID, status)
 		}
 	},
 }
