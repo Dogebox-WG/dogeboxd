@@ -51,10 +51,29 @@ type UpgradableRelease struct {
 	Summary    string
 }
 
+// RepoTagsFetcher interface for mocking getRepoTags
+type RepoTagsFetcher interface {
+	GetRepoTags(repo string) ([]RepositoryTag, error)
+}
+
+// DefaultRepoTagsFetcher implements RepoTagsFetcher using the actual git implementation
+type DefaultRepoTagsFetcher struct{}
+
+func (d *DefaultRepoTagsFetcher) GetRepoTags(repo string) ([]RepositoryTag, error) {
+	return getRepoTags(repo)
+}
+
+// Global variable to allow dependency injection for testing
+var repoTagsFetcher RepoTagsFetcher = &DefaultRepoTagsFetcher{}
+
 func GetUpgradableReleases() ([]UpgradableRelease, error) {
+	return GetUpgradableReleasesWithFetcher(repoTagsFetcher)
+}
+
+func GetUpgradableReleasesWithFetcher(fetcher RepoTagsFetcher) ([]UpgradableRelease, error) {
 	dbxRelease := version.GetDBXRelease()
 
-	tags, err := getRepoTags(RELEASE_REPOSITORY)
+	tags, err := fetcher.GetRepoTags(RELEASE_REPOSITORY)
 	if err != nil {
 		return []UpgradableRelease{}, err
 	}
