@@ -93,14 +93,14 @@ func getStatusDisplay(pup dogeboxd.PupState) string {
 	status := pup.Installation
 
 	// Add running state if enabled
-	if pup.Installation == "ready" && pup.Enabled {
+	if pup.Installation == dogeboxd.STATE_READY && pup.Enabled {
 		status = "running"
-	} else if pup.Installation == "ready" && !pup.Enabled {
+	} else if pup.Installation == dogeboxd.STATE_READY && !pup.Enabled {
 		status = "stopped"
 	}
 
 	// Add broken reason if broken
-	if pup.Installation == "broken" && pup.BrokenReason != "" {
+	if pup.Installation == dogeboxd.STATE_BROKEN && pup.BrokenReason != "" {
 		status = fmt.Sprintf("broken (%s)", pup.BrokenReason)
 	}
 
@@ -110,6 +110,6 @@ func getStatusDisplay(pup dogeboxd.PupState) string {
 func init() {
 	pupCmd.AddCommand(listCmd)
 
-	listCmd.Flags().String("dataDir", "/root/.dogeboxd", "Path to dogeboxd data directory")
+	listCmd.Flags().String("dataDir", "/opt/dogebox", "Path to dogeboxd data directory")
 }
 
