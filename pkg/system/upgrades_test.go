@@ -160,13 +160,13 @@ func TestDoSystemUpdate_InvalidPackage(t *testing.T) {
 	mockTags := []RepositoryTag{
 		{Tag: "v1.2.0"},
 	}
-	
+
 	// Store original fetcher and restore after test
 	originalFetcher := repoTagsFetcher
 	defer func() {
 		repoTagsFetcher = originalFetcher
 	}()
-	
+
 	repoTagsFetcher = &MockRepoTagsFetcher{tags: mockTags, err: nil}
 
 	// Mock current version
@@ -190,13 +190,13 @@ func TestDoSystemUpdate_UnavailableVersion(t *testing.T) {
 		{Tag: "v1.2.0"},
 		{Tag: "v1.3.0"},
 	}
-	
+
 	// Store original fetcher and restore after test
 	originalFetcher := repoTagsFetcher
 	defer func() {
 		repoTagsFetcher = originalFetcher
 	}()
-	
+
 	repoTagsFetcher = &MockRepoTagsFetcher{tags: mockTags, err: nil}
 
 	// Mock current version
@@ -221,7 +221,7 @@ func TestDoSystemUpdate_ErrorFromGetUpgradableReleases(t *testing.T) {
 	defer func() {
 		repoTagsFetcher = originalFetcher
 	}()
-	
+
 	// Mock error from repo fetcher
 	repoTagsFetcher = &MockRepoTagsFetcher{
 		tags: nil,
@@ -306,7 +306,7 @@ func setupMockVersioning(t testing.TB, release string) string {
 	// Temporarily change the version lookup path to our temp directory
 	originalPath := os.Getenv("VERSION_PATH_OVERRIDE")
 	os.Setenv("VERSION_PATH_OVERRIDE", versionDir)
-	
+
 	// Restore original path when test completes
 	t.Cleanup(func() {
 		if originalPath == "" {
@@ -328,17 +328,17 @@ func TestIntegrationSuite(t *testing.T) {
 func TestTableDrivenUpgradeScenarios(t *testing.T) {
 	testCases := []TableDrivenTest{
 		{
-			Name:           "Single upgrade available",
-			CurrentVersion: "v1.0.0",
-			AvailableTags:  []RepositoryTag{{Tag: "v1.1.0"}},
-			ExpectedCount:  1,
+			Name:             "Single upgrade available",
+			CurrentVersion:   "v1.0.0",
+			AvailableTags:    []RepositoryTag{{Tag: "v1.1.0"}},
+			ExpectedCount:    1,
 			ExpectedVersions: []string{"v1.1.0"},
 		},
 		{
 			Name:           "Multiple pre-release and release versions",
 			CurrentVersion: "v1.0.0",
 			AvailableTags: []RepositoryTag{
-				{Tag: "v1.1.0-alpha"},  // Should be ignored (invalid semver without rc/beta/alpha handling)
+				{Tag: "v1.1.0-alpha"}, // Should be ignored (invalid semver without rc/beta/alpha handling)
 				{Tag: "v1.1.0"},
 				{Tag: "v1.2.0"},
 			},
@@ -361,12 +361,12 @@ func TestMockFetcherCreationHelpers(t *testing.T) {
 	// Test CreateSuccessMock
 	tags := []RepositoryTag{{Tag: "v1.0.0"}, {Tag: "v1.1.0"}}
 	successMock := CreateSuccessMock(tags)
-	
+
 	result, err := successMock.GetRepoTags("test-repo")
 	if err != nil {
 		t.Errorf("Expected no error from success mock, got: %v", err)
 	}
-	
+
 	if len(result) != 2 {
 		t.Errorf("Expected 2 tags, got %d", len(result))
 	}
@@ -374,16 +374,16 @@ func TestMockFetcherCreationHelpers(t *testing.T) {
 	// Test CreateErrorMock
 	testErr := fmt.Errorf("test error")
 	errorMock := CreateErrorMock(testErr)
-	
+
 	result, err = errorMock.GetRepoTags("test-repo")
 	if err == nil {
 		t.Error("Expected error from error mock, got nil")
 	}
-	
+
 	if err.Error() != "test error" {
 		t.Errorf("Expected 'test error', got '%s'", err.Error())
 	}
-	
+
 	if len(result) != 0 {
 		t.Errorf("Expected 0 tags on error, got %d", len(result))
 	}
@@ -392,12 +392,12 @@ func TestMockFetcherCreationHelpers(t *testing.T) {
 // TestGenerateSequentialVersions tests the version generation helper
 func TestGenerateSequentialVersions(t *testing.T) {
 	tags := GenerateSequentialVersions(1, 0, 3)
-	
+
 	expectedTags := []string{"v1.0.0", "v1.1.0", "v1.2.0"}
 	if len(tags) != len(expectedTags) {
 		t.Errorf("Expected %d tags, got %d", len(expectedTags), len(tags))
 	}
-	
+
 	for i, expectedTag := range expectedTags {
 		if tags[i].Tag != expectedTag {
 			t.Errorf("Expected tag[%d] to be %s, got %s", i, expectedTag, tags[i].Tag)
