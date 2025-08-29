@@ -5,6 +5,7 @@ import (
 	"fmt"
 	"os"
 	"os/exec"
+	"path/filepath"
 	"strings"
 
 	"github.com/carlmjohnson/versioninfo"
@@ -28,23 +29,29 @@ type DBXVersionInfo struct {
 
 func GetDBXRelease() *DBXVersionInfo {
 	release := "unknown"
+	
+	// Allow override for testing
+	versionPath := "/opt/versioning"
+	if overridePath := os.Getenv("VERSION_PATH_OVERRIDE"); overridePath != "" {
+		versionPath = overridePath
+	}
 
-	if dbxReleaseData, err := os.ReadFile("/opt/versioning/dbx"); err == nil {
+	if dbxReleaseData, err := os.ReadFile(filepath.Join(versionPath, "dbx")); err == nil {
 		release = strings.TrimSpace(string(dbxReleaseData))
 	}
 
 	packages := make(map[string]DBXVersionInputTuple)
-	if entries, err := os.ReadDir("/opt/versioning"); err == nil {
+	if entries, err := os.ReadDir(versionPath); err == nil {
 		for _, entry := range entries {
 			if entry.IsDir() {
 				pkgName := entry.Name()
 				var tuple DBXVersionInputTuple
 
-				if revData, err := os.ReadFile("/opt/versioning/" + pkgName + "/rev"); err == nil {
+				if revData, err := os.ReadFile(filepath.Join(versionPath, pkgName, "rev")); err == nil {
 					tuple.Rev = strings.TrimSpace(string(revData))
 				}
 
-				if hashData, err := os.ReadFile("/opt/versioning/" + pkgName + "/hash"); err == nil {
+				if hashData, err := os.ReadFile(filepath.Join(versionPath, pkgName, "hash")); err == nil {
 					tuple.Hash = strings.TrimSpace(string(hashData))
 				}
 

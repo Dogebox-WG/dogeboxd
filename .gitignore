@@ -24,3 +24,6 @@ build
 go.work
 vendor
 result
+
+#Claude files
+.claude
