@@ -111,7 +111,7 @@ func SetPackageVersion(pkg string, rev string) (bool, error) {
 	}
 
 	// write out new 'rev' and 'hash'
-	if err = os.WriteFile(metaDir+"/hash", []byte(rev), 0644); err != nil {
+	if err = os.WriteFile(metaDir+"/rev", []byte(rev), 0644); err != nil {
 		return false, err
 	}
 
