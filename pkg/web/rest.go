@@ -115,6 +115,9 @@ func RESTAPI(
 		"GET /system/binary-caches":        a.getBinaryCaches,
 		"PUT /system/binary-cache":         a.addBinaryCache,
 		"DELETE /system/binary-cache/{id}": a.removeBinaryCache,
+
+		"GET /system/updates": a.checkForUpdates,
+		"POST /system/update": a.commenceUpdate,
 	}
 
 	// We always want to load recovery routes.
