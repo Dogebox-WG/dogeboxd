@@ -7,54 +7,6 @@ import (
 	"testing"
 )
 
-// TestHelper provides utilities for testing upgrades functionality
-type TestHelper struct {
-	t               *testing.T
-	tempDir         string
-	originalWorkDir string
-}
-
-// NewTestHelper creates a new test helper
-func NewTestHelper(t *testing.T) *TestHelper {
-	tempDir, err := os.MkdirTemp("", "upgrades_test_*")
-	if err != nil {
-		t.Fatalf("Failed to create temp directory: %v", err)
-	}
-
-	originalWorkDir, err := os.Getwd()
-	if err != nil {
-		t.Fatalf("Failed to get current working directory: %v", err)
-	}
-
-	return &TestHelper{
-		t:               t,
-		tempDir:         tempDir,
-		originalWorkDir: originalWorkDir,
-	}
-}
-
-// Cleanup removes temporary test files and restores working directory
-func (th *TestHelper) Cleanup() {
-	os.Chdir(th.originalWorkDir)
-	os.RemoveAll(th.tempDir)
-}
-
-// CreateMockGitRepo creates a mock git repository for testing
-func (th *TestHelper) CreateMockGitRepo() string {
-	repoDir := filepath.Join(th.tempDir, "mock_repo")
-	if err := os.MkdirAll(repoDir, 0755); err != nil {
-		th.t.Fatalf("Failed to create mock repo directory: %v", err)
-	}
-
-	// Create a basic git repository structure (without actual git operations)
-	gitDir := filepath.Join(repoDir, ".git")
-	if err := os.MkdirAll(gitDir, 0755); err != nil {
-		th.t.Fatalf("Failed to create .git directory: %v", err)
-	}
-
-	return repoDir
-}
-
 // AssertUpgradableRelease checks if an upgradable release has expected properties
 func AssertUpgradableRelease(t *testing.T, release UpgradableRelease, expectedVersion string) {
 	if release.Version != expectedVersion {
@@ -83,10 +35,10 @@ func GenerateSequentialVersions(major, minor int, count int) []RepositoryTag {
 
 // Error scenarios for testing
 var (
-	ErrNetworkTimeout   = fmt.Errorf("network timeout")
-	ErrUnauthorized     = fmt.Errorf("unauthorized access")
-	ErrRepoNotFound     = fmt.Errorf("repository not found")
-	ErrInvalidResponse  = fmt.Errorf("invalid response format")
+	ErrNetworkTimeout  = fmt.Errorf("network timeout")
+	ErrUnauthorized    = fmt.Errorf("unauthorized access")
+	ErrRepoNotFound    = fmt.Errorf("repository not found")
+	ErrInvalidResponse = fmt.Errorf("invalid response format")
 )
 
 // CreateErrorMock creates a mock that returns an error
@@ -107,16 +59,16 @@ func CreateSuccessMock(tags []RepositoryTag) *MockRepoTagsFetcher {
 
 // TableDrivenTest represents a test case for table-driven testing
 type TableDrivenTest struct {
-	Name            string
-	CurrentVersion  string
-	AvailableTags   []RepositoryTag
-	MockError       error
-	ExpectedCount   int
-	ExpectedError   string
+	Name             string
+	CurrentVersion   string
+	AvailableTags    []RepositoryTag
+	MockError        error
+	ExpectedCount    int
+	ExpectedError    string
 	ExpectedVersions []string
 }
 
-// RunTableDrivenTests executes a series of table-driven tests for GetUpgradableReleases
+// executes a series of table-driven tests for GetUpgradableReleases
 func RunTableDrivenTests(t *testing.T, tests []TableDrivenTest) {
 	for _, tt := range tests {
 		t.Run(tt.Name, func(t *testing.T) {
@@ -170,54 +122,36 @@ func RunTableDrivenTests(t *testing.T, tests []TableDrivenTest) {
 	}
 }
 
-// IntegrationTestSuite contains a collection of integration-style tests
-func RunIntegrationTestSuite(t *testing.T) {
-	testCases := []TableDrivenTest{
-		{
-			Name:           "Multiple upgrades available",
-			CurrentVersion: "v1.0.0",
-			AvailableTags: []RepositoryTag{
-				{Tag: "v0.9.0"},
-				{Tag: "v1.0.0"},
-				{Tag: "v1.1.0"},
-				{Tag: "v1.2.0"},
-				{Tag: "v2.0.0"},
-			},
-			ExpectedCount:    3,
-			ExpectedVersions: []string{"v1.1.0", "v1.2.0", "v2.0.0"},
-		},
-		{
-			Name:           "No upgrades available - current is latest",
-			CurrentVersion: "v2.0.0",
-			AvailableTags: []RepositoryTag{
-				{Tag: "v1.0.0"},
-				{Tag: "v1.1.0"},
-				{Tag: "v2.0.0"},
-			},
-			ExpectedCount: 0,
-		},
-		{
-			Name:           "No upgrades available - current is newer",
-			CurrentVersion: "v3.0.0",
-			AvailableTags: []RepositoryTag{
-				{Tag: "v1.0.0"},
-				{Tag: "v2.0.0"},
-			},
-			ExpectedCount: 0,
-		},
-		{
-			Name:           "Network error",
-			CurrentVersion: "v1.0.0",
-			MockError:      ErrNetworkTimeout,
-			ExpectedError:  "network timeout",
-		},
-		{
-			Name:           "Repository not found",
-			CurrentVersion: "v1.0.0",
-			MockError:      ErrRepoNotFound,
-			ExpectedError:  "repository not found",
-		},
+// setupMockVersioning creates a temporary version directory for testing
+func setupMockVersioning(t testing.TB, release string) string {
+	tempDir, err := os.MkdirTemp("", "version_test_*")
+	if err != nil {
+		t.Fatalf("Failed to create temp directory: %v", err)
 	}
 
-	RunTableDrivenTests(t, testCases)
+	versionDir := filepath.Join(tempDir, "versioning")
+	if err := os.MkdirAll(versionDir, 0755); err != nil {
+		os.RemoveAll(tempDir)
+		t.Fatalf("Failed to create versioning directory: %v", err)
+	}
+
+	if err := os.WriteFile(filepath.Join(versionDir, "dbx"), []byte(release), 0644); err != nil {
+		os.RemoveAll(tempDir)
+		t.Fatalf("Failed to write version file: %v", err)
+	}
+
+	// Temporarily change the version lookup path to our temp directory
+	originalPath := os.Getenv("VERSION_PATH_OVERRIDE")
+	os.Setenv("VERSION_PATH_OVERRIDE", versionDir)
+
+	// Restore original path when test completes
+	t.Cleanup(func() {
+		if originalPath == "" {
+			os.Unsetenv("VERSION_PATH_OVERRIDE")
+		} else {
+			os.Setenv("VERSION_PATH_OVERRIDE", originalPath)
+		}
+	})
+
+	return tempDir
 }
