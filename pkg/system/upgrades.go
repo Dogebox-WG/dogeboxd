@@ -9,11 +9,14 @@ import (
 	"github.com/dogeorg/dogeboxd/pkg/version"
 	"github.com/go-git/go-git/v5"
 	"github.com/go-git/go-git/v5/config"
+	"github.com/go-git/go-git/v5/plumbing"
 	"github.com/go-git/go-git/v5/storage/memory"
 	"golang.org/x/mod/semver"
 )
 
 const RELEASE_REPOSITORY = "https://github.com/dogebox-wg/os.git"
+const OS_GIT_REPO_LOCATION = "/etc/nixos"
+const REBUILD_COMMAND_PREFIX = "sudo"
 
 type RepositoryTag struct {
 	Tag string
@@ -102,7 +105,7 @@ func DoSystemUpdate(pkg string, updateVersion string) error {
 
 	// We _only_ support the "os" package for now.
 	if pkg != "os" {
-		return fmt.Errorf("Invalid package to upgrade: %s", pkg)
+		return fmt.Errorf("invalid package to upgrade: %s", pkg)
 	}
 
 	ok := false
@@ -114,34 +117,56 @@ func DoSystemUpdate(pkg string, updateVersion string) error {
 	}
 
 	if !ok {
-		return fmt.Errorf("Release %s is not available for %s", updateVersion, pkg)
+		return fmt.Errorf("release %s is not available for %s", updateVersion, pkg)
 	}
 
 	// Update our filesystem with our new package version tags.
-	oldCWD, err := os.Getwd()
-	if err := os.Chdir("/etc/nixos"); err != nil {
-		return fmt.Errorf("problem entering system config directory /etc/nixos: %w", err)
+
+	//oldCWD, _ := os.Getwd()
+	//if err := os.Chdir("/etc/nixos"); err != nil {
+	//	return fmt.Errorf("problem entering system config directory /etc/nixos: %w", err)
+	//}
+
+	osGit, err := git.PlainOpen(OS_GIT_REPO_LOCATION)
+	if err != nil {
+		return fmt.Errorf("error opening os git repo: %v", err)
 	}
 
-	cmd := exec.Command("git", "reset", "--hard")
-	cmd.Stderr = os.Stderr
-	cmd.Stdout = os.Stdout
-	if err := cmd.Run(); err != nil {
-		return fmt.Errorf("failed to reset os git repo in /etc/nixos to a known clean state: %w", err)
+	//cmd := exec.Command("git", "reset", "--hard")
+	//cmd.Stderr = os.Stderr
+	//cmd.Stdout = os.Stdout
+	//if err := cmd.Run(); err != nil {
+	//	return fmt.Errorf("failed to reset os git repo in /etc/nixos to a known clean state: %w", err)
+	//}
+	osWorktree, err := osGit.Worktree()
+	if err != nil {
+		return fmt.Errorf("error retrieving worktree from os git repo: %w", err)
 	}
 
-	exec.Command("git", "fetch", "--tags")
-	cmd.Stderr = os.Stderr
-	cmd.Stdout = os.Stdout
-	if err := cmd.Run(); err != nil {
+	if err := osWorktree.Reset(&git.ResetOptions{Mode: git.HardReset}); err != nil {
+		return fmt.Errorf("failed to reset os git repo to a known clean state: %w", err)
+	}
+
+	//exec.Command("git", "fetch", "--tags")
+	//cmd.Stderr = os.Stderr
+	//cmd.Stdout = os.Stdout
+	//if err := cmd.Run(); err != nil {
+	//	return fmt.Errorf("failed to fetch tags for os git repo: %w", err)
+	//}
+
+	if err := osGit.Fetch(&git.FetchOptions{Tags: git.AllTags}); err != nil {
 		return fmt.Errorf("failed to fetch tags for os git repo: %w", err)
 	}
 
-	exec.Command("git", "checkout", updateVersion)
-	cmd.Stderr = os.Stderr
-	cmd.Stdout = os.Stdout
-	if err := cmd.Run(); err != nil {
-		return fmt.Errorf("failed to checkout desired desired updateVersion of %s: %w", updateVersion, err)
+	//exec.Command("git", "checkout", updateVersion)
+	//cmd.Stderr = os.Stderr
+	//cmd.Stdout = os.Stdout
+	//if err := cmd.Run(); err != nil {
+	//	return fmt.Errorf("failed to checkout desired desired updateVersion of %s: %w", updateVersion, err)
+	//}
+
+	if err := osWorktree.Checkout(&git.CheckoutOptions{Branch: plumbing.ReferenceName(fmt.Sprintf("refs/heads/%s", updateVersion))}); err != nil {
+		return fmt.Errorf("failed to checkout desired updateVersion of %s: %w", updateVersion, err)
 	}
 
 	version.SetPackageVersion("dogeboxd", updateVersion)
@@ -149,7 +174,7 @@ func DoSystemUpdate(pkg string, updateVersion string) error {
 	version.SetPackageVersion("dkm", updateVersion)
 
 	// Trigger a rebuild of the system. This will read our new version information.
-	cmd = exec.Command("sudo", "_dbxroot", "nix", "rs")
+	cmd := exec.Command(REBUILD_COMMAND_PREFIX, "_dbxroot", "nix", "rs")
 	cmd.Stderr = os.Stderr
 	cmd.Stdout = os.Stdout
 	if err := cmd.Run(); err != nil {
@@ -157,6 +182,6 @@ func DoSystemUpdate(pkg string, updateVersion string) error {
 	}
 
 	// We probably won't even get here if dogeboxd is restarted/upgraded during this process.
-	err = os.Chdir(oldCWD)
-	return nil
+	//err = os.Chdir(oldCWD)
+	return err
 }
