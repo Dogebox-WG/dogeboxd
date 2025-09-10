@@ -6,6 +6,7 @@ import (
 	"net/http"
 
 	"github.com/dogeorg/dogeboxd/pkg/system"
+	"github.com/dogeorg/dogeboxd/pkg/version"
 )
 
 type CommenceUpdateRequest struct {
@@ -42,7 +43,7 @@ func (t api) checkForUpdates(w http.ResponseWriter, r *http.Request) {
 
 	if len(releases) > 0 {
 		// Get current version from the system
-		currentVersion := "v0.0.0" // TODO: Get actual current version
+		currentVersion := version.GetDBXRelease().Release
 		latestVersion := releases[0].Version
 
 		// Convert system.UpgradableRelease to our local UpgradableRelease
