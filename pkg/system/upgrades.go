@@ -7,6 +7,7 @@ import (
 	"os"
 	"os/exec"
 	"path/filepath"
+	"sort"
 
 	"github.com/dogeorg/dogeboxd/pkg/version"
 	"github.com/go-git/go-git/v5"
@@ -45,6 +46,10 @@ func getRepoTags(repo string) ([]RepositoryTag, error) {
 			})
 		}
 	}
+
+	sort.Slice(tags, func(i, j int) bool {
+		return semver.Compare(tags[i].Tag, tags[j].Tag) == 1
+	})
 
 	return tags, nil
 }
