@@ -32,7 +32,10 @@ type UpdatesResponse struct {
 }
 
 func (t api) checkForUpdates(w http.ResponseWriter, r *http.Request) {
-	releases, err := system.GetUpgradableReleases()
+	// Parse query parameter for including pre-releases
+	includePreReleases := r.URL.Query().Get("includePreReleases") == "true"
+
+	releases, err := system.GetUpgradableReleases(includePreReleases)
 	if err != nil {
 		sendErrorResponse(w, http.StatusInternalServerError, "Error checking for updates")
 		return
