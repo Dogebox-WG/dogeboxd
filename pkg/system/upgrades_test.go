@@ -153,18 +153,18 @@ func TestGetUpgradableReleases_UpgradesAvailable(t *testing.T) {
 		t.Errorf("Expected %d upgradable releases, got %d", expectedCount, len(releases))
 	}
 
-	// Check first upgrade (v1.2.0)
-	if releases[0].Version != "v1.2.0" {
-		t.Errorf("Expected first upgrade to be v1.2.0, got %s", releases[0].Version)
+	// Check first upgrade (v2.0.0 - highest version first)
+	if releases[0].Version != "v2.0.0" {
+		t.Errorf("Expected first upgrade to be v2.0.0, got %s", releases[0].Version)
 	}
 
-	// Check second upgrade (v2.0.0)
-	if releases[1].Version != "v2.0.0" {
-		t.Errorf("Expected second upgrade to be v2.0.0, got %s", releases[1].Version)
+	// Check second upgrade (v1.2.0)
+	if releases[1].Version != "v1.2.0" {
+		t.Errorf("Expected second upgrade to be v1.2.0, got %s", releases[1].Version)
 	}
 
 	// Verify release URLs are correctly formatted
-	expectedURL1 := "https://github.com/dogebox-wg/os/releases/tag/v1.2.0"
+	expectedURL1 := "https://github.com/dogebox-wg/os/releases/tag/v2.0.0"
 	if releases[0].ReleaseURL != expectedURL1 {
 		t.Errorf("Expected release URL to be %s, got %s", expectedURL1, releases[0].ReleaseURL)
 	}
@@ -265,7 +265,7 @@ func TestIntegrationSuite(t *testing.T) {
 				{Tag: "v1.2.0"},
 			},
 			ExpectedCount:    2,
-			ExpectedVersions: []string{"v1.1.0", "v1.2.0"},
+			ExpectedVersions: []string{"v1.2.0", "v1.1.0"},
 		},
 		{
 			Name:           "Empty repository",
@@ -284,7 +284,7 @@ func TestIntegrationSuite(t *testing.T) {
 				{Tag: "v2.0.0"},
 			},
 			ExpectedCount:    3,
-			ExpectedVersions: []string{"v1.1.0", "v1.2.0", "v2.0.0"},
+			ExpectedVersions: []string{"v2.0.0", "v1.2.0", "v1.1.0"},
 		},
 		{
 			Name:           "No upgrades available - current is latest",
