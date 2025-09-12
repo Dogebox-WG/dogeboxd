@@ -412,3 +412,109 @@ func TestDoSystemUpdate_ErrorFromGetUpgradableReleases(t *testing.T) {
 
 /* TODO : check if versioning file(s) were written out
  */
+
+// TestSemverOrderingWithPreReleases verifies that UpgradableReleases are ordered by semver
+// including pre-release versions (alpha, beta) and various version formats
+func TestSemverOrderingWithPreReleases(t *testing.T) {
+	// Create mock tags with various version types including pre-releases
+	mockTags := []RepositoryTag{
+		{Tag: "v1.5.0"},
+		{Tag: "v2.0.0"},
+		{Tag: "v1.2.0"},
+		{Tag: "v1.10.0"},
+		{Tag: "v1.1.0"},
+		{Tag: "v2.1.0"},
+		{Tag: "v1.0.0"},
+		{Tag: "v0.0.1"},
+		{Tag: "v0.2.0"},
+		{Tag: "v1.0.0-alpha.1"},
+		{Tag: "v1.0.0-beta.2"},
+		{Tag: "v1.0.0-alpha.2"},
+		{Tag: "v2.0.0-beta.1"},
+	}
+	mockFetcher := &MockRepoTagsFetcher{tags: mockTags, err: nil}
+
+	// Mock current version to be older than all available versions
+	tempDir := setupMockVersioning(t, "v0.0.0")
+	defer os.RemoveAll(tempDir)
+
+	releases, err := GetUpgradableReleasesWithFetcher(mockFetcher)
+	if err != nil {
+		t.Fatalf("Expected no error, got: %v", err)
+	}
+
+	// Should return all versions since current is v0.0.0
+	expectedCount := 13
+	if len(releases) != expectedCount {
+		t.Errorf("Expected %d upgradable releases, got %d", expectedCount, len(releases))
+	}
+
+	// Verify ordering: highest first, lowest last (including pre-releases)
+	expectedOrder := []string{
+		"v2.1.0",
+		"v2.0.0",
+		"v2.0.0-beta.1",
+		"v1.10.0",
+		"v1.5.0",
+		"v1.2.0",
+		"v1.1.0",
+		"v1.0.0",
+		"v1.0.0-beta.2",
+		"v1.0.0-alpha.2",
+		"v1.0.0-alpha.1",
+		"v0.2.0",
+		"v0.0.1",
+	}
+
+	for i, expectedVersion := range expectedOrder {
+		if releases[i].Version != expectedVersion {
+			t.Errorf("Expected releases[%d] to be %s, got %s", i, expectedVersion, releases[i].Version)
+		}
+	}
+
+	// Verify that each version is actually higher than the next one using semver.Compare
+	for i := 0; i < len(releases)-1; i++ {
+		if semver.Compare(releases[i].Version, releases[i+1].Version) <= 0 {
+			t.Errorf("Version ordering incorrect: %s should be higher than %s", releases[i].Version, releases[i+1].Version)
+		}
+	}
+
+	// Verify specific requested versions are present and in correct positions
+	v001Index := -1
+	v020Index := -1
+	for i, release := range releases {
+		if release.Version == "v0.0.1" {
+			v001Index = i
+		}
+		if release.Version == "v0.2.0" {
+			v020Index = i
+		}
+	}
+
+	if v001Index == -1 {
+		t.Error("Expected v0.0.1 to be present in releases")
+	}
+	if v020Index == -1 {
+		t.Error("Expected v0.2.0 to be present in releases")
+	}
+
+	// Verify v0.2.0 comes before v0.0.1
+	if v020Index >= v001Index {
+		t.Errorf("Expected v0.2.0 (index %d) to come before v0.0.1 (index %d)", v020Index, v001Index)
+	}
+
+	// Verify pre-release versions are handled correctly
+	alphaVersions := []string{"v1.0.0-alpha.1", "v1.0.0-alpha.2", "v2.0.0-beta.1", "v1.0.0-beta.2"}
+	for _, alphaVersion := range alphaVersions {
+		found := false
+		for _, release := range releases {
+			if release.Version == alphaVersion {
+				found = true
+				break
+			}
+		}
+		if !found {
+			t.Errorf("Expected pre-release version %s to be present in releases", alphaVersion)
+		}
+	}
+}

@@ -20,6 +20,28 @@ import (
 var RELEASE_REPOSITORY = "https://github.com/dogebox-wg/os.git"
 var REBUILD_COMMAND_PREFIX = "sudo"
 
+// semverSortTags sorts a slice of RepositoryTag by semver version
+// direction: "desc" for descending (highest first), "asc" for ascending (lowest first)
+func semverSortTags(tags []RepositoryTag, direction string) {
+	sort.Slice(tags, func(i, j int) bool {
+		if direction == "desc" {
+			return semver.Compare(tags[i].Tag, tags[j].Tag) > 0
+		}
+		return semver.Compare(tags[i].Tag, tags[j].Tag) < 0
+	})
+}
+
+// semverSortReleases sorts a slice of UpgradableRelease by semver version
+// direction: "desc" for descending (highest first), "asc" for ascending (lowest first)
+func semverSortReleases(releases []UpgradableRelease, direction string) {
+	sort.Slice(releases, func(i, j int) bool {
+		if direction == "desc" {
+			return semver.Compare(releases[i].Version, releases[j].Version) > 0
+		}
+		return semver.Compare(releases[i].Version, releases[j].Version) < 0
+	})
+}
+
 type RepositoryTag struct {
 	Tag string
 }
@@ -47,10 +69,7 @@ func getRepoTags(repo string) ([]RepositoryTag, error) {
 		}
 	}
 
-	sort.Slice(tags, func(i, j int) bool {
-		return semver.Compare(tags[i].Tag, tags[j].Tag) == 1
-	})
-
+	semverSortTags(tags, "desc") // Sort descending (highest first)
 	return tags, nil
 }
 
@@ -99,6 +118,8 @@ func GetUpgradableReleasesWithFetcher(fetcher RepoTagsFetcher) ([]UpgradableRele
 			upgradableTags = append(upgradableTags, release)
 		}
 	}
+
+	semverSortReleases(upgradableTags, "desc") // Sort descending (highest first)
 
 	return upgradableTags, nil
 }
