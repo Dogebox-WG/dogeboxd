@@ -94,11 +94,11 @@ func (d *DefaultRepoTagsFetcher) GetRepoTags(repo string) ([]RepositoryTag, erro
 // Global variable to allow dependency injection for testing
 var repoTagsFetcher RepoTagsFetcher = &DefaultRepoTagsFetcher{}
 
-func GetUpgradableReleases() ([]UpgradableRelease, error) {
-	return GetUpgradableReleasesWithFetcher(repoTagsFetcher)
+func GetUpgradableReleases(includePreReleases bool) ([]UpgradableRelease, error) {
+	return GetUpgradableReleasesWithFetcher(includePreReleases, repoTagsFetcher)
 }
 
-func GetUpgradableReleasesWithFetcher(fetcher RepoTagsFetcher) ([]UpgradableRelease, error) {
+func GetUpgradableReleasesWithFetcher(includePreReleases bool, fetcher RepoTagsFetcher) ([]UpgradableRelease, error) {
 	dbxRelease := version.GetDBXRelease()
 
 	tags, err := fetcher.GetRepoTags(RELEASE_REPOSITORY)
@@ -115,6 +115,10 @@ func GetUpgradableReleasesWithFetcher(fetcher RepoTagsFetcher) ([]UpgradableRele
 		}
 
 		if semver.Compare(tag.Tag, dbxRelease.Release) > 0 {
+			// If not including pre-releases, filter out pre-release versions
+			if !includePreReleases && semver.Prerelease(tag.Tag) != "" {
+				continue
+			}
 			upgradableTags = append(upgradableTags, release)
 		}
 	}
@@ -186,7 +190,7 @@ func getTagHashes(repo string, tag string) (map[string]string, error) {
 }
 
 func DoSystemUpdate(pkg string, updateVersion string) error {
-	upgradableReleases, err := GetUpgradableReleases()
+	upgradableReleases, err := GetUpgradableReleases(false)
 	if err != nil {
 		return err
 	}

@@ -82,7 +82,7 @@ func RunTableDrivenTests(t *testing.T, tests []TableDrivenTest) {
 			tempDir := setupMockVersioning(t, tt.CurrentVersion)
 			defer os.RemoveAll(tempDir)
 
-			releases, err := GetUpgradableReleasesWithFetcher(mockFetcher)
+			releases, err := GetUpgradableReleasesWithFetcher(false, mockFetcher)
 
 			// Check error expectations
 			if tt.ExpectedError != "" {
