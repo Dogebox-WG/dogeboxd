@@ -128,17 +128,17 @@ func GetUpgradableReleasesWithFetcher(includePreReleases bool, fetcher RepoTagsF
 	return upgradableTags, nil
 }
 
-func gitGetSingleFile(repo string, file string, branch string) ([]byte, error) {
+func gitGetSingleFile(repo string, file string, tag string) ([]byte, error) {
 	tmpDir, err := os.MkdirTemp("", "git-get-single-file")
 	if err != nil {
 		return nil, err
 	}
 	defer os.RemoveAll(tmpDir)
 
-	// Shallow clone
+	// Shallow clone at specific tag
 	gitRepo, err := git.PlainClone(tmpDir, false, &git.CloneOptions{
 		URL:           repo,
-		ReferenceName: plumbing.NewBranchReferenceName(branch),
+		ReferenceName: plumbing.NewTagReferenceName(tag),
 		SingleBranch:  true,
 		Depth:         1,
 	})
@@ -152,8 +152,12 @@ func gitGetSingleFile(repo string, file string, branch string) ([]byte, error) {
 		return nil, err
 	}
 
-	// Read the content of the desired file
-	content, err := os.ReadFile(filepath.Join(worktree.Filesystem.Root(), file))
+	// Read the content of the desired file (remove leading slash)
+	filePath := file
+	if len(file) > 0 && file[0] == '/' {
+		filePath = file[1:]
+	}
+	content, err := os.ReadFile(filepath.Join(worktree.Filesystem.Root(), filePath))
 	if err != nil {
 		return nil, err
 	}
@@ -161,26 +165,97 @@ func gitGetSingleFile(repo string, file string, branch string) ([]byte, error) {
 	return content, nil
 }
 
+// Helper function to get map keys for debugging
+func getMapKeys(m map[string]any) []string {
+	keys := make([]string, 0, len(m))
+	for k := range m {
+		keys = append(keys, k)
+	}
+	return keys
+}
+
 func getTagHashes(repo string, tag string) (map[string]string, error) {
 	flakelock, err := gitGetSingleFile(repo, "/flake.lock", tag)
+	if err != nil {
+		return nil, fmt.Errorf("failed to fetch flake.lock from tag %s: %w", tag, err)
+	}
 
 	var data map[string]any
 	if err = json.Unmarshal([]byte(flakelock), &data); err != nil {
-		return nil, err
+		return nil, fmt.Errorf("failed to parse flake.lock JSON: %w", err)
 	}
 
-	var tagHashes map[string]string
+	// Debug: Log the actual structure we received
+	log.Printf("DEBUG: flake.lock structure keys: %v", getMapKeys(data))
+	if len(flakelock) < 1000 { // Only log if it's not too large
+		log.Printf("DEBUG: flake.lock content: %s", string(flakelock))
+	}
+
+	tagHashes := make(map[string]string)
 
 	// TODO : Look for just 'dkm','dogeboxd' an 'dpanel' for now
 	for _, pkg := range [...]string{"dkm", "dogeboxd", "dpanel"} {
-		locks := data["locks"].(map[string]any)
-		nodes := locks["nodes"].(map[string]any)
-		pkgStruct := nodes[pkg].(map[string]any)
-		locked := pkgStruct["locked"].(map[string]any)
-		hash := locked["narHash"].(string)
+		// Safely extract locks
+		locksInterface, exists := data["locks"]
+		if !exists {
+			return nil, fmt.Errorf("missing 'locks' field in flake.lock")
+		}
+		locks, ok := locksInterface.(map[string]any)
+		if !ok {
+			return nil, fmt.Errorf("'locks' field is not a map in flake.lock")
+		}
 
-		if jsonRev := locked["rev"].(string); jsonRev != tag {
-			return nil, fmt.Errorf("rev requested doesn't match rev in system flake.lock")
+		// Safely extract nodes
+		nodesInterface, exists := locks["nodes"]
+		if !exists {
+			return nil, fmt.Errorf("missing 'nodes' field in flake.lock")
+		}
+		nodes, ok := nodesInterface.(map[string]any)
+		if !ok {
+			return nil, fmt.Errorf("'nodes' field is not a map in flake.lock")
+		}
+
+		// Safely extract package structure
+		pkgInterface, exists := nodes[pkg]
+		if !exists {
+			return nil, fmt.Errorf("package '%s' not found in flake.lock", pkg)
+		}
+		pkgStruct, ok := pkgInterface.(map[string]any)
+		if !ok {
+			return nil, fmt.Errorf("package '%s' structure is not a map in flake.lock", pkg)
+		}
+
+		// Safely extract locked information
+		lockedInterface, exists := pkgStruct["locked"]
+		if !exists {
+			return nil, fmt.Errorf("package '%s' missing 'locked' field in flake.lock", pkg)
+		}
+		locked, ok := lockedInterface.(map[string]any)
+		if !ok {
+			return nil, fmt.Errorf("package '%s' 'locked' field is not a map in flake.lock", pkg)
+		}
+
+		// Safely extract narHash
+		hashInterface, exists := locked["narHash"]
+		if !exists {
+			return nil, fmt.Errorf("package '%s' missing 'narHash' field in flake.lock", pkg)
+		}
+		hash, ok := hashInterface.(string)
+		if !ok {
+			return nil, fmt.Errorf("package '%s' 'narHash' field is not a string in flake.lock", pkg)
+		}
+
+		// Safely extract rev and verify it matches the requested tag
+		revInterface, exists := locked["rev"]
+		if !exists {
+			return nil, fmt.Errorf("package '%s' missing 'rev' field in flake.lock", pkg)
+		}
+		jsonRev, ok := revInterface.(string)
+		if !ok {
+			return nil, fmt.Errorf("package '%s' 'rev' field is not a string in flake.lock", pkg)
+		}
+		if jsonRev != tag {
+			return nil, fmt.Errorf("rev requested (%s) doesn't match rev in system flake.lock (%s) for package %s", tag, jsonRev, pkg)
 		}
 
 		tagHashes[pkg] = hash
