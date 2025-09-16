@@ -86,7 +86,7 @@ func GetFlakePath() (string, error) {
 	return flakePath, nil
 }
 
-func GetRebuildCommand(action string, isDev bool) (string, []string, error) {
+func GetRebuildCommand(action string, isDev bool, setRelease string) (string, []string, error) {
 	if isDev {
 		// Assume the user is not running in a flake environment when running in dev mode.
 		return "nixos-rebuild", []string{action}, nil
@@ -109,6 +109,10 @@ func GetRebuildCommand(action string, isDev bool) (string, []string, error) {
 	for pkg, tuple := range versionInformation.Packages {
 		// Only support dogebox-wg thing for now.
 		repo := fmt.Sprintf("github:dogebox-wg/%s/%s", pkg, tuple.Rev)
+		// override release (for upgrade) if setRelease is set
+		if setRelease != "" {
+			repo = fmt.Sprintf("github:dogebox-wg/%s/%s", pkg, setRelease)
+		}
 		commandArgs = append(commandArgs, "--override-input", pkg, repo)
 	}
 
