@@ -1,18 +1,15 @@
 package system
 
 import (
-	"encoding/json"
 	"fmt"
 	"log"
 	"os"
 	"os/exec"
-	"path/filepath"
 	"sort"
 
 	"github.com/dogeorg/dogeboxd/pkg/version"
 	"github.com/go-git/go-git/v5"
 	"github.com/go-git/go-git/v5/config"
-	"github.com/go-git/go-git/v5/plumbing"
 	"github.com/go-git/go-git/v5/storage/memory"
 	"golang.org/x/mod/semver"
 )
@@ -128,6 +125,7 @@ func GetUpgradableReleasesWithFetcher(includePreReleases bool, fetcher RepoTagsF
 	return upgradableTags, nil
 }
 
+/*
 func gitGetSingleFile(repo string, file string, branch string) ([]byte, error) {
 	tmpDir, err := os.MkdirTemp("", "git-get-single-file")
 	if err != nil {
@@ -188,6 +186,7 @@ func getTagHashes(repo string, tag string) (map[string]string, error) {
 
 	return tagHashes, nil
 }
+*/
 
 func DoSystemUpdate(pkg string, updateVersion string) error {
 	upgradableReleases, err := GetUpgradableReleases(false)
@@ -212,18 +211,27 @@ func DoSystemUpdate(pkg string, updateVersion string) error {
 		return fmt.Errorf("release %s is not available for %s", updateVersion, pkg)
 	}
 
-	tagHashes, err := getTagHashes(RELEASE_REPOSITORY, updateVersion)
-	if err != nil {
-		return err
-	}
+	/*
+		tagHashes, err := getTagHashes(RELEASE_REPOSITORY, updateVersion)
+		if err != nil {
+			return err
+		}
 
-	// Update our filesystem with our new package version tags.
-	version.SetPackageVersion("dogeboxd", updateVersion, tagHashes["dogeboxd"])
-	version.SetPackageVersion("dpanel", updateVersion, tagHashes["dpanel"])
-	version.SetPackageVersion("dkm", updateVersion, tagHashes["dkm"])
+		// Update our filesystem with our new package version tags.
+		version.SetPackageVersion("dogeboxd", updateVersion, tagHashes["dogeboxd"])
+		version.SetPackageVersion("dpanel", updateVersion, tagHashes["dpanel"])
+		version.SetPackageVersion("dkm", updateVersion, tagHashes["dkm"])
 
-	// Trigger a rebuild of the system. This will read our new version information.
-	cmd := exec.Command(REBUILD_COMMAND_PREFIX, "_dbxroot", "nix", "rs")
+		// Trigger a rebuild of the system. This will read our new version information.
+		cmd := exec.Command(REBUILD_COMMAND_PREFIX, "_dbxroot", "nix", "rs")
+		cmd.Stderr = os.Stderr
+		cmd.Stdout = os.Stdout
+		if err := cmd.Run(); err != nil {
+			return fmt.Errorf("failed to run dbx-upgrade: %w", err)
+		}
+	*/
+
+	cmd := exec.Command(REBUILD_COMMAND_PREFIX, "_dbxroot", "nix", "rs", "--set-release", updateVersion)
 	cmd.Stderr = os.Stderr
 	cmd.Stdout = os.Stdout
 	if err := cmd.Run(); err != nil {
