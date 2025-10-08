@@ -115,6 +115,19 @@ func RESTAPI(
 		"GET /system/binary-caches":        a.getBinaryCaches,
 		"PUT /system/binary-cache":         a.addBinaryCache,
 		"DELETE /system/binary-cache/{id}": a.removeBinaryCache,
+
+		// Job management routes
+		"GET /jobs":                  a.getJobs,
+		"GET /jobs/active":           a.getActiveJobs,
+		"GET /jobs/recent":           a.getRecentJobs,
+		"GET /jobs/stats":            a.getJobStats,
+		"GET /jobs/critical-status":  a.getCriticalJobStatus,
+		"GET /jobs/{jobID}":          a.getJob,
+		"POST /jobs/{jobID}/cancel":  a.cancelJob,
+		"POST /jobs/{jobID}/read":    a.markJobAsRead,
+		"POST /jobs/read-all":        a.markAllJobsAsRead,
+		"POST /jobs/clear-completed": a.clearCompletedJobs,
+		"POST /jobs/clear-all":       a.clearAllJobs,
 	}
 
 	// We always want to load recovery routes.

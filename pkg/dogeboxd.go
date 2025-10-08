@@ -66,6 +66,7 @@ type Dogeboxd struct {
 	queue          *syncQueue
 	jobs           chan Job
 	Changes        chan Change
+	JobManager     *JobManager
 }
 
 func NewDogeboxd(
@@ -78,6 +79,7 @@ func NewDogeboxd(
 	sourceManager SourceManager,
 	nixManager NixManager,
 	logtailer LogTailer,
+	jobManager *JobManager,
 ) Dogeboxd {
 	q := syncQueue{
 		jobQueue:      []Job{},
@@ -97,6 +99,7 @@ func NewDogeboxd(
 		queue:          &q,
 		jobs:           make(chan Job, 256),
 		Changes:        make(chan Change, 256),
+		JobManager:     jobManager,
 	}
 
 	return s
@@ -126,6 +129,15 @@ func (t Dogeboxd) Run(started, stopped chan bool, stop chan context.Context) err
 						break dance
 					}
 					j.Start = time.Now() // start the job timer
+
+					// Create job record for tracking (skip routine operations like metrics)
+					if t.JobManager != nil && t.shouldTrackJob(j) {
+						record, err := t.JobManager.CreateJobRecord(j)
+						if err == nil {
+							t.sendChange(Change{ID: "internal", Type: "job_created", Update: record})
+						}
+					}
+
 					t.jobDispatcher(j)
 
 				// Handle pupdates from PupManager
@@ -176,6 +188,18 @@ func (t Dogeboxd) Run(started, stopped chan bool, stop chan context.Context) err
 							j.Success = state
 						}
 					}
+
+					// Update job record as completed/failed
+					if t.JobManager != nil {
+						err := t.JobManager.CompleteJob(j.ID, j.Err)
+						if err == nil {
+							jobRecord, getErr := t.JobManager.GetJob(j.ID)
+							if getErr == nil {
+								t.sendChange(Change{ID: "internal", Type: "job_completed", Update: jobRecord})
+							}
+						}
+					}
+
 					t.sendFinishedJob("action", j)
 
 				case <-time.After(time.Millisecond * 100): // Periodic check
@@ -200,11 +224,22 @@ func (t *Dogeboxd) pumpQueue() {
 	if t.queue.jobInProgress.TryLock() {
 		t.queue.jobQLock.Lock()
 		if len(t.queue.jobQueue) > 0 {
+			// Check if there's a critical job running
+			if t.JobManager != nil {
+				hasCritical, _ := t.JobManager.HasCriticalJobRunning()
+				if hasCritical {
+					// Don't start any new jobs while a critical job is running
+					t.queue.jobQLock.Unlock()
+					t.queue.jobInProgress.Unlock()
+					return
+				}
+			}
+
 			job := t.queue.jobQueue[0]
 			t.queue.jobQueue = t.queue.jobQueue[1:]
 			t.queue.jobQLock.Unlock()
 
-			job.Logger.Step("queue").Log(fmt.Sprintf("Queued, position %d\n", len(t.queue.jobQueue)))
+			job.Logger.Step("queue").Log(fmt.Sprintf("Starting job, %d remaining in queue\n", len(t.queue.jobQueue)))
 			t.SystemUpdater.AddJob(job)
 			t.queue.jobTimer = time.Now()
 		} else {
@@ -448,8 +483,34 @@ func (t Dogeboxd) sendFinishedJob(changeType string, j Job) {
 	t.sendChange(Change{ID: j.ID, Error: j.Err, Type: changeType, Update: j.Success})
 }
 
+// shouldTrackJob determines if a job should create a visible job record
+// Excludes routine background operations that users don't need to see
+func (t Dogeboxd) shouldTrackJob(j Job) bool {
+	switch j.A.(type) {
+	case UpdateMetrics:
+		return false // Metrics updates happen every 10s, don't track
+	case UpdatePupConfig:
+		return false // Config updates are instantaneous, don't need tracking
+	case UpdatePupHooks:
+		return false // Hook updates are instantaneous
+	default:
+		return true // Track everything else
+	}
+}
+
 // updates the client on the progress of any inflight actions
 func (t Dogeboxd) sendProgress(p ActionProgress) {
+	// Update job record with progress
+	if t.JobManager != nil {
+		err := t.JobManager.UpdateJobProgress(p)
+		if err == nil {
+			jobRecord, getErr := t.JobManager.GetJob(p.ActionID)
+			if getErr == nil {
+				t.sendChange(Change{ID: "internal", Type: "job_progress", Update: jobRecord})
+			}
+		}
+	}
+
 	t.sendChange(Change{ID: p.ActionID, Type: "progress", Update: p})
 }
 
