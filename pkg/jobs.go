@@ -24,8 +24,7 @@ type JobRecord struct {
 	Started        time.Time  `json:"started"`
 	Finished       *time.Time `json:"finished"` // nil if not finished
 	DisplayName    string     `json:"displayName"`
-	Sensitive      bool       `json:"sensitive"` // Critical jobs that block others
-	Progress       int        `json:"progress"`  // 0-100
+	Progress       int        `json:"progress"` // 0-100
 	Status         JobStatus  `json:"status"`
 	SummaryMessage string     `json:"summaryMessage"`
 	ErrorMessage   string     `json:"errorMessage"`
@@ -61,14 +60,12 @@ func (jm *JobManager) CreateJobRecord(j Job) (*JobRecord, error) {
 	defer jm.mu.Unlock()
 
 	displayName := jm.getDisplayName(j)
-	sensitive := jm.isSensitive(j)
 
 	record := &JobRecord{
 		ID:             j.ID,
 		Started:        j.Start,
 		Finished:       nil,
 		DisplayName:    displayName,
-		Sensitive:      sensitive,
 		Progress:       0,
 		Status:         JobStatusQueued,
 		SummaryMessage: "Job queued",
@@ -338,20 +335,6 @@ func (jm *JobManager) ClearAllJobs() (int, error) {
 	return count, nil
 }
 
-// HasCriticalJobRunning checks if any sensitive job is currently running
-func (jm *JobManager) HasCriticalJobRunning() (bool, *JobRecord) {
-	jm.mu.RLock()
-	defer jm.mu.RUnlock()
-
-	for _, record := range jm.activeJobs {
-		if record.Sensitive && record.Status == JobStatusInProgress {
-			return true, record
-		}
-	}
-
-	return false, nil
-}
-
 // getDisplayName returns a human-readable name for the job
 func (jm *JobManager) getDisplayName(j Job) string {
 	switch a := j.A.(type) {
@@ -436,18 +419,6 @@ func (jm *JobManager) getDisplayName(j Job) string {
 		return "Update Metrics"
 	default:
 		return "System Operation"
-	}
-}
-
-// isSensitive determines if a job is critical and should block other operations
-func (jm *JobManager) isSensitive(j Job) bool {
-	switch j.A.(type) {
-	case InstallPup, InstallPups, UninstallPup, PurgePup, EnablePup, DisablePup, UpdatePupProviders:
-		return true // Pup operations that trigger system rebuilds
-	case UpdatePendingSystemNetwork, ImportBlockchainData:
-		return true // System-level operations
-	default:
-		return false
 	}
 }
 

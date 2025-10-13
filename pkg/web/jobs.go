@@ -159,23 +159,6 @@ func (t api) clearCompletedJobs(w http.ResponseWriter, r *http.Request) {
 	})
 }
 
-// Check if a critical job is running
-func (t api) getCriticalJobStatus(w http.ResponseWriter, r *http.Request) {
-	hasCritical, job := t.dbx.JobManager.HasCriticalJobRunning()
-
-	response := map[string]interface{}{
-		"success":     true,
-		"hasCritical": hasCritical,
-		"criticalJob": nil,
-	}
-
-	if hasCritical && job != nil {
-		response["criticalJob"] = job
-	}
-
-	sendResponse(w, response)
-}
-
 // Get job statistics
 func (t api) getJobStats(w http.ResponseWriter, r *http.Request) {
 	allJobs, err := t.dbx.JobManager.GetAllJobs()

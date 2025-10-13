@@ -22,7 +22,7 @@ type LogTailer struct {
 	config dogeboxd.ServerConfig
 }
 
-func (t LogTailer) GetChan(pupId string) (context.CancelFunc, chan string, error) {
+func (t LogTailer) GetChannel(pupId string) (context.CancelFunc, chan string, error) {
 	ctx, cancel := context.WithCancel(context.Background())
 
 	out := make(chan string, 10)

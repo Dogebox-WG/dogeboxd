@@ -123,7 +123,6 @@ func RESTAPI(
 		"GET /jobs/active":           a.getActiveJobs,
 		"GET /jobs/recent":           a.getRecentJobs,
 		"GET /jobs/stats":            a.getJobStats,
-		"GET /jobs/critical-status":  a.getCriticalJobStatus,
 		"GET /jobs/{jobID}":          a.getJob,
 		"POST /jobs/{jobID}/cancel":  a.cancelJob,
 		"POST /jobs/{jobID}/read":    a.markJobAsRead,

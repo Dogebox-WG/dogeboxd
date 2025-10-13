@@ -110,6 +110,11 @@ func NewDogeboxd(
 	// SUB TO PUP MANAGER monitor.GetMonChannel() <- []string{"dbus.service"}
 }
 
+// SetJobManager sets the JobManager reference after Dogeboxd is created
+func (t *Dogeboxd) SetJobManager(jm *JobManager) {
+	t.JobManager = jm
+}
+
 // Main Dogeboxd goroutine, handles routing messages in
 // and out of the system via job and change channels,
 // handles messages from subsystems ie: SystemUpdater,
@@ -227,22 +232,12 @@ func (t *Dogeboxd) pumpQueue() {
 	if t.queue.jobInProgress.TryLock() {
 		t.queue.jobQLock.Lock()
 		if len(t.queue.jobQueue) > 0 {
-			// Check if there's a critical job running
-			if t.JobManager != nil {
-				hasCritical, _ := t.JobManager.HasCriticalJobRunning()
-				if hasCritical {
-					// Don't start any new jobs while a critical job is running
-					t.queue.jobQLock.Unlock()
-					t.queue.jobInProgress.Unlock()
-					return
-				}
-			}
 
 			job := t.queue.jobQueue[0]
 			t.queue.jobQueue = t.queue.jobQueue[1:]
 			t.queue.jobQLock.Unlock()
 
-			job.Logger.Step("queue").Log(fmt.Sprintf("Starting job, %d remaining in queue\n", len(t.queue.jobQueue)))
+			job.Logger.Step("queue").Log(fmt.Sprintf("Queued, position %d\n", len(t.queue.jobQueue)))
 			t.SystemUpdater.AddJob(job)
 			t.queue.jobTimer = time.Now()
 		} else {
@@ -543,7 +538,7 @@ func (t Dogeboxd) GetLogChannel(PupID string) (context.CancelFunc, chan string, 
 	// and read everything else (pups) from the container logs we export.
 	service, ok := allowedJournalServices[PupID]
 	if ok {
-		return t.JournalReader.GetJournalChan(service)
+		return t.JournalReader.GetJournalChannel(service)
 	}
 
 	// Check that we've actually got a valid pup id.
@@ -552,7 +547,7 @@ func (t Dogeboxd) GetLogChannel(PupID string) (context.CancelFunc, chan string, 
 		return nil, nil, err
 	}
 
-	return t.logtailer.GetChan(PupID)
+	return t.logtailer.GetChannel(PupID)
 }
 
 // GetJobLogChannel returns a log channel for a specific job
@@ -565,5 +560,5 @@ func (t Dogeboxd) GetJobLogChannel(JobID string) (context.CancelFunc, chan strin
 	}
 
 	// Get log channel from the action logger for this job
-	return t.logtailer.GetChan(JobID)
+	return t.logtailer.GetChannel(JobID)
 }
