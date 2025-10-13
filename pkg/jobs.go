@@ -175,9 +175,9 @@ func (jm *JobManager) CompleteJob(jobID string, err string) error {
 
 	// Emit WebSocket event for job completion
 	if jm.dbx != nil {
-		eventType := "activity:completed"
+		eventType := "job:completed"
 		if err != "" {
-			eventType = "activity:failed"
+			eventType = "job:failed"
 		}
 		jm.dbx.sendChange(Change{ID: "internal", Type: eventType, Update: record})
 	}
@@ -216,7 +216,7 @@ func (jm *JobManager) CancelJob(jobID string) error {
 
 	// Emit WebSocket event for job cancellation
 	if jm.dbx != nil {
-		jm.dbx.sendChange(Change{ID: "internal", Type: "activity:cancelled", Update: record})
+		jm.dbx.sendChange(Change{ID: "internal", Type: "job:cancelled", Update: record})
 	}
 
 	return nil

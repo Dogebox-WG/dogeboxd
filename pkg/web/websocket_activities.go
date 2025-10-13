@@ -7,9 +7,9 @@ import (
 	"golang.org/x/net/websocket"
 )
 
-// GetActivitiesHandler creates a WebSocket handler for real-time activity updates
-// Sends initial activities list, then streams activity:created, activity:updated, activity:completed, activity:failed events
-func (t api) GetActivitiesHandler() *websocket.Server {
+// GetJobsHandler creates a WebSocket handler for real-time job updates
+// Sends initial jobs list, then streams job:created, job:updated, job:completed, job:failed events
+func (t api) GetJobsHandler() *websocket.Server {
 	initialPayload := func() any {
 		// Load all jobs from database as initial payload
 		jobs, err := t.dbx.JobManager.GetAllJobs()

@@ -137,7 +137,7 @@ func (t Dogeboxd) Run(started, stopped chan bool, stop chan context.Context) err
 					if t.JobManager != nil && t.shouldTrackJob(j) {
 						record, err := t.JobManager.CreateJobRecord(j)
 						if err == nil {
-							t.sendChange(Change{ID: "internal", Type: "activity:created", Update: record})
+							t.sendChange(Change{ID: "internal", Type: "job:created", Update: record})
 						}
 					}
 
@@ -509,7 +509,7 @@ func (t Dogeboxd) sendProgress(p ActionProgress) {
 		if err == nil {
 			jobRecord, getErr := t.JobManager.GetJob(p.ActionID)
 			if getErr == nil {
-				t.sendChange(Change{ID: "internal", Type: "activity:updated", Update: jobRecord})
+				t.sendChange(Change{ID: "internal", Type: "job:updated", Update: jobRecord})
 			}
 		}
 	}

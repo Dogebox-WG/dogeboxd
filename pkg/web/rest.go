@@ -90,7 +90,7 @@ func RESTAPI(
 		"DELETE /system/ssh/key/{id}":         a.removeSSHKey,
 		"POST /system/import-blockchain-data": a.importBlockchainData,
 		"/ws/state/":                          a.getUpdateSocket,
-		"/ws/activities":                      a.getActivitiesSocket,
+		"/ws/jobs":                            a.getJobsSocket,
 	}
 
 	// Normal routes are used when we are not in recovery mode.

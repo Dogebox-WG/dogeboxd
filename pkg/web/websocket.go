@@ -54,8 +54,8 @@ func (t api) getJobLogSocket(w http.ResponseWriter, r *http.Request) {
 	wh.ServeHTTP(w, r)
 }
 
-// Handle incoming websocket connections for activity updates
-func (t api) getActivitiesSocket(w http.ResponseWriter, r *http.Request) {
-	wh := t.GetActivitiesHandler()
+// Handle incoming websocket connections for job updates
+func (t api) getJobsSocket(w http.ResponseWriter, r *http.Request) {
+	wh := t.GetJobsHandler()
 	wh.ServeHTTP(w, r)
 }
