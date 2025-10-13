@@ -168,7 +168,21 @@ func (jm *JobManager) CompleteJob(jobID string, err string) error {
 	delete(jm.activeJobs, jobID)
 
 	// Persist to database
-	return jm.store.Set(record.ID, *record)
+	storeErr := jm.store.Set(record.ID, *record)
+	if storeErr != nil {
+		return storeErr
+	}
+
+	// Emit WebSocket event for job completion
+	if jm.dbx != nil {
+		eventType := "activity:completed"
+		if err != "" {
+			eventType = "activity:failed"
+		}
+		jm.dbx.sendChange(Change{ID: "internal", Type: eventType, Update: record})
+	}
+
+	return nil
 }
 
 // CancelJob marks a job as cancelled
@@ -195,7 +209,17 @@ func (jm *JobManager) CancelJob(jobID string) error {
 	delete(jm.activeJobs, jobID)
 
 	// Persist to database
-	return jm.store.Set(record.ID, *record)
+	storeErr := jm.store.Set(record.ID, *record)
+	if storeErr != nil {
+		return storeErr
+	}
+
+	// Emit WebSocket event for job cancellation
+	if jm.dbx != nil {
+		jm.dbx.sendChange(Change{ID: "internal", Type: "activity:cancelled", Update: record})
+	}
+
+	return nil
 }
 
 // GetJob retrieves a job record by ID
@@ -341,12 +365,52 @@ func (jm *JobManager) getDisplayName(j Job) string {
 		}
 		return "Install Pups"
 	case UninstallPup:
+		// Try to get pup name from state first
+		if j.State != nil && j.State.Manifest.Meta.Name != "" {
+			return fmt.Sprintf("Uninstall %s", j.State.Manifest.Meta.Name)
+		}
+		// Fallback: look up pup by ID if we have access to dbx
+		if jm.dbx != nil {
+			if pup, _, err := jm.dbx.Pups.GetPup(a.PupID); err == nil {
+				return fmt.Sprintf("Uninstall %s", pup.Manifest.Meta.Name)
+			}
+		}
 		return "Uninstall Pup"
 	case PurgePup:
+		// Try to get pup name from state first
+		if j.State != nil && j.State.Manifest.Meta.Name != "" {
+			return fmt.Sprintf("Purge %s", j.State.Manifest.Meta.Name)
+		}
+		// Fallback: look up pup by ID if we have access to dbx
+		if jm.dbx != nil {
+			if pup, _, err := jm.dbx.Pups.GetPup(a.PupID); err == nil {
+				return fmt.Sprintf("Purge %s", pup.Manifest.Meta.Name)
+			}
+		}
 		return "Purge Pup"
 	case EnablePup:
+		// Try to get pup name from state first
+		if j.State != nil && j.State.Manifest.Meta.Name != "" {
+			return fmt.Sprintf("Enable %s", j.State.Manifest.Meta.Name)
+		}
+		// Fallback: look up pup by ID if we have access to dbx
+		if jm.dbx != nil {
+			if pup, _, err := jm.dbx.Pups.GetPup(a.PupID); err == nil {
+				return fmt.Sprintf("Enable %s", pup.Manifest.Meta.Name)
+			}
+		}
 		return "Enable Pup"
 	case DisablePup:
+		// Try to get pup name from state first
+		if j.State != nil && j.State.Manifest.Meta.Name != "" {
+			return fmt.Sprintf("Disable %s", j.State.Manifest.Meta.Name)
+		}
+		// Fallback: look up pup by ID if we have access to dbx
+		if jm.dbx != nil {
+			if pup, _, err := jm.dbx.Pups.GetPup(a.PupID); err == nil {
+				return fmt.Sprintf("Disable %s", pup.Manifest.Meta.Name)
+			}
+		}
 		return "Disable Pup"
 	case UpdatePupConfig:
 		return "Update Pup Configuration"

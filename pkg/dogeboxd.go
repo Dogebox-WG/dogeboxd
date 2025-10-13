@@ -67,6 +67,7 @@ type Dogeboxd struct {
 	jobs           chan Job
 	Changes        chan Change
 	JobManager     *JobManager
+	config         *ServerConfig
 }
 
 func NewDogeboxd(
@@ -80,6 +81,7 @@ func NewDogeboxd(
 	nixManager NixManager,
 	logtailer LogTailer,
 	jobManager *JobManager,
+	config *ServerConfig,
 ) Dogeboxd {
 	q := syncQueue{
 		jobQueue:      []Job{},
@@ -100,6 +102,7 @@ func NewDogeboxd(
 		jobs:           make(chan Job, 256),
 		Changes:        make(chan Change, 256),
 		JobManager:     jobManager,
+		config:         config,
 	}
 
 	return s
@@ -134,7 +137,7 @@ func (t Dogeboxd) Run(started, stopped chan bool, stop chan context.Context) err
 					if t.JobManager != nil && t.shouldTrackJob(j) {
 						record, err := t.JobManager.CreateJobRecord(j)
 						if err == nil {
-							t.sendChange(Change{ID: "internal", Type: "job_created", Update: record})
+							t.sendChange(Change{ID: "internal", Type: "activity:created", Update: record})
 						}
 					}
 
@@ -506,7 +509,7 @@ func (t Dogeboxd) sendProgress(p ActionProgress) {
 		if err == nil {
 			jobRecord, getErr := t.JobManager.GetJob(p.ActionID)
 			if getErr == nil {
-				t.sendChange(Change{ID: "internal", Type: "job_progress", Update: jobRecord})
+				t.sendChange(Change{ID: "internal", Type: "activity:updated", Update: jobRecord})
 			}
 		}
 	}
@@ -550,4 +553,17 @@ func (t Dogeboxd) GetLogChannel(PupID string) (context.CancelFunc, chan string, 
 	}
 
 	return t.logtailer.GetChan(PupID)
+}
+
+// GetJobLogChannel returns a log channel for a specific job
+// Streams logs from the job's ActionLogger in real-time (same system as pup logs)
+func (t Dogeboxd) GetJobLogChannel(JobID string) (context.CancelFunc, chan string, error) {
+	// Verify job exists
+	_, err := t.JobManager.GetJob(JobID)
+	if err != nil {
+		return nil, nil, fmt.Errorf("job not found: %s", JobID)
+	}
+
+	// Get log channel from the action logger for this job
+	return t.logtailer.GetChan(JobID)
 }

@@ -4,7 +4,9 @@ import (
 	"bufio"
 	"bytes"
 	"fmt"
+	"os"
 	"os/exec"
+	"path/filepath"
 	"time"
 )
 
@@ -75,8 +77,41 @@ func (t *stepLogger) log(msg string, err bool) {
 	if p.Error {
 		symbol = "⁉️"
 	}
+
+	// Display in console
 	fmt.Printf("%s [%s:%s](%.2fs|%d%%): %s\n", symbol, p.ActionID, p.Step, p.StepTaken.Seconds(), p.Progress, p.Msg)
+
+	// Write to container log file
+	t.writeToLogFile(msg)
+
 	t.l.dbx.sendProgress(p)
+}
+
+// writeToLogFile writes the log message to the container log file
+func (t *stepLogger) writeToLogFile(msg string) {
+	// Get the container log directory from the Dogeboxd config
+	if t.l.dbx.config != nil {
+		logDir := t.l.dbx.config.ContainerLogDir
+		if logDir != "" {
+			logFile := filepath.Join(logDir, "pup-"+t.l.Job.ID)
+
+			// Open file in append mode, create if it doesn't exist
+			file, err := os.OpenFile(logFile, os.O_CREATE|os.O_WRONLY|os.O_APPEND, 0644)
+			if err != nil {
+				// Silently fail - don't break the job if log writing fails
+				return
+			}
+			defer file.Close()
+
+			// Write the log message with timestamp
+			timestamp := time.Now().Format("2006-01-02 15:04:05")
+			_, err = file.WriteString(fmt.Sprintf("[%s] %s\n", timestamp, msg))
+			if err != nil {
+				// Silently fail
+				return
+			}
+		}
+	}
 }
 
 func (t *stepLogger) Progress(p int) SubLogger {

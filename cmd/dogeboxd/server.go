@@ -71,13 +71,13 @@ func (t server) Start() {
 
 	/* ----------------------------------------------------------------------- */
 	// Set up Dogeboxd, the beating heart of the beast
-	
+
 	// Note: JobManager needs a reference to dbx but we haven't created it yet.
 	// We'll pass nil initially and set it after creating dbx
 	jobManager := dogeboxd.NewJobManager(t.store, nil)
 
-	dbx := dogeboxd.NewDogeboxd(t.sm, pups, systemUpdater, systemMonitor, journalReader, networkManager, sourceManager, nixManager, logtailer, jobManager)
-	
+	dbx := dogeboxd.NewDogeboxd(t.sm, pups, systemUpdater, systemMonitor, journalReader, networkManager, sourceManager, nixManager, logtailer, jobManager, &t.config)
+
 	// Now update the jobManager with the dbx reference
 	jobManager.SetDogeboxd(&dbx)
 

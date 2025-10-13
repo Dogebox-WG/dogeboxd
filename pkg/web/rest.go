@@ -90,6 +90,7 @@ func RESTAPI(
 		"DELETE /system/ssh/key/{id}":         a.removeSSHKey,
 		"POST /system/import-blockchain-data": a.importBlockchainData,
 		"/ws/state/":                          a.getUpdateSocket,
+		"/ws/activities":                      a.getActivitiesSocket,
 	}
 
 	// Normal routes are used when we are not in recovery mode.
@@ -107,7 +108,8 @@ func RESTAPI(
 		"PUT /source":                         a.createSource,
 		"GET /sources/store":                  a.getStoreList,
 		"DELETE /source/{id}":                 a.deleteSource,
-		"/ws/log/{PupID}":                     a.getLogSocket,
+		"/ws/log/pup/{PupID}":                 a.getPupLogSocket,
+		"/ws/log/job/{JobID}":                 a.getJobLogSocket,
 		"POST /system/welcome-complete":       a.setWelcomeComplete,
 		"POST /system/install-pup-collection": a.installPupCollection,
 		"GET /missing-deps/{PupID}":           a.getMissingDeps,
