@@ -80,26 +80,6 @@ func (t api) getRecentJobs(w http.ResponseWriter, r *http.Request) {
 	})
 }
 
-// Cancel a running job
-func (t api) cancelJob(w http.ResponseWriter, r *http.Request) {
-	jobID := r.PathValue("jobID")
-	if jobID == "" {
-		sendErrorResponse(w, http.StatusBadRequest, "Job ID required")
-		return
-	}
-
-	err := t.dbx.JobManager.CancelJob(jobID)
-	if err != nil {
-		sendErrorResponse(w, http.StatusInternalServerError, "Failed to cancel job")
-		return
-	}
-
-	sendResponse(w, map[string]interface{}{
-		"success": true,
-		"message": "Job cancelled",
-	})
-}
-
 // Mark a job as read
 func (t api) markJobAsRead(w http.ResponseWriter, r *http.Request) {
 	jobID := r.PathValue("jobID")

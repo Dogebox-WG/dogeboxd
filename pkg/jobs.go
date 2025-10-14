@@ -182,43 +182,6 @@ func (jm *JobManager) CompleteJob(jobID string, err string) error {
 	return nil
 }
 
-// CancelJob marks a job as cancelled
-func (jm *JobManager) CancelJob(jobID string) error {
-	jm.mu.Lock()
-	defer jm.mu.Unlock()
-
-	record, ok := jm.activeJobs[jobID]
-	if !ok {
-		// Try to load from store
-		recordValue, err := jm.store.Get(jobID)
-		if err != nil {
-			return fmt.Errorf("job not found: %s", jobID)
-		}
-		record = &recordValue
-	}
-
-	now := time.Now()
-	record.Finished = &now
-	record.Status = JobStatusCancelled
-	record.SummaryMessage = "Job cancelled by user"
-
-	// Remove from active jobs
-	delete(jm.activeJobs, jobID)
-
-	// Persist to database
-	storeErr := jm.store.Set(record.ID, *record)
-	if storeErr != nil {
-		return storeErr
-	}
-
-	// Emit WebSocket event for job cancellation
-	if jm.dbx != nil {
-		jm.dbx.sendChange(Change{ID: "internal", Type: "job:cancelled", Update: record})
-	}
-
-	return nil
-}
-
 // GetJob retrieves a job record by ID
 func (jm *JobManager) GetJob(jobID string) (*JobRecord, error) {
 	jm.mu.RLock()

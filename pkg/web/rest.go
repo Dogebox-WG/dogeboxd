@@ -124,7 +124,6 @@ func RESTAPI(
 		"GET /jobs/recent":           a.getRecentJobs,
 		"GET /jobs/stats":            a.getJobStats,
 		"GET /jobs/{jobID}":          a.getJob,
-		"POST /jobs/{jobID}/cancel":  a.cancelJob,
 		"POST /jobs/{jobID}/read":    a.markJobAsRead,
 		"POST /jobs/read-all":        a.markAllJobsAsRead,
 		"POST /jobs/clear-completed": a.clearCompletedJobs,
