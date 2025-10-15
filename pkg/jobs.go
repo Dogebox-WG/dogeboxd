@@ -28,7 +28,6 @@ type JobRecord struct {
 	Status         JobStatus  `json:"status"`
 	SummaryMessage string     `json:"summaryMessage"`
 	ErrorMessage   string     `json:"errorMessage"`
-	Logs           []string   `json:"logs"`
 	PupID          string     `json:"pupID,omitempty"` // Associated pup if applicable
 }
 
@@ -69,7 +68,6 @@ func (jm *JobManager) CreateJobRecord(j Job) (*JobRecord, error) {
 		Status:         JobStatusQueued,
 		SummaryMessage: "Job queued",
 		ErrorMessage:   "",
-		Logs:           []string{},
 	}
 
 	if j.State != nil {
@@ -113,10 +111,6 @@ func (jm *JobManager) UpdateJobProgress(ap ActionProgress) error {
 	if record.Status == JobStatusQueued {
 		record.Status = JobStatusInProgress
 	}
-
-	// Add log entry
-	logEntry := fmt.Sprintf("[%s] [%s] %s", time.Now().Format("15:04:05"), ap.Step, ap.Msg)
-	record.Logs = append(record.Logs, logEntry)
 
 	// Update summary message
 	record.SummaryMessage = ap.Msg

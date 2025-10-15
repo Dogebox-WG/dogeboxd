@@ -122,7 +122,6 @@ func (t api) getJobStats(w http.ResponseWriter, r *http.Request) {
 		"completed":  0,
 		"failed":     0,
 		"cancelled":  0,
-		"unread":     0,
 	}
 
 	for _, job := range allJobs {
@@ -137,12 +136,6 @@ func (t api) getJobStats(w http.ResponseWriter, r *http.Request) {
 			stats["failed"]++
 		case dogeboxd.JobStatusCancelled:
 			stats["cancelled"]++
-		}
-
-		if !job.Read && (job.Status == dogeboxd.JobStatusCompleted ||
-			job.Status == dogeboxd.JobStatusFailed ||
-			job.Status == dogeboxd.JobStatusCancelled) {
-			stats["unread"]++
 		}
 	}
 
