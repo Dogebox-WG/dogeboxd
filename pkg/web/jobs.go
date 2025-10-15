@@ -80,38 +80,6 @@ func (t api) getRecentJobs(w http.ResponseWriter, r *http.Request) {
 	})
 }
 
-// Mark a job as read
-func (t api) markJobAsRead(w http.ResponseWriter, r *http.Request) {
-	jobID := r.PathValue("jobID")
-	if jobID == "" {
-		sendErrorResponse(w, http.StatusBadRequest, "Job ID required")
-		return
-	}
-
-	err := t.dbx.JobManager.MarkJobAsRead(jobID)
-	if err != nil {
-		sendErrorResponse(w, http.StatusInternalServerError, "Failed to mark job as read")
-		return
-	}
-
-	sendResponse(w, map[string]interface{}{
-		"success": true,
-	})
-}
-
-// Mark all completed/failed jobs as read
-func (t api) markAllJobsAsRead(w http.ResponseWriter, r *http.Request) {
-	err := t.dbx.JobManager.MarkAllJobsAsRead()
-	if err != nil {
-		sendErrorResponse(w, http.StatusInternalServerError, "Failed to mark jobs as read")
-		return
-	}
-
-	sendResponse(w, map[string]interface{}{
-		"success": true,
-	})
-}
-
 // Clear old completed jobs
 func (t api) clearCompletedJobs(w http.ResponseWriter, r *http.Request) {
 	var req struct {

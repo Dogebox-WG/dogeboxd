@@ -4,10 +4,12 @@ import (
 	"bufio"
 	"bytes"
 	"fmt"
-	"os"
+	"log"
 	"os/exec"
 	"path/filepath"
 	"time"
+
+	"gopkg.in/natefinch/lumberjack.v2"
 )
 
 type ActionLogger interface {
@@ -87,7 +89,7 @@ func (t *stepLogger) log(msg string, err bool) {
 	t.l.dbx.sendProgress(p)
 }
 
-// writeToLogFile writes the log message to the container log file
+// writeToLogFile writes the log message to the container log file with rotation
 func (t *stepLogger) writeToLogFile(msg string) {
 	// Get the container log directory from the Dogeboxd config
 	if t.l.dbx.config != nil {
@@ -95,19 +97,21 @@ func (t *stepLogger) writeToLogFile(msg string) {
 		if logDir != "" {
 			logFile := filepath.Join(logDir, "pup-"+t.l.Job.ID)
 
-			// Open file in append mode, create if it doesn't exist
-			file, err := os.OpenFile(logFile, os.O_CREATE|os.O_WRONLY|os.O_APPEND, 0644)
-			if err != nil {
-				// Silently fail - don't break the job if log writing fails
-				return
+			// Use lumberjack for log rotation
+			writer := &lumberjack.Logger{
+				Filename:   logFile,
+				MaxSize:    50,
+				MaxAge:     28,
+				MaxBackups: 10,
+				Compress:   true,
 			}
-			defer file.Close()
 
 			// Write the log message with timestamp
 			timestamp := time.Now().Format("2006-01-02 15:04:05")
-			_, err = file.WriteString(fmt.Sprintf("[%s] %s\n", timestamp, msg))
+			_, err := writer.Write([]byte(fmt.Sprintf("[%s] %s\n", timestamp, msg)))
 			if err != nil {
-				// Silently fail
+				// Don't break the job if log writing fails - log the error to the console
+				log.Printf("Failed to write action log: %v", err)
 				return
 			}
 		}

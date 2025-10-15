@@ -29,7 +29,6 @@ type JobRecord struct {
 	SummaryMessage string     `json:"summaryMessage"`
 	ErrorMessage   string     `json:"errorMessage"`
 	Logs           []string   `json:"logs"`
-	Read           bool       `json:"read"`            // Has user viewed this job?
 	PupID          string     `json:"pupID,omitempty"` // Associated pup if applicable
 }
 
@@ -71,7 +70,6 @@ func (jm *JobManager) CreateJobRecord(j Job) (*JobRecord, error) {
 		SummaryMessage: "Job queued",
 		ErrorMessage:   "",
 		Logs:           []string{},
-		Read:           false,
 	}
 
 	if j.State != nil {
@@ -216,39 +214,6 @@ func (jm *JobManager) GetActiveJobs() ([]JobRecord, error) {
 func (jm *JobManager) GetRecentJobs(limit int) ([]JobRecord, error) {
 	query := fmt.Sprintf("SELECT value FROM %s WHERE json_extract(value, '$.status') IN ('completed', 'failed', 'cancelled') ORDER BY json_extract(value, '$.finished') DESC LIMIT %d", jm.store.Table, limit)
 	return jm.store.Exec(query)
-}
-
-// MarkJobAsRead marks a job as read by the user
-func (jm *JobManager) MarkJobAsRead(jobID string) error {
-	jm.mu.Lock()
-	defer jm.mu.Unlock()
-
-	record, err := jm.store.Get(jobID)
-	if err != nil {
-		return fmt.Errorf("job not found: %s", jobID)
-	}
-
-	record.Read = true
-	return jm.store.Set(jobID, record)
-}
-
-// MarkAllJobsAsRead marks all completed/failed jobs as read
-func (jm *JobManager) MarkAllJobsAsRead() error {
-	jobs, err := jm.GetAllJobs()
-	if err != nil {
-		return err
-	}
-
-	for _, job := range jobs {
-		if (job.Status == JobStatusCompleted || job.Status == JobStatusFailed || job.Status == JobStatusCancelled) && !job.Read {
-			job.Read = true
-			if err := jm.store.Set(job.ID, job); err != nil {
-				return err
-			}
-		}
-	}
-
-	return nil
 }
 
 // ClearCompletedJobs removes completed/failed jobs older than the specified duration
