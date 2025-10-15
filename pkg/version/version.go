@@ -2,6 +2,7 @@ package version
 
 import (
 	"os"
+	"os/exec"
 	"strings"
 
 	"github.com/carlmjohnson/versioninfo"
@@ -28,6 +29,11 @@ func GetDBXRelease() *DBXVersionInfo {
 
 	if dbxReleaseData, err := os.ReadFile("/opt/versioning/dbx"); err == nil {
 		release = strings.TrimSpace(string(dbxReleaseData))
+	} else {
+		// Fallback: try to get the current git branch
+		if gitBranch, err := getGitBranch(); err == nil && gitBranch != "" {
+			release = "file missing, current branch: '" + gitBranch + "'"
+		}
 	}
 
 	packages := make(map[string]DBXVersionInputTuple)
@@ -58,4 +64,16 @@ func GetDBXRelease() *DBXVersionInfo {
 			Dirty:  versioninfo.DirtyBuild,
 		},
 	}
+}
+
+// getGitBranch attempts to get the current git branch name
+func getGitBranch() (string, error) {
+	cmd := exec.Command("git", "rev-parse", "--abbrev-ref", "HEAD")
+	output, err := cmd.Output()
+	if err != nil {
+		return "", err
+	}
+
+	branch := strings.TrimSpace(string(output))
+	return branch, nil
 }
