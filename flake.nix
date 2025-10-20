@@ -4,7 +4,7 @@
     flake-utils.url = "github:numtide/flake-utils";
 
     dpanel = {
-      url = "github:dogeorg/dpanel/b35a676cf7e66199013b312d96b79053b17d53c6";
+      url = "github:dogeorg/dpanel/9b91fef9a7af09a1e7aa1c9a7f2550168455febb";
     };
   };
 
