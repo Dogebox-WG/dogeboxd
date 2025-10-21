@@ -142,7 +142,7 @@ func TestGetUpgradableReleases_UpgradesAvailable(t *testing.T) {
 	tempDir := setupMockVersioning(t, "v1.1.0")
 	defer os.RemoveAll(tempDir)
 
-	releases, err := GetUpgradableReleasesWithFetcher(mockFetcher)
+	releases, err := GetUpgradableReleasesWithFetcher(false, mockFetcher)
 	if err != nil {
 		t.Fatalf("Expected no error, got: %v", err)
 	}
@@ -153,18 +153,18 @@ func TestGetUpgradableReleases_UpgradesAvailable(t *testing.T) {
 		t.Errorf("Expected %d upgradable releases, got %d", expectedCount, len(releases))
 	}
 
-	// Check first upgrade (v1.2.0)
-	if releases[0].Version != "v1.2.0" {
-		t.Errorf("Expected first upgrade to be v1.2.0, got %s", releases[0].Version)
+	// Check first upgrade (v2.0.0 - highest version first)
+	if releases[0].Version != "v2.0.0" {
+		t.Errorf("Expected first upgrade to be v2.0.0, got %s", releases[0].Version)
 	}
 
-	// Check second upgrade (v2.0.0)
-	if releases[1].Version != "v2.0.0" {
-		t.Errorf("Expected second upgrade to be v2.0.0, got %s", releases[1].Version)
+	// Check second upgrade (v1.2.0)
+	if releases[1].Version != "v1.2.0" {
+		t.Errorf("Expected second upgrade to be v1.2.0, got %s", releases[1].Version)
 	}
 
 	// Verify release URLs are correctly formatted
-	expectedURL1 := "https://github.com/dogebox-wg/os/releases/tag/v1.2.0"
+	expectedURL1 := "https://github.com/dogebox-wg/os/releases/tag/v2.0.0"
 	if releases[0].ReleaseURL != expectedURL1 {
 		t.Errorf("Expected release URL to be %s, got %s", expectedURL1, releases[0].ReleaseURL)
 	}
@@ -192,7 +192,7 @@ func TestGetUpgradableReleases_NoUpgrades(t *testing.T) {
 	tempDir := setupMockVersioning(t, "v2.0.0")
 	defer os.RemoveAll(tempDir)
 
-	releases, err := GetUpgradableReleasesWithFetcher(mockFetcher)
+	releases, err := GetUpgradableReleasesWithFetcher(false, mockFetcher)
 	if err != nil {
 		t.Fatalf("Expected no error, got: %v", err)
 	}
@@ -211,7 +211,7 @@ func TestGetUpgradableReleases_EmptyTags(t *testing.T) {
 	tempDir := setupMockVersioning(t, "v1.0.0")
 	defer os.RemoveAll(tempDir)
 
-	releases, err := GetUpgradableReleasesWithFetcher(mockFetcher)
+	releases, err := GetUpgradableReleasesWithFetcher(false, mockFetcher)
 	if err != nil {
 		t.Fatalf("Expected no error, got: %v", err)
 	}
@@ -230,7 +230,7 @@ func TestGetUpgradableReleases_WithErrorFromMock(t *testing.T) {
 		err:  fmt.Errorf("mock error: failed to fetch tags"),
 	}
 
-	releases, err := GetUpgradableReleasesWithFetcher(mockFetcher)
+	releases, err := GetUpgradableReleasesWithFetcher(false, mockFetcher)
 	if err == nil {
 		t.Fatal("Expected error, got nil")
 	}
@@ -265,7 +265,7 @@ func TestIntegrationSuite(t *testing.T) {
 				{Tag: "v1.2.0"},
 			},
 			ExpectedCount:    2,
-			ExpectedVersions: []string{"v1.1.0", "v1.2.0"},
+			ExpectedVersions: []string{"v1.2.0", "v1.1.0"},
 		},
 		{
 			Name:           "Empty repository",
@@ -284,7 +284,7 @@ func TestIntegrationSuite(t *testing.T) {
 				{Tag: "v2.0.0"},
 			},
 			ExpectedCount:    3,
-			ExpectedVersions: []string{"v1.1.0", "v1.2.0", "v2.0.0"},
+			ExpectedVersions: []string{"v2.0.0", "v1.2.0", "v1.1.0"},
 		},
 		{
 			Name:           "No upgrades available - current is latest",
@@ -412,3 +412,230 @@ func TestDoSystemUpdate_ErrorFromGetUpgradableReleases(t *testing.T) {
 
 /* TODO : check if versioning file(s) were written out
  */
+
+// TestSemverOrderingWithPreReleases verifies that UpgradableReleases are ordered by semver
+// including pre-release versions (alpha, beta) and various version formats
+func TestSemverOrderingWithPreReleases(t *testing.T) {
+	// Create mock tags with various version types including pre-releases
+	mockTags := []RepositoryTag{
+		{Tag: "v1.5.0"},
+		{Tag: "v2.0.0"},
+		{Tag: "v1.2.0"},
+		{Tag: "v1.10.0"},
+		{Tag: "v1.1.0"},
+		{Tag: "v2.1.0"},
+		{Tag: "v1.0.0"},
+		{Tag: "v0.0.1"},
+		{Tag: "v0.2.0"},
+		{Tag: "v1.0.0-alpha.1"},
+		{Tag: "v1.0.0-beta.2"},
+		{Tag: "v1.0.0-alpha.2"},
+		{Tag: "v2.0.0-beta.1"},
+	}
+	mockFetcher := &MockRepoTagsFetcher{tags: mockTags, err: nil}
+
+	// Mock current version to be older than all available versions
+	tempDir := setupMockVersioning(t, "v0.0.0")
+	defer os.RemoveAll(tempDir)
+
+	releases, err := GetUpgradableReleasesWithFetcher(true, mockFetcher)
+	if err != nil {
+		t.Fatalf("Expected no error, got: %v", err)
+	}
+
+	// Should return all versions since current is v0.0.0
+	expectedCount := 13
+	if len(releases) != expectedCount {
+		t.Errorf("Expected %d upgradable releases, got %d", expectedCount, len(releases))
+	}
+
+	// Verify ordering: highest first, lowest last (including pre-releases)
+	expectedOrder := []string{
+		"v2.1.0",
+		"v2.0.0",
+		"v2.0.0-beta.1",
+		"v1.10.0",
+		"v1.5.0",
+		"v1.2.0",
+		"v1.1.0",
+		"v1.0.0",
+		"v1.0.0-beta.2",
+		"v1.0.0-alpha.2",
+		"v1.0.0-alpha.1",
+		"v0.2.0",
+		"v0.0.1",
+	}
+
+	for i, expectedVersion := range expectedOrder {
+		if releases[i].Version != expectedVersion {
+			t.Errorf("Expected releases[%d] to be %s, got %s", i, expectedVersion, releases[i].Version)
+		}
+	}
+
+	// Verify that each version is actually higher than the next one using semver.Compare
+	for i := 0; i < len(releases)-1; i++ {
+		if semver.Compare(releases[i].Version, releases[i+1].Version) <= 0 {
+			t.Errorf("Version ordering incorrect: %s should be higher than %s", releases[i].Version, releases[i+1].Version)
+		}
+	}
+
+	// Verify specific requested versions are present and in correct positions
+	v001Index := -1
+	v020Index := -1
+	for i, release := range releases {
+		if release.Version == "v0.0.1" {
+			v001Index = i
+		}
+		if release.Version == "v0.2.0" {
+			v020Index = i
+		}
+	}
+
+	if v001Index == -1 {
+		t.Error("Expected v0.0.1 to be present in releases")
+	}
+	if v020Index == -1 {
+		t.Error("Expected v0.2.0 to be present in releases")
+	}
+
+	// Verify v0.2.0 comes before v0.0.1
+	if v020Index >= v001Index {
+		t.Errorf("Expected v0.2.0 (index %d) to come before v0.0.1 (index %d)", v020Index, v001Index)
+	}
+
+	// Verify pre-release versions are handled correctly
+	alphaVersions := []string{"v1.0.0-alpha.1", "v1.0.0-alpha.2", "v2.0.0-beta.1", "v1.0.0-beta.2"}
+	for _, alphaVersion := range alphaVersions {
+		found := false
+		for _, release := range releases {
+			if release.Version == alphaVersion {
+				found = true
+				break
+			}
+		}
+		if !found {
+			t.Errorf("Expected pre-release version %s to be present in releases", alphaVersion)
+		}
+	}
+}
+
+// TestSemverFiltering verifies that invalid semver versions are filtered out
+func TestSemverFiltering(t *testing.T) {
+	// Create mock tags with valid and invalid semver versions
+	// Focus on novel cases not covered by TestSemverValidation
+	mockTags := []RepositoryTag{
+		{Tag: "v1.0.0"},                // Valid semver
+		{Tag: "v2.0.0"},                // Valid semver
+		{Tag: "v3.0"},                  // Valid semver (semver assigns this to v3.0.0)
+		{Tag: "bruces-amazing-branch"}, // Invalid semver (branch name)
+		{Tag: "latest"},                // Invalid semver (common tag)
+		{Tag: "main"},                  // Invalid semver (common tag)
+		{Tag: "v1.0.0-alpha.1"},        // Valid semver with pre-release
+	}
+	mockFetcher := &MockRepoTagsFetcher{tags: mockTags, err: nil}
+
+	// Mock current version to be older than all valid versions
+	tempDir := setupMockVersioning(t, "v0.0.0")
+	defer os.RemoveAll(tempDir)
+
+	releases, err := GetUpgradableReleasesWithFetcher(false, mockFetcher)
+	if err != nil {
+		t.Fatalf("Expected no error, got: %v", err)
+	}
+
+	// Should only return valid stable semver versions (3 out of 7, excluding pre-releases)
+	expectedCount := 3
+	if len(releases) != expectedCount {
+		t.Errorf("Expected %d valid semver releases, got %d", expectedCount, len(releases))
+	}
+
+	// Verify invalid versions are NOT present
+	invalidVersions := []string{
+		"bruces-amazing-branch",
+		"latest",
+		"main",
+	}
+
+	for _, invalidVersion := range invalidVersions {
+		for _, release := range releases {
+			if release.Version == invalidVersion {
+				t.Errorf("Invalid semver version '%s' should not be present in releases", invalidVersion)
+			}
+		}
+	}
+
+	// Verify all returned versions are valid semver
+	for _, release := range releases {
+		if !semver.IsValid(release.Version) {
+			t.Errorf("Release version '%s' is not a valid semver", release.Version)
+		}
+	}
+}
+
+// TestPreReleaseFiltering verifies that pre-releases can be included or excluded
+func TestPreReleaseFiltering(t *testing.T) {
+	// Create mock tags with stable and pre-release versions
+	mockTags := []RepositoryTag{
+		{Tag: "v1.0.0"},         // Stable
+		{Tag: "v2.0.0"},         // Stable
+		{Tag: "v1.0.0-alpha.1"}, // Pre-release
+		{Tag: "v1.0.0-beta.2"},  // Pre-release
+		{Tag: "v2.0.0-rc.1"},    // Pre-release
+		{Tag: "v3.0"},           // Stable (semver assigns this to v3.0.0)
+	}
+	mockFetcher := &MockRepoTagsFetcher{tags: mockTags, err: nil}
+
+	// Mock current version to be older than all versions
+	tempDir := setupMockVersioning(t, "v0.0.0")
+	defer os.RemoveAll(tempDir)
+
+	// Test excluding pre-releases (default behavior)
+	releasesWithoutPre, err := GetUpgradableReleasesWithFetcher(false, mockFetcher)
+	if err != nil {
+		t.Fatalf("Expected no error, got: %v", err)
+	}
+
+	// Should only return stable versions (3 out of 6)
+	expectedStableCount := 3
+	if len(releasesWithoutPre) != expectedStableCount {
+		t.Errorf("Expected %d stable releases, got %d", expectedStableCount, len(releasesWithoutPre))
+	}
+
+	// Verify no pre-releases are present
+	for _, release := range releasesWithoutPre {
+		if semver.Prerelease(release.Version) != "" {
+			t.Errorf("Pre-release version '%s' should not be present when includePreReleases=false", release.Version)
+		}
+	}
+
+	// Test including pre-releases
+	releasesWithPre, err := GetUpgradableReleasesWithFetcher(true, mockFetcher)
+	if err != nil {
+		t.Fatalf("Expected no error, got: %v", err)
+	}
+
+	// Should return all versions (6 out of 6)
+	expectedAllCount := 6
+	if len(releasesWithPre) != expectedAllCount {
+		t.Errorf("Expected %d total releases, got %d", expectedAllCount, len(releasesWithPre))
+	}
+
+	// Verify pre-releases are present
+	preReleaseFound := false
+	for _, release := range releasesWithPre {
+		if semver.Prerelease(release.Version) != "" {
+			preReleaseFound = true
+			break
+		}
+	}
+	if !preReleaseFound {
+		t.Error("Expected pre-release versions to be present when includePreReleases=true")
+	}
+
+	// Verify ordering is still correct (highest first)
+	for i := 0; i < len(releasesWithPre)-1; i++ {
+		if semver.Compare(releasesWithPre[i].Version, releasesWithPre[i+1].Version) <= 0 {
+			t.Errorf("Version ordering incorrect: %s should be higher than %s", releasesWithPre[i].Version, releasesWithPre[i+1].Version)
+		}
+	}
+}
