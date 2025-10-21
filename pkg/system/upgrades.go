@@ -125,69 +125,6 @@ func GetUpgradableReleasesWithFetcher(includePreReleases bool, fetcher RepoTagsF
 	return upgradableTags, nil
 }
 
-/*
-func gitGetSingleFile(repo string, file string, branch string) ([]byte, error) {
-	tmpDir, err := os.MkdirTemp("", "git-get-single-file")
-	if err != nil {
-		return nil, err
-	}
-	defer os.RemoveAll(tmpDir)
-
-	// Shallow clone
-	gitRepo, err := git.PlainClone(tmpDir, false, &git.CloneOptions{
-		URL:           repo,
-		ReferenceName: plumbing.NewBranchReferenceName(branch),
-		SingleBranch:  true,
-		Depth:         1,
-	})
-
-	if err != nil {
-		return nil, err
-	}
-
-	worktree, err := gitRepo.Worktree()
-	if err != nil {
-		return nil, err
-	}
-
-	// Read the content of the desired file
-	content, err := os.ReadFile(filepath.Join(worktree.Filesystem.Root(), file))
-	if err != nil {
-		return nil, err
-	}
-
-	return content, nil
-}
-
-func getTagHashes(repo string, tag string) (map[string]string, error) {
-	flakelock, err := gitGetSingleFile(repo, "/flake.lock", tag)
-
-	var data map[string]any
-	if err = json.Unmarshal([]byte(flakelock), &data); err != nil {
-		return nil, err
-	}
-
-	var tagHashes map[string]string
-
-	// TODO : Look for just 'dkm','dogeboxd' an 'dpanel' for now
-	for _, pkg := range [...]string{"dkm", "dogeboxd", "dpanel"} {
-		locks := data["locks"].(map[string]any)
-		nodes := locks["nodes"].(map[string]any)
-		pkgStruct := nodes[pkg].(map[string]any)
-		locked := pkgStruct["locked"].(map[string]any)
-		hash := locked["narHash"].(string)
-
-		if jsonRev := locked["rev"].(string); jsonRev != tag {
-			return nil, fmt.Errorf("rev requested doesn't match rev in system flake.lock")
-		}
-
-		tagHashes[pkg] = hash
-	}
-
-	return tagHashes, nil
-}
-*/
-
 func DoSystemUpdate(pkg string, updateVersion string) error {
 	upgradableReleases, err := GetUpgradableReleases(false)
 	if err != nil {
@@ -210,26 +147,6 @@ func DoSystemUpdate(pkg string, updateVersion string) error {
 	if !ok {
 		return fmt.Errorf("release %s is not available for %s", updateVersion, pkg)
 	}
-
-	/*
-		tagHashes, err := getTagHashes(RELEASE_REPOSITORY, updateVersion)
-		if err != nil {
-			return err
-		}
-
-		// Update our filesystem with our new package version tags.
-		version.SetPackageVersion("dogeboxd", updateVersion, tagHashes["dogeboxd"])
-		version.SetPackageVersion("dpanel", updateVersion, tagHashes["dpanel"])
-		version.SetPackageVersion("dkm", updateVersion, tagHashes["dkm"])
-
-		// Trigger a rebuild of the system. This will read our new version information.
-		cmd := exec.Command(REBUILD_COMMAND_PREFIX, "_dbxroot", "nix", "rs")
-		cmd.Stderr = os.Stderr
-		cmd.Stdout = os.Stdout
-		if err := cmd.Run(); err != nil {
-			return fmt.Errorf("failed to run dbx-upgrade: %w", err)
-		}
-	*/
 
 	cmd := exec.Command(REBUILD_COMMAND_PREFIX, "_dbxroot", "nix", "rs", "--set-release", updateVersion)
 	cmd.Stderr = os.Stderr
