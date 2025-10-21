@@ -35,7 +35,7 @@ type JobRecord struct {
 type JobManager struct {
 	store      *TypeStore[JobRecord]
 	activeJobs map[string]*JobRecord // in-memory cache of active jobs
-	mu         sync.RWMutex
+	jobsMutex  sync.RWMutex
 	dbx        *Dogeboxd
 }
 
@@ -54,8 +54,8 @@ func (jm *JobManager) SetDogeboxd(dbx *Dogeboxd) {
 
 // CreateJobRecord creates a new job record from a Job
 func (jm *JobManager) CreateJobRecord(j Job) (*JobRecord, error) {
-	jm.mu.Lock()
-	defer jm.mu.Unlock()
+	jm.jobsMutex.Lock()
+	defer jm.jobsMutex.Unlock()
 
 	displayName := jm.getDisplayName(j)
 
@@ -87,8 +87,8 @@ func (jm *JobManager) CreateJobRecord(j Job) (*JobRecord, error) {
 
 // UpdateJobProgress updates job progress from ActionProgress
 func (jm *JobManager) UpdateJobProgress(ap ActionProgress) error {
-	jm.mu.Lock()
-	defer jm.mu.Unlock()
+	jm.jobsMutex.Lock()
+	defer jm.jobsMutex.Unlock()
 
 	record, ok := jm.activeJobs[ap.ActionID]
 	if !ok {
@@ -126,8 +126,8 @@ func (jm *JobManager) UpdateJobProgress(ap ActionProgress) error {
 
 // CompleteJob marks a job as completed
 func (jm *JobManager) CompleteJob(jobID string, err string) error {
-	jm.mu.Lock()
-	defer jm.mu.Unlock()
+	jm.jobsMutex.Lock()
+	defer jm.jobsMutex.Unlock()
 
 	record, ok := jm.activeJobs[jobID]
 	if !ok {
@@ -176,8 +176,8 @@ func (jm *JobManager) CompleteJob(jobID string, err string) error {
 
 // GetJob retrieves a job record by ID
 func (jm *JobManager) GetJob(jobID string) (*JobRecord, error) {
-	jm.mu.RLock()
-	defer jm.mu.RUnlock()
+	jm.jobsMutex.RLock()
+	defer jm.jobsMutex.RUnlock()
 
 	// Check active jobs first
 	if record, ok := jm.activeJobs[jobID]; ok {
@@ -212,49 +212,31 @@ func (jm *JobManager) GetRecentJobs(limit int) ([]JobRecord, error) {
 
 // ClearCompletedJobs removes completed/failed jobs older than the specified duration
 func (jm *JobManager) ClearCompletedJobs(olderThan time.Duration) (int, error) {
-	jobs, err := jm.GetAllJobs()
-	if err != nil {
-		return 0, err
-	}
+	cutoff := time.Now().Add(-olderThan).Format(time.RFC3339Nano)
+	query := fmt.Sprintf(`DELETE FROM %s 
+		WHERE json_extract(value, '$.status') IN ('completed', 'failed', 'cancelled')
+		  AND json_extract(value, '$.finished') IS NOT NULL
+		  AND json_extract(value, '$.finished') < ?`, jm.store.Table)
 
-	cutoff := time.Now().Add(-olderThan)
-	count := 0
-
-	for _, job := range jobs {
-		if (job.Status == JobStatusCompleted || job.Status == JobStatusFailed || job.Status == JobStatusCancelled) &&
-			job.Finished != nil && job.Finished.Before(cutoff) {
-			if err := jm.store.Del(job.ID); err != nil {
-				return count, err
-			}
-			count++
-		}
-	}
-
-	return count, nil
+	count, err := jm.store.ExecWrite(query, cutoff)
+	return int(count), err
 }
 
 // ClearAllJobs removes ALL jobs (for development/cleanup)
 func (jm *JobManager) ClearAllJobs() (int, error) {
-	jm.mu.Lock()
-	defer jm.mu.Unlock()
+	jm.jobsMutex.Lock()
+	defer jm.jobsMutex.Unlock()
 
-	jobs, err := jm.GetAllJobs()
+	query := fmt.Sprintf("DELETE FROM %s", jm.store.Table)
+	count, err := jm.store.ExecWrite(query)
 	if err != nil {
 		return 0, err
-	}
-
-	count := 0
-	for _, job := range jobs {
-		if err := jm.store.Del(job.ID); err != nil {
-			return count, err
-		}
-		count++
 	}
 
 	// Clear active jobs cache
 	jm.activeJobs = make(map[string]*JobRecord)
 
-	return count, nil
+	return int(count), nil
 }
 
 // getDisplayName returns a human-readable name for the job
@@ -265,10 +247,8 @@ func (jm *JobManager) getDisplayName(j Job) string {
 	case InstallPups:
 		if len(a) == 1 {
 			return fmt.Sprintf("Install %s", a[0].PupName)
-		} else if len(a) > 1 {
-			return fmt.Sprintf("Install %d Pups", len(a))
 		}
-		return "Install Pups"
+		return fmt.Sprintf("Install %d Pups", len(a))
 	case UninstallPup:
 		// Try to get pup name from state first
 		if j.State != nil && j.State.Manifest.Meta.Name != "" {
@@ -351,11 +331,11 @@ func (jm *JobManager) SyncWithActiveJobs() error {
 		return err
 	}
 
-	jm.mu.Lock()
-	defer jm.mu.Unlock()
+	jm.jobsMutex.Lock()
+	defer jm.jobsMutex.Unlock()
 
 	// Refresh active jobs cache
-	jm.activeJobs = make(map[string]*JobRecord)
+	jm.activeJobs = make(map[string]*JobRecord, len(activeJobs))
 	for i := range activeJobs {
 		jm.activeJobs[activeJobs[i].ID] = &activeJobs[i]
 	}

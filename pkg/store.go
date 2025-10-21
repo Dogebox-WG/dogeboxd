@@ -149,3 +149,16 @@ func (ts *TypeStore[T]) Exec(query string, args ...interface{}) ([]T, error) {
 
 	return results, nil
 }
+
+// ExecWrite executes a write statement (DELETE, UPDATE) and returns the number of affected rows
+func (ts *TypeStore[T]) ExecWrite(query string, args ...interface{}) (int64, error) {
+	ts.mu.Lock()
+	defer ts.mu.Unlock()
+	
+	result, err := ts.sm.DB.Exec(query, args...)
+	if err != nil {
+		return 0, err
+	}
+	
+	return result.RowsAffected()
+}
