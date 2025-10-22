@@ -15,7 +15,7 @@ import (
 )
 
 var RELEASE_REPOSITORY = "https://github.com/dogebox-wg/os.git"
-var REBUILD_COMMAND_PREFIX = "sudo"
+var SUDO_COMMAND = "sudo"
 
 // semverSortTags sorts a slice of RepositoryTag by semver version
 // direction: "desc" for descending (highest first), "asc" for ascending (lowest first)
@@ -148,7 +148,7 @@ func DoSystemUpdate(pkg string, updateVersion string) error {
 		return fmt.Errorf("release %s is not available for %s", updateVersion, pkg)
 	}
 
-	cmd := exec.Command(REBUILD_COMMAND_PREFIX, "_dbxroot", "nix", "rs", "--set-release", updateVersion)
+	cmd := exec.Command(SUDO_COMMAND, "_dbxroot", "nix", "rs", "--set-release", updateVersion)
 	cmd.Stderr = os.Stderr
 	cmd.Stdout = os.Stdout
 	if err := cmd.Run(); err != nil {
