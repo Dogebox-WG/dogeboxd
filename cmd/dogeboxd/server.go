@@ -72,7 +72,10 @@ func (t server) Start() {
 	/* ----------------------------------------------------------------------- */
 	// Set up Dogeboxd, the beating heart of the beast
 
-	dbx := dogeboxd.NewDogeboxd(t.sm, pups, systemUpdater, systemMonitor, journalReader, networkManager, sourceManager, nixManager, logtailer)
+	// Create update checker for pup upgrades
+	updateChecker := pup.NewUpdateChecker(pups, sourceManager)
+
+	dbx := dogeboxd.NewDogeboxd(t.sm, pups, systemUpdater, systemMonitor, journalReader, networkManager, sourceManager, nixManager, logtailer, updateChecker)
 
 	//No need to show welcome screen if any pups are already installed (may have just done a system update or something similar)
 	if len(pups.GetStateMap()) > 0 {

@@ -93,6 +93,20 @@ func (t SystemUpdater) Run(started, stopped chan bool, stop chan context.Context
 							j.Err = "Failed to disable pup"
 						}
 						t.done <- j
+						// NOTE: UpdatePup and RollbackPupUpdate are not yet implemented.
+						// Current scope focuses on update detection and notification only.
+						// case dogeboxd.UpdatePup:
+						// 	err := t.updatePup(a, j)
+						// 	if err != nil {
+						// 		j.Err = "Failed to update pup"
+						// 	}
+						// 	t.done <- j
+						// case dogeboxd.RollbackPupUpdate:
+						// 	err := t.rollbackPup(a, j)
+						// 	if err != nil {
+						// 		j.Err = "Failed to rollback pup"
+						// 	}
+						// 	t.done <- j
 					case dogeboxd.ImportBlockchainData:
 						err := t.importBlockchainData(j)
 						if err != nil {
@@ -168,6 +182,26 @@ func (t SystemUpdater) AddJob(j dogeboxd.Job) {
 func (t SystemUpdater) GetUpdateChannel() chan dogeboxd.Job {
 	return t.done
 }
+
+// NOTE: updatePup and rollbackPup are not yet implemented.
+// Current scope focuses on update detection and notification only.
+// These will be added in a future phase when we implement actual update execution.
+//
+// func (t SystemUpdater) updatePup(a dogeboxd.UpdatePup, j dogeboxd.Job) error {
+// 	s := *j.State
+// 	log := j.Logger.Step("update")
+// 	log.Logf("Updating pup %s (%s) to version %s", s.Manifest.Meta.Name, s.ID, a.TargetVersion)
+// 	// TODO: This needs to use the PupUpdater service
+// 	return nil
+// }
+//
+// func (t SystemUpdater) rollbackPup(a dogeboxd.RollbackPupUpdate, j dogeboxd.Job) error {
+// 	s := *j.State
+// 	log := j.Logger.Step("rollback")
+// 	log.Logf("Rolling back pup %s (%s)", s.Manifest.Meta.Name, s.ID)
+// 	// TODO: This needs to use the PupUpdater service
+// 	return nil
+// }
 
 func (t SystemUpdater) markPupBroken(s dogeboxd.PupState, reason string, upstreamError error) error {
 	_, err := t.pupManager.UpdatePup(s.ID, dogeboxd.SetPupBrokenReason(reason), dogeboxd.SetPupInstallation(dogeboxd.STATE_BROKEN))
