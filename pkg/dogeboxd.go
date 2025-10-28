@@ -54,18 +54,19 @@ type syncQueue struct {
 }
 
 type Dogeboxd struct {
-	Pups           PupManager
-	SystemUpdater  SystemUpdater
-	SystemMonitor  SystemMonitor
-	JournalReader  JournalReader
-	NetworkManager NetworkManager
-	sm             StateManager
-	sources        SourceManager
-	nix            NixManager
-	logtailer      LogTailer
-	queue          *syncQueue
-	jobs           chan Job
-	Changes        chan Change
+	Pups             PupManager
+	SystemUpdater    SystemUpdater
+	SystemMonitor    SystemMonitor
+	JournalReader    JournalReader
+	NetworkManager   NetworkManager
+	PupUpdateChecker PupUpdateChecker
+	sm               StateManager
+	sources          SourceManager
+	nix              NixManager
+	logtailer        LogTailer
+	queue            *syncQueue
+	jobs             chan Job
+	Changes          chan Change
 }
 
 func NewDogeboxd(
@@ -78,6 +79,7 @@ func NewDogeboxd(
 	sourceManager SourceManager,
 	nixManager NixManager,
 	logtailer LogTailer,
+	pupUpdateChecker PupUpdateChecker,
 ) Dogeboxd {
 	q := syncQueue{
 		jobQueue:      []Job{},
@@ -85,18 +87,19 @@ func NewDogeboxd(
 		jobInProgress: sync.Mutex{},
 	}
 	s := Dogeboxd{
-		Pups:           pups,
-		SystemUpdater:  updater,
-		SystemMonitor:  monitor,
-		JournalReader:  journal,
-		NetworkManager: networkManager,
-		sm:             stateManager,
-		sources:        sourceManager,
-		nix:            nixManager,
-		logtailer:      logtailer,
-		queue:          &q,
-		jobs:           make(chan Job, 256),
-		Changes:        make(chan Change, 256),
+		Pups:             pups,
+		SystemUpdater:    updater,
+		SystemMonitor:    monitor,
+		JournalReader:    journal,
+		NetworkManager:   networkManager,
+		PupUpdateChecker: pupUpdateChecker,
+		sm:               stateManager,
+		sources:          sourceManager,
+		nix:              nixManager,
+		logtailer:        logtailer,
+		queue:            &q,
+		jobs:             make(chan Job, 256),
+		Changes:          make(chan Change, 256),
 	}
 
 	return s
@@ -109,6 +112,10 @@ func NewDogeboxd(
 // handles messages from subsystems ie: SystemUpdater,
 // SystemMonitor etc.
 func (t Dogeboxd) Run(started, stopped chan bool, stop chan context.Context) error {
+	// Start periodic pup update checking in the background
+	updateCheckerStop := make(chan bool)
+	t.PupUpdateChecker.StartPeriodicCheck(updateCheckerStop)
+
 	go func() {
 		go func() {
 		mainloop:
@@ -118,6 +125,8 @@ func (t Dogeboxd) Run(started, stopped chan bool, stop chan context.Context) err
 
 				// Handle shutdown
 				case <-stop:
+					// Stop the update checker
+					updateCheckerStop <- true
 					break mainloop
 
 				// Hand incoming jobs to the Job Dispatcher
@@ -282,6 +291,17 @@ func (t Dogeboxd) jobDispatcher(j Job) {
 	case UpdatePupHooks:
 		t.updatePupHooks(j, a)
 
+	// Pup Update actions
+	case CheckPupUpdates:
+		t.checkPupUpdates(j, a)
+
+	// NOTE: UpdatePup and RollbackPupUpdate are not yet implemented.
+	// Initial implementation is just for update detection and notification.
+	// case UpdatePup:
+	// 	t.sendSystemJobWithPupDetails(j, a.PupID)
+	// case RollbackPupUpdate:
+	// 	t.sendSystemJobWithPupDetails(j, a.PupID)
+
 	case ImportBlockchainData:
 		t.enqueue(j)
 
@@ -342,13 +362,6 @@ func (t *Dogeboxd) createPupFromManifest(j Job, pupName, pupVersion, sourceId st
 
 	// send the job off to the SystemUpdater to install
 	t.sendSystemJobWithPupDetails(j, pupID)
-}
-
-// Handle batch installation of multiple pups
-func (t *Dogeboxd) installPups(j Job, pups InstallPups) {
-	for _, pup := range pups {
-		t.createPupFromManifest(j, pup.PupName, pup.PupVersion, pup.SourceId, pup.Options)
-	}
 }
 
 // Handle an UpdatePupConfig action
@@ -428,6 +441,88 @@ func (t *Dogeboxd) updatePupHooks(j Job, u UpdatePupHooks) {
 		return
 	}
 	t.sendFinishedJob("action", j)
+}
+
+// Handle a CheckPupUpdates action
+func (t *Dogeboxd) checkPupUpdates(j Job, c CheckPupUpdates) {
+	log := j.Logger.Step("check-pup-updates")
+
+	// Handle errors and send result (deferred to avoid duplication)
+	defer t.sendFinishedJob("action", j)
+
+	if c.PupID == "" {
+		// Check all pups
+		log.Logf("Starting update check for all installed pups")
+		allPups := t.Pups.GetStateMap()
+		pupCount := len(allPups)
+		log.Logf("Found %d installed pups to check", pupCount)
+
+		if pupCount == 0 {
+			log.Logf("No pups installed to check")
+			j.Success = map[string]interface{}{
+				"message":      "No pups installed",
+				"pupsChecked":  0,
+				"updatesFound": 0,
+				"updateInfo":   map[string]interface{}{},
+			}
+			return
+		}
+
+		results := t.PupUpdateChecker.CheckAllPupUpdates()
+
+		// Check if any pups were successfully checked
+		if len(results) == 0 {
+			log.Errf("Failed to check any of %d installed pup(s)", pupCount)
+			j.Err = fmt.Sprintf("Failed to check any of %d installed pup(s)", pupCount)
+			return
+		}
+
+		updatesFound := 0
+		for _, info := range results {
+			if info.UpdateAvailable {
+				updatesFound++
+			}
+		}
+
+		failedCount := pupCount - len(results)
+		if failedCount > 0 {
+			log.Logf("Update check complete: %d pup(s) with updates available out of %d checked (%d failed)",
+				updatesFound, len(results), failedCount)
+		} else {
+			log.Logf("Update check complete: %d pup(s) with updates available out of %d checked",
+				updatesFound, len(results))
+		}
+
+		j.Success = map[string]interface{}{
+			"message":      "Update check completed",
+			"pupsChecked":  len(results),
+			"pupsFailed":   failedCount,
+			"updatesFound": updatesFound,
+			"updateInfo":   results,
+		}
+	} else {
+		// Check specific pup
+		log.Logf("Starting update check for pup: %s", c.PupID)
+
+		info, err := t.PupUpdateChecker.CheckForUpdates(c.PupID)
+		if err != nil {
+			log.Errf("Failed to check updates for pup %s: %v", c.PupID, err)
+			j.Err = fmt.Sprintf("Update check failed: %v", err)
+			return
+		}
+
+		if info.UpdateAvailable {
+			log.Logf("Update available for %s: %s → %s", c.PupID, info.CurrentVersion, info.LatestVersion)
+		} else {
+			log.Logf("No updates available for %s (current: %s)", c.PupID, info.CurrentVersion)
+		}
+
+		j.Success = map[string]interface{}{
+			"message":    "Update check completed",
+			"pupId":      c.PupID,
+			"updateInfo": info,
+		}
+	}
 }
 
 // send changes without blocking if the channel is full

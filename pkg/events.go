@@ -32,7 +32,7 @@ type Change struct {
 // Represents some information about an action underway
 type ActionProgress struct {
 	ActionID  string        `json:"actionID"`
-	PupID     string        `json:pupID`        // optional, only if a pup action
+	PupID     string        `json:"pupID"`        // optional, only if a pup action
 	Progress  int           `json:"progress"`   // 0-100
 	Step      string        `json:"step"`       // a unique name for the step we're up to, ie: installing
 	Msg       string        `json:"msg"`        // the message line

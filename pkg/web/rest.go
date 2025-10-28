@@ -115,6 +115,14 @@ func RESTAPI(
 		"GET /system/binary-caches":        a.getBinaryCaches,
 		"PUT /system/binary-cache":         a.addBinaryCache,
 		"DELETE /system/binary-cache/{id}": a.removeBinaryCache,
+
+		// Pup update routes
+		"GET /pup/updates":                    a.getAllPupUpdates,
+		"GET /pup/{pupId}/updates":            a.getPupUpdates,
+		"POST /pup/{pupId}/check-pup-updates": a.checkPupUpdates,
+		"POST /pup/{pupId}/update":            a.updatePup,          // Stub - returns 501 Not Implemented
+		"POST /pup/{pupId}/rollback":          a.rollbackPup,        // Stub - returns 501 Not Implemented
+		"GET /pup/{pupId}/previous-version":   a.getPreviousVersion, // Stub - returns 501 Not Implemented
 	}
 
 	// We always want to load recovery routes.
