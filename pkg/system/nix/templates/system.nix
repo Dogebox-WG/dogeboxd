@@ -6,6 +6,8 @@
 
   console.keyMap = "{{ .KEYMAP }}";
 
+  time.timeZone = "{{ .TIMEZONE }}";
+
   services.openssh.settings = {
     AllowUsers = [ "shibe" ];
   };

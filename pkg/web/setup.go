@@ -173,6 +173,25 @@ func (t api) getKeymaps(w http.ResponseWriter, r *http.Request) {
 	sendResponse(w, formattedKeymaps)
 }
 
+func (t api) getTimezones(w http.ResponseWriter, r *http.Request) {
+    timezones, err := system.GetTimezones()
+	if err != nil {
+		sendErrorResponse(w, http.StatusInternalServerError, "Error getting timezones")
+		return
+	}
+	
+	// Convert timezones to the desired format
+	formattedTimezones := make([]map[string]string, len(timezones))
+	for i, timezone := range timezones {
+		formattedTimezones[i] = map[string]string{
+			"id":    timezone.Name,
+			"label": timezone.Value,
+		}
+	}
+
+	sendResponse(w, formattedTimezones)
+}
+
 type SetHostnameRequestBody struct {
 	Hostname string `json:"hostname"`
 }
@@ -249,6 +268,60 @@ func (t api) setKeyMap(w http.ResponseWriter, r *http.Request) {
 
 	dbxState = t.sm.Get().Dogebox
 	dbxState.KeyMap = requestBody.KeyMap
+
+	// TODO: If we've already configured our box, rebuild here?
+
+	if err := t.sm.SetDogebox(dbxState); err != nil {
+		sendErrorResponse(w, http.StatusInternalServerError, "Error saving state")
+		return
+	}
+
+	sendResponse(w, map[string]any{"status": "OK"})
+}
+
+type SetTimezoneRequestBody struct {
+	Timezone string `json:"timezone"`
+}
+
+func (t api) setTimezone(w http.ResponseWriter, r *http.Request) {
+	dbxState := t.sm.Get().Dogebox
+
+	body, err := io.ReadAll(r.Body)
+	if err != nil {
+		sendErrorResponse(w, http.StatusBadRequest, "Error reading request body")
+		return
+	}
+	defer r.Body.Close()
+
+	var requestBody SetTimezoneRequestBody
+	if err := json.Unmarshal(body, &requestBody); err != nil {
+		http.Error(w, "Error parsing payload", http.StatusBadRequest)
+		return
+	}
+
+	// Fetch available timezones
+	timezones, err := system.GetTimezones()
+	if err != nil {
+		sendErrorResponse(w, http.StatusInternalServerError, "Error fetching timezones")
+		return
+	}
+
+	// Check if the submitted timezone is valid
+	isValidTimezone := false
+	for _, timezone := range timezones {
+		if timezone.Name == requestBody.Timezone {
+			isValidTimezone = true
+			break
+		}
+	}
+
+	if !isValidTimezone {
+		sendErrorResponse(w, http.StatusBadRequest, "Invalid timezone")
+		return
+	}
+
+	dbxState = t.sm.Get().Dogebox
+	dbxState.Timezone = requestBody.Timezone
 
 	// TODO: If we've already configured our box, rebuild here?
 
