@@ -53,9 +53,9 @@ func TestJobCreationAddedToActiveCache(t *testing.T) {
 	require.NoError(t, err)
 
 	// Should be in active jobs cache
-	jm.mu.RLock()
+	jm.jobsMutex.RLock()
 	_, exists := jm.activeJobs[job.ID]
-	jm.mu.RUnlock()
+	jm.jobsMutex.RUnlock()
 	assert.True(t, exists, "Job should be in active jobs cache")
 }
 
@@ -274,9 +274,9 @@ func TestJobCompletionRemovedFromActiveCache(t *testing.T) {
 	require.NoError(t, err)
 
 	// Verify in cache
-	jm.mu.RLock()
+	jm.jobsMutex.RLock()
 	_, exists := jm.activeJobs[job.ID]
-	jm.mu.RUnlock()
+	jm.jobsMutex.RUnlock()
 	assert.True(t, exists)
 
 	// Complete job
@@ -284,9 +284,9 @@ func TestJobCompletionRemovedFromActiveCache(t *testing.T) {
 	require.NoError(t, err)
 
 	// Verify removed from cache
-	jm.mu.RLock()
+	jm.jobsMutex.RLock()
 	_, exists = jm.activeJobs[job.ID]
-	jm.mu.RUnlock()
+	jm.jobsMutex.RUnlock()
 	assert.False(t, exists, "Job should be removed from active cache")
 }
 
@@ -511,9 +511,9 @@ func TestClearAllJobsClearsActiveCache(t *testing.T) {
 	require.NoError(t, err)
 
 	// Verify in cache
-	jm.mu.RLock()
+	jm.jobsMutex.RLock()
 	_, exists := jm.activeJobs[job.ID]
-	jm.mu.RUnlock()
+	jm.jobsMutex.RUnlock()
 	assert.True(t, exists)
 
 	// Clear all jobs
@@ -521,9 +521,9 @@ func TestClearAllJobsClearsActiveCache(t *testing.T) {
 	require.NoError(t, err)
 
 	// Verify cache is empty
-	jm.mu.RLock()
+	jm.jobsMutex.RLock()
 	cacheLen := len(jm.activeJobs)
-	jm.mu.RUnlock()
+	jm.jobsMutex.RUnlock()
 	assert.Equal(t, 0, cacheLen)
 }
 
