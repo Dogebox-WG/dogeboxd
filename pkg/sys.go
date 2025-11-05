@@ -34,11 +34,11 @@ type SystemMonitor interface {
 // for a given systemd service, close channel
 // when done
 type JournalReader interface {
-	GetJournalChan(string) (context.CancelFunc, chan string, error)
+	GetJournalChannel(string) (context.CancelFunc, chan string, error)
 }
 
 type LogTailer interface {
-	GetChan(string) (context.CancelFunc, chan string, error)
+	GetChannel(string) (context.CancelFunc, chan string, error)
 }
 
 // SystemMonitor issues these for monitored PUPs
