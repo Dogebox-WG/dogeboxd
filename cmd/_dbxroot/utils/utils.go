@@ -84,12 +84,7 @@ func GetFlakePath() (string, error) {
 	return flakePath, nil
 }
 
-func GetRebuildCommand(action string, isDev bool) (string, []string, error) {
-	if isDev {
-		// Assume the user is not running in a flake environment when running in dev mode.
-		return "nixos-rebuild", []string{action}, nil
-	}
-
+func GetRebuildCommand(action string) (string, []string, error) {
 	// Action is allowed to be "boot" or "switch". Throw an error if it's not.
 	if action != "boot" && action != "switch" {
 		return "", nil, fmt.Errorf("invalid action: %s", action)
