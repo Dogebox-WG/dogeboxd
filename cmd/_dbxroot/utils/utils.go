@@ -86,7 +86,7 @@ func GetFlakePath() (string, error) {
 	return flakePath, nil
 }
 
-func GetRebuildCommand(action string, isDev bool, setRelease string) (string, []string, error) {
+func GetRebuildCommand(action string, setRelease string) (string, []string, error) {
 	// Action is allowed to be "boot" or "switch". Throw an error if it's not.
 	if action != "boot" && action != "switch" {
 		return "", nil, fmt.Errorf("invalid action: %s", action)
