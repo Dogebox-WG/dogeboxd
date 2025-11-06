@@ -9,11 +9,13 @@ import (
 	"github.com/spf13/cobra"
 )
 
+var nixRSSetRelease string
+
 var rsCmd = &cobra.Command{
 	Use:   "rs",
 	Short: "Executes nixos-rebuild switch",
 	Run: func(cmd *cobra.Command, args []string) {
-		rebuildCommand, rebuildArgs, err := utils.GetRebuildCommand("switch")
+		rebuildCommand, rebuildArgs, err := utils.GetRebuildCommand("switch", nixRSSetRelease)
 		if err != nil {
 			fmt.Fprintf(os.Stderr, "Error getting rebuild command: %v\n", err)
 			os.Exit(1)
@@ -32,5 +34,6 @@ var rsCmd = &cobra.Command{
 }
 
 func init() {
+	rsCmd.Flags().StringVarP(&nixRSSetRelease, "set-release", "s", "", "rebuild with specific release (used for upgrades)")
 	nixCmd.AddCommand(rsCmd)
 }

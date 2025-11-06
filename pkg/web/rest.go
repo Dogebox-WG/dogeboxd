@@ -118,7 +118,9 @@ func RESTAPI(
 		"PUT /system/binary-cache":         a.addBinaryCache,
 		"DELETE /system/binary-cache/{id}": a.removeBinaryCache,
 
-		// Job management routes
+		"GET /system/updates": a.checkForUpdates,
+		"POST /system/update": a.commenceUpdate,
+
 		"GET /jobs":                  a.getJobs,
 		"GET /jobs/active":           a.getActiveJobs,
 		"GET /jobs/recent":           a.getRecentJobs,

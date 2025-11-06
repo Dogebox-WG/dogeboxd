@@ -2,6 +2,7 @@ package version
 
 import (
 	"os"
+	"path/filepath"
 	"strings"
 
 	"github.com/carlmjohnson/versioninfo"
@@ -26,22 +27,28 @@ type DBXVersionInfo struct {
 func GetDBXRelease() *DBXVersionInfo {
 	release := "unknown"
 
-	if dbxReleaseData, err := os.ReadFile("/opt/versioning/dbx"); err == nil {
+	// Allow override for testing
+	versionPath := "/opt/versioning"
+	if overridePath := os.Getenv("VERSION_PATH_OVERRIDE"); overridePath != "" {
+		versionPath = overridePath
+	}
+
+	if dbxReleaseData, err := os.ReadFile(filepath.Join(versionPath, "dbx")); err == nil {
 		release = strings.TrimSpace(string(dbxReleaseData))
 	}
 
 	packages := make(map[string]DBXVersionInputTuple)
-	if entries, err := os.ReadDir("/opt/versioning"); err == nil {
+	if entries, err := os.ReadDir(versionPath); err == nil {
 		for _, entry := range entries {
 			if entry.IsDir() {
 				pkgName := entry.Name()
 				var tuple DBXVersionInputTuple
 
-				if revData, err := os.ReadFile("/opt/versioning/" + pkgName + "/rev"); err == nil {
+				if revData, err := os.ReadFile(filepath.Join(versionPath, pkgName, "rev")); err == nil {
 					tuple.Rev = strings.TrimSpace(string(revData))
 				}
 
-				if hashData, err := os.ReadFile("/opt/versioning/" + pkgName + "/hash"); err == nil {
+				if hashData, err := os.ReadFile(filepath.Join(versionPath, pkgName, "hash")); err == nil {
 					tuple.Hash = strings.TrimSpace(string(hashData))
 				}
 
@@ -58,4 +65,37 @@ func GetDBXRelease() *DBXVersionInfo {
 			Dirty:  versioninfo.DirtyBuild,
 		},
 	}
+}
+
+func SetPackageVersion(pkg string, rev string, hash string) (bool, error) {
+	metaDir := "/opt/versioning/" + pkg
+
+	// Check 'rev' and 'hash' files exist for this package
+	if _, err := os.Stat(metaDir + "/rev"); err != nil {
+		return false, err
+	}
+
+	if _, err := os.Stat(metaDir + "/hash"); err != nil {
+		return false, err
+	}
+
+	// write current 'rev' and 'hash' to 'prevRev' and 'prevHash'
+	if err := os.Rename(metaDir+"/rev", metaDir+"/prevRev"); err != nil {
+		return false, err
+	}
+
+	if err := os.Rename(metaDir+"/hash", metaDir+"/prevHash"); err != nil {
+		return false, err
+	}
+
+	// write out new 'rev' and 'hash'
+	if err := os.WriteFile(metaDir+"/rev", []byte(rev), 0644); err != nil {
+		return false, err
+	}
+
+	if err := os.WriteFile(metaDir+"/hash", []byte(hash), 0644); err != nil {
+		return false, err
+	}
+
+	return true, nil
 }
