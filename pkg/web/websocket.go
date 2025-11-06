@@ -32,13 +32,30 @@ func (t api) getUpdateSocket(w http.ResponseWriter, r *http.Request) {
 	t.ws.GetWSHandler(initialPayload).ServeHTTP(w, r)
 }
 
-// Handle incomming websocket connections for log output
-func (t api) getLogSocket(w http.ResponseWriter, r *http.Request) {
+// Handle incoming websocket connections for pup log output
+func (t api) getPupLogSocket(w http.ResponseWriter, r *http.Request) {
 	PupID := r.PathValue("PupID")
 	wh, err := GetLogHandler(PupID, t.dbx)
 	if err != nil {
-		sendErrorResponse(w, http.StatusBadRequest, "Error establishing log channel")
+		sendErrorResponse(w, http.StatusBadRequest, "Error establishing pup log channel")
 		return
 	}
+	wh.ServeHTTP(w, r)
+}
+
+// Handle incoming websocket connections for job log output
+func (t api) getJobLogSocket(w http.ResponseWriter, r *http.Request) {
+	JobID := r.PathValue("JobID")
+	wh, err := GetJobLogHandler(JobID, t.dbx)
+	if err != nil {
+		sendErrorResponse(w, http.StatusBadRequest, "Error establishing job log channel: "+err.Error())
+		return
+	}
+	wh.ServeHTTP(w, r)
+}
+
+// Handle incoming websocket connections for job updates
+func (t api) getJobsSocket(w http.ResponseWriter, r *http.Request) {
+	wh := t.GetJobsHandler()
 	wh.ServeHTTP(w, r)
 }
