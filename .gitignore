@@ -24,6 +24,7 @@ build
 go.work
 vendor
 result
+.gocache
 
 #Claude files
 .claude

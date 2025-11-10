@@ -340,6 +340,9 @@ func (t Dogeboxd) jobDispatcher(j Job) {
 	case RemoveBinaryCache:
 		t.enqueue(j)
 
+	case SystemUpdate:
+		t.enqueue(j)
+
 	// Pup router actions
 	case UpdateMetrics:
 		t.Pups.UpdateMetrics(a)
