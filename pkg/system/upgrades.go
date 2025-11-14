@@ -76,6 +76,23 @@ type UpgradableRelease struct {
 	Summary    string
 }
 
+type InvalidUpdatePackageError struct {
+	Package string
+}
+
+func (e InvalidUpdatePackageError) Error() string {
+	return fmt.Sprintf("invalid package to upgrade: %s", e.Package)
+}
+
+type UpdateVersionUnavailableError struct {
+	Package string
+	Version string
+}
+
+func (e UpdateVersionUnavailableError) Error() string {
+	return fmt.Sprintf("release %s is not available for %s", e.Version, e.Package)
+}
+
 // RepoTagsFetcher interface for mocking getRepoTags
 type RepoTagsFetcher interface {
 	GetRepoTags(repo string) ([]RepositoryTag, error)
@@ -133,7 +150,7 @@ func DoSystemUpdate(pkg string, updateVersion string) error {
 
 	// We _only_ support the "os" package for now.
 	if pkg != "os" {
-		return fmt.Errorf("invalid package to upgrade: %s", pkg)
+		return InvalidUpdatePackageError{Package: pkg}
 	}
 
 	ok := false
@@ -145,7 +162,7 @@ func DoSystemUpdate(pkg string, updateVersion string) error {
 	}
 
 	if !ok {
-		return fmt.Errorf("release %s is not available for %s", updateVersion, pkg)
+		return UpdateVersionUnavailableError{Package: pkg, Version: updateVersion}
 	}
 
 	cmd := exec.Command(SUDO_COMMAND, "_dbxroot", "nix", "rs", "--set-release", updateVersion)

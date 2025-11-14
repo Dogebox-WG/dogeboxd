@@ -147,6 +147,17 @@ func (t SystemUpdater) Run(started, stopped chan bool, stop chan context.Context
 						}
 						t.done <- j
 
+					case dogeboxd.SystemUpdate:
+						logger := j.Logger.Step("system update")
+						logger.Progress(5).Logf("Starting system update to %s", a.Version)
+						if err := DoSystemUpdate(a.Package, a.Version); err != nil {
+							logger.Errf("System update failed: %v", err)
+							j.Err = err.Error()
+						} else {
+							logger.Progress(100).Logf("System update to %s completed", a.Version)
+						}
+						t.done <- j
+
 					default:
 						fmt.Printf("Unknown action type: %v\n", a)
 					}

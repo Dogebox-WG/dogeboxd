@@ -129,6 +129,11 @@ type RemoveSSHKey struct {
 // Import blockchain data to the system (not tied to a specific pup)
 type ImportBlockchainData struct{}
 
+type SystemUpdate struct {
+	Package string
+	Version string
+}
+
 type AddBinaryCache struct {
 	Host string
 	Key  string

@@ -317,6 +317,8 @@ func (jm *JobManager) getDisplayName(j Job) string {
 		return "Add Binary Cache"
 	case RemoveBinaryCache:
 		return "Remove Binary Cache"
+	case SystemUpdate:
+		return "System Update"
 	case UpdateMetrics:
 		return "Update Metrics"
 	default:
