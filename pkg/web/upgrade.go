@@ -5,6 +5,7 @@ import (
 	"io"
 	"net/http"
 
+	dogeboxd "github.com/dogeorg/dogeboxd/pkg"
 	"github.com/dogeorg/dogeboxd/pkg/system"
 	"github.com/dogeorg/dogeboxd/pkg/version"
 )
@@ -103,12 +104,10 @@ func (t api) commenceUpdate(w http.ResponseWriter, r *http.Request) {
 		packageName = "os"
 	}
 
-	// Execute the system update
-	err = system.DoSystemUpdate(packageName, req.Version)
-	if err != nil {
-		sendErrorResponse(w, http.StatusInternalServerError, "Error executing update: "+err.Error())
-		return
-	}
+	id := t.dbx.AddAction(dogeboxd.SystemUpdate{Package: packageName, Version: req.Version})
 
-	sendResponse(w, map[string]bool{"success": true})
+	sendResponse(w, map[string]any{
+		"success": true,
+		"id":      id,
+	})
 }
