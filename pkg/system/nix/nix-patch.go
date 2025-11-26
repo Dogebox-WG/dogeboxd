@@ -45,6 +45,9 @@ var rawNetworkTemplate []byte
 //go:embed templates/storage-overlay.nix
 var rawStorageOverlayTemplate []byte
 
+//go:embed templates/tailscale.nix
+var rawTailscaleTemplate []byte
+
 const (
 	NixPatchStatePending     string = "pending"
 	NixPatchStateCancelled   string = "cancelled"
@@ -261,6 +264,12 @@ func (np *nixPatch) WritePupFile(pupId string, values dogeboxd.NixPupContainerTe
 func (np *nixPatch) UpdateStorageOverlay(values dogeboxd.NixStorageOverlayTemplateValues) {
 	np.add("UpdateStorageOverlay", func() error {
 		return np.writeTemplate("storage-overlay.nix", rawStorageOverlayTemplate, values)
+	})
+}
+
+func (np *nixPatch) UpdateTailscale(values dogeboxd.NixTailscaleTemplateValues) {
+	np.add("UpdateTailscale", func() error {
+		return np.writeTemplate("tailscale.nix", rawTailscaleTemplate, values)
 	})
 }
 

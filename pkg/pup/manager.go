@@ -319,6 +319,11 @@ func (t PupManager) GetPupSpecificEnvironmentVariablesForContainer(pupID string)
 		"DBX_PUP_IP": t.state[pupID].IP,
 	}
 
+	// Add pup configuration values as environment variables
+	for key, value := range t.state[pupID].Config {
+		env[key] = value
+	}
+
 	// Iterate over each of our configured interfaces, and expose the host and port of each
 	for _, iface := range t.state[pupID].Manifest.Dependencies {
 		providerPup, ok := t.state[t.state[pupID].Providers[iface.InterfaceName]]

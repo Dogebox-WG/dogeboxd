@@ -18,13 +18,31 @@ func (t api) updateConfig(w http.ResponseWriter, r *http.Request) {
 	}
 	defer r.Body.Close()
 
-	data := make(map[string]string)
-	err = json.Unmarshal(body, &data)
+	rawPayload := make(map[string]any)
+	err = json.Unmarshal(body, &rawPayload)
 	if err != nil {
 		sendErrorResponse(w, http.StatusBadRequest, "Error unmarshalling JSON")
 		return
 	}
-	id := t.dbx.AddAction(dogeboxd.UpdatePupConfig{PupID: pupid, Payload: data})
+
+	pupState, _, err := t.pups.GetPup(pupid)
+	if err != nil {
+		sendErrorResponse(w, http.StatusBadRequest, "Cannot find pup")
+		return
+	}
+
+	normalized, err := dogeboxd.CoerceConfigPayload(pupState.Manifest.Config, rawPayload)
+	if err != nil {
+		sendErrorResponse(w, http.StatusBadRequest, err.Error())
+		return
+	}
+
+	if len(normalized) == 0 {
+		sendErrorResponse(w, http.StatusBadRequest, "No valid configuration fields provided")
+		return
+	}
+
+	id := t.dbx.AddAction(dogeboxd.UpdatePupConfig{PupID: pupid, Payload: normalized})
 	sendResponse(w, map[string]string{"id": id})
 }
 

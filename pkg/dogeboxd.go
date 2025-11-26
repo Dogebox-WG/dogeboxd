@@ -42,6 +42,7 @@ import (
 	"crypto/rand"
 	_ "embed"
 	"fmt"
+	"os/exec"
 	"sync"
 	"time"
 )
@@ -334,6 +335,15 @@ func (t Dogeboxd) jobDispatcher(j Job) {
 	case RemoveSSHKey:
 		t.enqueue(j)
 
+	case EnableTailscale:
+		t.enqueue(j)
+
+	case DisableTailscale:
+		t.enqueue(j)
+
+	case SetTailscaleConfig:
+		t.enqueue(j)
+
 	case AddBinaryCache:
 		t.enqueue(j)
 
@@ -389,19 +399,34 @@ func (t *Dogeboxd) installPups(j Job, pups InstallPups) {
 
 // Handle an UpdatePupConfig action
 func (t *Dogeboxd) updatePupConfig(j Job, u UpdatePupConfig) {
-	_, err := t.Pups.UpdatePup(u.PupID, SetPupConfig(u.Payload))
+	log := j.Logger.Step("config")
+
+	newState, err := t.Pups.UpdatePup(u.PupID, SetPupConfig(u.Payload))
 	if err != nil {
-		j.Err = fmt.Sprintf("Couldnt update: %s", u.PupID)
+		j.Err = fmt.Sprintf("couldn't update config for %s: %v", u.PupID, err)
 		t.sendFinishedJob("action", j)
 		return
 	}
 
-	j.Success, _, err = t.Pups.GetPup(u.PupID)
-	if err != nil {
-		j.Err = err.Error()
+	dbxState := t.sm.Get().Dogebox
+	nixPatch := t.nix.NewPatch(log)
+	t.nix.WritePupFile(nixPatch, newState, dbxState)
+
+	if err := nixPatch.Apply(); err != nil {
+		j.Err = fmt.Sprintf("failed to apply configuration: %v", err)
 		t.sendFinishedJob("action", j)
 		return
 	}
+
+	if newState.Enabled {
+		if err := restartPupContainer(log, newState.ID); err != nil {
+			j.Err = fmt.Sprintf("failed to restart pup: %v", err)
+			t.sendFinishedJob("action", j)
+			return
+		}
+	}
+
+	j.Success = newState
 	t.sendFinishedJob("action", j)
 }
 
@@ -482,6 +507,16 @@ func (t Dogeboxd) sendFinishedJob(changeType string, j Job) {
 		j.Logger.Step("queue").Err(j.Err)
 	}
 	t.sendChange(Change{ID: j.ID, Error: j.Err, Type: changeType, Update: j.Success})
+}
+
+func restartPupContainer(log SubLogger, pupID string) error {
+	unit := fmt.Sprintf("container@pup-%s.service", pupID)
+	cmd := exec.Command("sudo", "systemctl", "restart", unit)
+	if log != nil {
+		log.Logf("restarting %s", unit)
+		log.LogCmd(cmd)
+	}
+	return cmd.Run()
 }
 
 // shouldTrackJob determines if a job should create a visible job record

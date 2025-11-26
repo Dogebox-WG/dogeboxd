@@ -277,9 +277,20 @@ func SetPupBrokenReason(reason string) func(*PupState, *[]Pupdate) {
 
 func SetPupConfig(newFields map[string]string) func(*PupState, *[]Pupdate) {
 	return func(p *PupState, pu *[]Pupdate) {
+		if p.Config == nil {
+			p.Config = map[string]string{}
+		}
+
+		fieldIndex := ManifestConfigFieldIndex(p.Manifest.Config)
+
 		for k, v := range newFields {
+			if _, ok := fieldIndex[k]; !ok {
+				continue
+			}
 			p.Config[k] = v
 		}
+
+		p.NeedsConf = ManifestConfigNeedsValues(p.Manifest.Config, p.Config)
 	}
 }
 
