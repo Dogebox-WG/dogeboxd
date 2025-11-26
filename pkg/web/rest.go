@@ -66,8 +66,10 @@ func RESTAPI(
 
 		"GET /system/bootstrap":          a.getBootstrap,
 		"GET /system/recovery-bootstrap": a.getRecoveryBootstrap,
+		"GET /system/keymap":             a.getKeymap,
 		"GET /system/keymaps":            a.getKeymaps,
 		"POST /system/keymap":            a.setKeyMap,
+		"GET /system/timezone":           a.getTimezone,
 		"GET /system/timezones":          a.getTimezones,
 		"POST /system/timezone":          a.setTimezone,
 		"GET /system/disks":              a.getInstallDisks,

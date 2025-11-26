@@ -154,6 +154,16 @@ func (t api) hostShutdown(w http.ResponseWriter, r *http.Request) {
 	t.lifecycle.Shutdown()
 }
 
+func (t api) getKeymap(w http.ResponseWriter, r *http.Request) {
+	keymap, err := system.GetKeymap()
+	if err != nil {
+		sendErrorResponse(w, http.StatusInternalServerError, "Error getting current keymap")
+		return
+	}
+
+	sendResponse(w, keymap)
+}
+
 func (t api) getKeymaps(w http.ResponseWriter, r *http.Request) {
 	keymaps, err := system.GetKeymaps()
 	if err != nil {
@@ -173,13 +183,23 @@ func (t api) getKeymaps(w http.ResponseWriter, r *http.Request) {
 	sendResponse(w, formattedKeymaps)
 }
 
+func (t api) getTimezone(w http.ResponseWriter, r *http.Request) {
+	timezone, err := system.GetTimezone()
+	if err != nil {
+		sendErrorResponse(w, http.StatusInternalServerError, "Error getting current timezone")
+		return
+	}
+
+	sendResponse(w, timezone)
+}
+
 func (t api) getTimezones(w http.ResponseWriter, r *http.Request) {
-    timezones, err := system.GetTimezones()
+	timezones, err := system.GetTimezones()
 	if err != nil {
 		sendErrorResponse(w, http.StatusInternalServerError, "Error getting timezones")
 		return
 	}
-	
+
 	// Convert timezones to the desired format
 	formattedTimezones := make([]map[string]string, len(timezones))
 	for i, timezone := range timezones {
@@ -276,6 +296,12 @@ func (t api) setKeyMap(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
+	// TODO : should rebuild actually be here?
+	if dbxState.InitialState.HasFullyConfigured {
+		log := dogeboxd.NewConsoleSubLogger("internal", "settings")
+		t.dbx.SystemUpdater.KeymapUpdate(dbxState, log)
+	}
+
 	sendResponse(w, map[string]any{"status": "OK"})
 }
 
@@ -328,6 +354,12 @@ func (t api) setTimezone(w http.ResponseWriter, r *http.Request) {
 	if err := t.sm.SetDogebox(dbxState); err != nil {
 		sendErrorResponse(w, http.StatusInternalServerError, "Error saving state")
 		return
+	}
+
+	// TODO : should rebuild actually be here?
+	if dbxState.InitialState.HasFullyConfigured {
+		log := dogeboxd.NewConsoleSubLogger("internal", "settings")
+		t.dbx.SystemUpdater.TimezoneUpdate(dbxState, log)
 	}
 
 	sendResponse(w, map[string]any{"status": "OK"})

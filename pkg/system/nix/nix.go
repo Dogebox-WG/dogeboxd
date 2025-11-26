@@ -6,6 +6,7 @@ import (
 	"os/exec"
 	"path/filepath"
 	"strconv"
+	"strings"
 
 	dogeboxd "github.com/dogeorg/dogeboxd/pkg"
 )
@@ -146,7 +147,7 @@ func (nm nixManager) UpdateSystem(nixPatch dogeboxd.NixPatch, values dogeboxd.Ni
 	}
 
 	if values.TIMEZONE == "" {
-        values.TIMEZONE = "UTC"
+		values.TIMEZONE = "UTC"
 	}
 
 	nixPatch.UpdateSystem(values)
@@ -352,4 +353,46 @@ func toEnv(entries map[string]string) []dogeboxd.EnvEntry {
 		envSlice = append(envSlice, dogeboxd.EnvEntry{KEY: key, VAL: strValue})
 	}
 	return envSlice
+}
+
+func GetRunningFlakePath() (string, error) {
+	// Get system architecture
+	cmd := exec.Command("uname", "-m")
+	archOutput, err := cmd.Output()
+	if err != nil {
+		//log.Errf("error getting arch via uname: %v", err)
+		return "", err
+	}
+
+	// TODO : check out strconv
+	architecture := strings.TrimSpace(string(archOutput))
+
+	// Get build type
+	buildTypeBytes, err := os.ReadFile("/opt/build-type")
+	if err != nil {
+		//log.Printf("Failed to read build type: %v", err)
+		os.Exit(1)
+	}
+	buildType := strings.TrimSpace(string(buildTypeBytes))
+
+	flakeName := fmt.Sprintf("dogeboxos-%s-%s", buildType, architecture)
+	flakePath := fmt.Sprintf("/etc/nixos#nixosConfigurations.%s", flakeName)
+
+	return flakePath, nil
+}
+
+func GetConfigValue(configItem string) (string, error) {
+	flakePath, err := GetRunningFlakePath()
+	if err != nil {
+		//log.Errf("error getting flake path: %v", err)
+		return "", err
+	}
+	cmdArgs := []string{"nix", "eval", "--raw", flakePath + ".config." + configItem, "--impure"}
+	cmd := exec.Command("sudo", cmdArgs...)
+	stdout, err := cmd.Output()
+	if err != nil {
+		//log.Errf("error getting config value: %v", err)
+		return "", err
+	}
+	return string(stdout), nil
 }
