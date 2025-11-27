@@ -254,8 +254,8 @@ func (jm *JobManager) ClearOrphanedJobs(olderThan time.Duration) (int, error) {
 	jm.jobsMutex.Lock()
 	defer jm.jobsMutex.Unlock()
 
-	cutoff := time.Now().Add(-olderThan).Format(time.RFC3339Nano)
-	now := time.Now().Format(time.RFC3339Nano)
+	cutoff := time.Now().Add(-olderThan)
+	now := time.Now()
 
 	count, err := jm.markOrphanedJobsAsFailed(now, cutoff)
 	if err != nil {
@@ -265,7 +265,7 @@ func (jm *JobManager) ClearOrphanedJobs(olderThan time.Duration) (int, error) {
 	// Clear active jobs cache for these orphaned jobs
 	for id, job := range jm.activeJobs {
 		if job.Status == JobStatusQueued || job.Status == JobStatusInProgress {
-			if job.Started.Before(time.Now().Add(-olderThan)) {
+			if job.Started.Before(cutoff) {
 				delete(jm.activeJobs, id)
 			}
 		}
@@ -274,9 +274,9 @@ func (jm *JobManager) ClearOrphanedJobs(olderThan time.Duration) (int, error) {
 	return count, nil
 }
 
-func (jm *JobManager) markOrphanedJobsAsFailed(finished string, startedBefore string) (int, error) {
+func (jm *JobManager) markOrphanedJobsAsFailed(finished timeTime, startedBefore time.Time) (int, error) {
 	query := fmt.Sprintf(`UPDATE %s SET value = json_set(json_set(json_set(value, '$.status', 'failed'), '$.errorMessage', 'Job was orphaned (stuck in queue)'), '$.finished', ?) WHERE json_extract(value, '$.status') IN ('queued', 'in_progress') AND json_extract(value, '$.started') < ?`, jm.store.Table)
-	count, err := jm.store.ExecWrite(query, finished, startedBefore)
+	count, err := jm.store.ExecWrite(query, finished.Format(time.RFC3339Nano), startedBefore.Format(time.RFC3339Nano))
 	return int(count), err
 }
 
