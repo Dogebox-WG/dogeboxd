@@ -9,9 +9,9 @@
       ./network.nix
       ./system_container_config.nix
     ]
-    # Optional Tailscale module (only if it has been generated)
-    ++ lib.optionals (builtins.pathExists ./tailscale.nix) [
-      ./tailscale.nix
+    # Optional custom configuration (only if it has been created)
+    ++ lib.optionals (builtins.pathExists ./custom.nix) [
+      ./custom.nix
     ]
     # Optional storage overlay (only if present in the nix dir)
     ++ lib.optionals (builtins.pathExists "{{ .NIX_DIR }}/storage-overlay.nix") [

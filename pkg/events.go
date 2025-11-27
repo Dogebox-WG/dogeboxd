@@ -126,17 +126,9 @@ type RemoveSSHKey struct {
 	ID string
 }
 
-type (
-	EnableTailscale  struct{}
-	DisableTailscale struct{}
-)
-
-type SetTailscaleConfig struct {
-	AuthKey         string `json:"authKey"`
-	Hostname        string `json:"hostname"`
-	AdvertiseRoutes string `json:"advertiseRoutes"`
-	Tags            string `json:"tags"`
-	ListenPort      int    `json:"listenPort"`
+// SaveCustomNix saves custom nix configuration and triggers rebuild
+type SaveCustomNix struct {
+	Content string `json:"content"`
 }
 
 // Import blockchain data to the system (not tied to a specific pup)

@@ -1,0 +1,17 @@
+{ config, pkgs, lib, ... }:
+
+{
+  # Custom NixOS Configuration
+  # Add your custom NixOS modules and configuration here.
+  # This file is included in the system configuration when it exists.
+  
+  # Example: Enable Tailscale VPN
+  # Uncomment below and replace with your auth key from:
+  # https://login.tailscale.com/admin/settings/keys
+  #
+  # services.tailscale.enable = true;
+  # services.tailscale.authKeyFile = pkgs.writeText "tailscale-authkey" "tskey-auth-XXXXX-XXXXXXXXXXXXXXXXX";
+  # networking.firewall.trustedInterfaces = [ "tailscale0" ];
+  # networking.firewall.allowedUDPPorts = [ 41641 ];
+}
+

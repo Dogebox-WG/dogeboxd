@@ -133,24 +133,10 @@ func (t SystemUpdater) Run(started, stopped chan bool, stop chan context.Context
 						}
 						t.done <- j
 
-					case dogeboxd.EnableTailscale:
-						err := t.EnableTailscale(j.Logger.Step("enable Tailscale"))
+					case dogeboxd.SaveCustomNix:
+						err := t.SaveCustomNix(a.Content, j.Logger.Step("save custom nix"))
 						if err != nil {
-							j.Err = "Failed to enable Tailscale"
-						}
-						t.done <- j
-
-					case dogeboxd.DisableTailscale:
-						err := t.DisableTailscale(j.Logger.Step("disable Tailscale"))
-						if err != nil {
-							j.Err = "Failed to disable Tailscale"
-						}
-						t.done <- j
-
-					case dogeboxd.SetTailscaleConfig:
-						err := t.SetTailscaleConfig(a, j.Logger.Step("update Tailscale config"))
-						if err != nil {
-							j.Err = "Failed to update Tailscale configuration"
+							j.Err = "Failed to save custom configuration"
 						}
 						t.done <- j
 

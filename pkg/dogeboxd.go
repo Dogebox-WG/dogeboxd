@@ -334,13 +334,7 @@ func (t Dogeboxd) jobDispatcher(j Job) {
 	case RemoveSSHKey:
 		t.enqueue(j)
 
-	case EnableTailscale:
-		t.enqueue(j)
-
-	case DisableTailscale:
-		t.enqueue(j)
-
-	case SetTailscaleConfig:
+	case SaveCustomNix:
 		t.enqueue(j)
 
 	case AddBinaryCache:
