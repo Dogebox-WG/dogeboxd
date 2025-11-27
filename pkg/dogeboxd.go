@@ -334,6 +334,9 @@ func (t Dogeboxd) jobDispatcher(j Job) {
 	case RemoveSSHKey:
 		t.enqueue(j)
 
+	case SaveCustomNix:
+		t.enqueue(j)
+
 	case AddBinaryCache:
 		t.enqueue(j)
 
