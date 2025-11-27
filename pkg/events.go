@@ -126,19 +126,6 @@ type RemoveSSHKey struct {
 	ID string
 }
 
-type (
-	EnableTailscale  struct{}
-	DisableTailscale struct{}
-)
-
-type SetTailscaleConfig struct {
-	AuthKey         string `json:"authKey"`
-	Hostname        string `json:"hostname"`
-	AdvertiseRoutes string `json:"advertiseRoutes"`
-	Tags            string `json:"tags"`
-	ListenPort      int    `json:"listenPort"`
-}
-
 // Import blockchain data to the system (not tied to a specific pup)
 type ImportBlockchainData struct{}
 

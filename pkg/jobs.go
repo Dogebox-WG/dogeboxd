@@ -313,12 +313,6 @@ func (jm *JobManager) getDisplayName(j Job) string {
 		return "Add SSH Key"
 	case RemoveSSHKey:
 		return "Remove SSH Key"
-	case EnableTailscale:
-		return "Enable Tailscale"
-	case DisableTailscale:
-		return "Disable Tailscale"
-	case SetTailscaleConfig:
-		return "Update Tailscale Configuration"
 	case AddBinaryCache:
 		return "Add Binary Cache"
 	case RemoveBinaryCache:

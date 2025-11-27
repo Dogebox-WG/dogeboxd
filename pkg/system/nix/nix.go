@@ -309,34 +309,6 @@ func (nm nixManager) UpdateStorageOverlay(nixPatch dogeboxd.NixPatch, partitionN
 	nixPatch.UpdateStorageOverlay(values)
 }
 
-func (nm nixManager) UpdateTailscale(nixPatch dogeboxd.NixPatch, tsConfig dogeboxd.DogeboxStateTailscaleConfig, dbxHostname string) {
-	port := tsConfig.ListenPort
-	if port == 0 {
-		port = 41641
-	}
-
-	hostname := tsConfig.Hostname
-	if hostname == "" {
-		// Use the Dogebox system hostname as default
-		hostname = dbxHostname
-	}
-	if hostname == "" {
-		// Final fallback
-		hostname = "dogebox"
-	}
-
-	values := dogeboxd.NixTailscaleTemplateValues{
-		TAILSCALE_ENABLED:          tsConfig.Enabled,
-		TAILSCALE_AUTH_KEY:         tsConfig.AuthKey,
-		TAILSCALE_HOSTNAME:         hostname,
-		TAILSCALE_ADVERTISE_ROUTES: tsConfig.AdvertiseRoutes,
-		TAILSCALE_TAGS:             tsConfig.Tags,
-		TAILSCALE_PORT:             port,
-	}
-
-	nixPatch.UpdateTailscale(values)
-}
-
 func (nm nixManager) RebuildBoot(log dogeboxd.SubLogger) error {
 	cmdArgs := []string{"_dbxroot", "nix", "rb"}
 
