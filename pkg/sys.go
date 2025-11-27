@@ -77,11 +77,21 @@ type DogeboxStateBinaryCache struct {
 	Key  string `json:"key"`
 }
 
+type DogeboxStateTailscaleConfig struct {
+	Enabled         bool   `json:"enabled"`
+	AuthKey         string `json:"authKey"`
+	Hostname        string `json:"hostname"`
+	AdvertiseRoutes string `json:"advertiseRoutes"`
+	Tags            string `json:"tags"`
+	ListenPort      int    `json:"listenPort"`
+}
+
 type DogeboxState struct {
 	InitialState  DogeboxStateInitialSetup
 	Hostname      string
 	KeyMap        string
 	SSH           DogeboxStateSSHConfig
+	Tailscale     DogeboxStateTailscaleConfig
 	StorageDevice string
 	Flags         DogeboxFlags
 	BinaryCaches  []DogeboxStateBinaryCache
@@ -329,6 +339,15 @@ type NixStorageOverlayTemplateValues struct {
 	DBX_UID        string
 }
 
+type NixTailscaleTemplateValues struct {
+	TAILSCALE_ENABLED          bool
+	TAILSCALE_AUTH_KEY         string
+	TAILSCALE_HOSTNAME         string
+	TAILSCALE_ADVERTISE_ROUTES string
+	TAILSCALE_TAGS             string
+	TAILSCALE_PORT             int
+}
+
 type NixPatchApplyOptions struct {
 	RebuildBoot        bool
 	DangerousNoRebuild bool
@@ -349,6 +368,7 @@ type NixPatch interface {
 	WritePupFile(pupId string, values NixPupContainerTemplateValues)
 	RemovePupFile(pupId string)
 	UpdateStorageOverlay(values NixStorageOverlayTemplateValues)
+	UpdateTailscale(values NixTailscaleTemplateValues)
 }
 
 type NixManager interface {
@@ -362,6 +382,7 @@ type NixManager interface {
 	UpdateNetwork(patch NixPatch, values NixNetworkTemplateValues)
 	UpdateSystem(patch NixPatch, values NixSystemTemplateValues)
 	UpdateStorageOverlay(patch NixPatch, partitionName string)
+	UpdateTailscale(patch NixPatch, config DogeboxStateTailscaleConfig, dbxHostname string)
 
 	RebuildBoot(log SubLogger) error
 	Rebuild(log SubLogger) error
