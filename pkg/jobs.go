@@ -192,6 +192,15 @@ func (jm *JobManager) GetJob(jobID string) (*JobRecord, error) {
 	return &record, nil
 }
 
+// IsJobActive returns true if the job is in the active jobs cache (not yet completed)
+// Used to avoid duplicate CompleteJob calls
+func (jm *JobManager) IsJobActive(jobID string) bool {
+	jm.jobsMutex.RLock()
+	defer jm.jobsMutex.RUnlock()
+	_, ok := jm.activeJobs[jobID]
+	return ok
+}
+
 // GetAllJobs retrieves all job records
 func (jm *JobManager) GetAllJobs() ([]JobRecord, error) {
 	query := fmt.Sprintf("SELECT value FROM %s ORDER BY json_extract(value, '$.started') DESC", jm.store.Table)
@@ -237,6 +246,38 @@ func (jm *JobManager) ClearAllJobs() (int, error) {
 	jm.activeJobs = make(map[string]*JobRecord)
 
 	return int(count), nil
+}
+
+// ClearOrphanedJobs marks jobs stuck in queued/in_progress state as failed
+// Jobs are considered orphaned if they've been queued for longer than the threshold
+func (jm *JobManager) ClearOrphanedJobs(olderThan time.Duration) (int, error) {
+	jm.jobsMutex.Lock()
+	defer jm.jobsMutex.Unlock()
+
+	cutoff := time.Now().Add(-olderThan).Format(time.RFC3339Nano)
+	now := time.Now().Format(time.RFC3339Nano)
+
+	count, err := jm.markOrphanedJobsAsFailed(now, cutoff)
+	if err != nil {
+		return 0, err
+	}
+
+	// Clear active jobs cache for these orphaned jobs
+	for id, job := range jm.activeJobs {
+		if job.Status == JobStatusQueued || job.Status == JobStatusInProgress {
+			if job.Started.Before(time.Now().Add(-olderThan)) {
+				delete(jm.activeJobs, id)
+			}
+		}
+	}
+
+	return count, nil
+}
+
+func (jm *JobManager) markOrphanedJobsAsFailed(finished string, startedBefore string) (int, error) {
+	query := fmt.Sprintf(`UPDATE %s SET value = json_set(json_set(json_set(value, '$.status', 'failed'), '$.errorMessage', 'Job was orphaned (stuck in queue)'), '$.finished', ?) WHERE json_extract(value, '$.status') IN ('queued', 'in_progress') AND json_extract(value, '$.started') < ?`, jm.store.Table)
+	count, err := jm.store.ExecWrite(query, finished, startedBefore)
+	return int(count), err
 }
 
 // getDisplayName returns a human-readable name for the job
