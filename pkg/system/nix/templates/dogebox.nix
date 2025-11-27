@@ -1,17 +1,24 @@
 { config, lib, pkgs, ... }:
 
 {
-  imports = [
-    ./system.nix
-    ./firewall.nix
-    ./network.nix
-    ./tailscale.nix
-    # ./recovery_ap.nix
-    ./system_container_config.nix
-  ] ++ lib.optionals (builtins.pathExists "{{ .NIX_DIR }}/storage-overlay.nix") [
-    {{ .NIX_DIR }}/storage-overlay.nix
-  ]
-  {{range .PUP_IDS}}++ lib.optionals (builtins.pathExists ./pup_{{.}}.nix) [ ./pup_{{.}}.nix ]
-  {{end}}
-  ;
+  imports =
+    # Core system modules
+    [
+      ./system.nix
+      ./firewall.nix
+      ./network.nix
+      ./system_container_config.nix
+    ]
+    # Optional Tailscale module (only if it has been generated)
+    ++ lib.optionals (builtins.pathExists ./tailscale.nix) [
+      ./tailscale.nix
+    ]
+    # Optional storage overlay (only if present in the nix dir)
+    ++ lib.optionals (builtins.pathExists "{{ .NIX_DIR }}/storage-overlay.nix") [
+      {{ .NIX_DIR }}/storage-overlay.nix
+    ]
+    # Optional pup containers (only if their nix files exist)
+    {{range .PUP_IDS}}++ lib.optionals (builtins.pathExists ./pup_{{.}}.nix) [ ./pup_{{.}}.nix ]
+    {{end}}
+    ;
 }
