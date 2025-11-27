@@ -121,17 +121,13 @@ func (t api) getTailscaleStatus(w http.ResponseWriter, r *http.Request) {
 	}
 
 	// Run tailscale status --json to get actual status
+	// Note: tailscale status can return non-zero exit codes in certain states
+	// (e.g., NeedsLogin, Starting) while still outputting valid JSON.
+	// We use CombinedOutput and try to parse regardless of exit code.
 	cmd := exec.Command("tailscale", "status", "--json")
-	output, err := cmd.Output()
-	if err != nil {
-		// Tailscale might not be running or not installed
-		status.BackendState = "NotRunning"
-		status.Error = "Tailscale service not responding"
-		sendResponse(w, status)
-		return
-	}
+	output, cmdErr := cmd.CombinedOutput()
 
-	// Parse the JSON output
+	// Parse the JSON output - try even if command returned an error
 	var tsStatus struct {
 		BackendState string `json:"BackendState"`
 		Self         struct {
@@ -143,11 +139,18 @@ func (t api) getTailscaleStatus(w http.ResponseWriter, r *http.Request) {
 	}
 
 	if err := json.Unmarshal(output, &tsStatus); err != nil {
-		status.Error = "Failed to parse Tailscale status"
+		// Only report "not responding" if we couldn't parse the output
+		if cmdErr != nil {
+			status.BackendState = "NotRunning"
+			status.Error = "Tailscale service not responding"
+		} else {
+			status.Error = "Failed to parse Tailscale status"
+		}
 		sendResponse(w, status)
 		return
 	}
 
+	// Successfully parsed JSON - the service is running
 	status.Running = true
 	status.BackendState = tsStatus.BackendState
 	status.Online = tsStatus.Self.Online
