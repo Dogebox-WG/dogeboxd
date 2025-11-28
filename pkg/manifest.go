@@ -231,7 +231,8 @@ type PupManifestDependencySource struct {
  * for templates (Args, ENV, ConfigFiles), we only care about Name
  */
 type PupManifestConfigFields struct {
-	Sections []PupManifestConfigSection `json:"sections"`
+	ShowOnInstall bool                       `json:"showOnInstall"`
+	Sections      []PupManifestConfigSection `json:"sections"`
 }
 
 type PupManifestConfigSection struct {

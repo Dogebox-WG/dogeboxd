@@ -392,11 +392,30 @@ func (t *Dogeboxd) installPups(j Job, pups InstallPups) {
 func (t *Dogeboxd) updatePupConfig(j Job, u UpdatePupConfig) {
 	log := j.Logger.Step("config")
 
+	// Get state before update to check if we need to auto-enable
+	oldState, _, _ := t.Pups.GetPup(u.PupID)
+	wasNeedingConfig := oldState.NeedsConf
+
 	newState, err := t.Pups.UpdatePup(u.PupID, SetPupConfig(u.Payload))
 	if err != nil {
 		j.Err = fmt.Sprintf("couldn't update config for %s: %v", u.PupID, err)
 		t.sendFinishedJob("action", j)
 		return
+	}
+
+	// Check if config requirements are now satisfied
+	healthReport := t.Pups.GetPupHealthState(&newState)
+	configNowSatisfied := wasNeedingConfig && !healthReport.NeedsConf && !healthReport.NeedsDeps
+
+	// If config is now satisfied and pup isn't enabled, enable it
+	if configNowSatisfied && !newState.Enabled {
+		log.Logf("Config requirements satisfied, enabling pup")
+		newState, err = t.Pups.UpdatePup(u.PupID, PupEnabled(true))
+		if err != nil {
+			j.Err = fmt.Sprintf("failed to enable pup after config: %v", err)
+			t.sendFinishedJob("action", j)
+			return
+		}
 	}
 
 	dbxState := t.sm.Get().Dogebox

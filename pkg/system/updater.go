@@ -269,11 +269,26 @@ func (t SystemUpdater) installPup(pupSelection dogeboxd.InstallPup, j dogeboxd.J
 		return t.markPupBroken(s, dogeboxd.BROKEN_REASON_DELEGATE_KEY_WRITE_FAILED, err)
 	}
 
-	// Now that we're mostly installed, enable it.
-	newState, err := t.pupManager.UpdatePup(s.ID, dogeboxd.PupEnabled(true))
+	// Get the current pup state and check health (respects showOnInstall, required fields, etc.)
+	currentState, _, err := t.pupManager.GetPup(s.ID)
 	if err != nil {
-		log.Errf("Failed to update pup enabled state: %v", err)
-		return t.markPupBroken(s, dogeboxd.BROKEN_REASON_ENABLE_FAILED, err)
+		log.Errf("Failed to get current pup state: %v", err)
+		return t.markPupBroken(s, dogeboxd.BROKEN_REASON_STATE_UPDATE_FAILED, err)
+	}
+
+	healthReport := t.pupManager.GetPupHealthState(&currentState)
+
+	// Only enable the pup if it doesn't need configuration or dependencies
+	var newState dogeboxd.PupState
+	if !healthReport.NeedsConf && !healthReport.NeedsDeps {
+		newState, err = t.pupManager.UpdatePup(s.ID, dogeboxd.PupEnabled(true))
+		if err != nil {
+			log.Errf("Failed to update pup enabled state: %v", err)
+			return t.markPupBroken(s, dogeboxd.BROKEN_REASON_ENABLE_FAILED, err)
+		}
+	} else {
+		log.Logf("Pup requires configuration or dependencies, not enabling automatically")
+		newState = currentState
 	}
 
 	dbxState := t.sm.Get().Dogebox

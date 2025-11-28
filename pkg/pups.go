@@ -71,6 +71,7 @@ type PupState struct {
 	Source       ManifestSourceConfiguration `json:"source"`
 	Manifest     PupManifest                 `json:"manifest"`
 	Config       map[string]string           `json:"config"`
+	ConfigSaved  bool                        `json:"configSaved"`  // Has config been saved at least once?
 	Providers    map[string]string           `json:"providers"`    // providers of interface dependencies
 	Hooks        []PupHook                   `json:"hooks"`        // webhooks
 	Installation string                      `json:"installation"` // see table above and constants
@@ -242,6 +243,9 @@ type PupManager interface {
 	// CanPupStart checks if a pup can start based on its current state and dependencies.
 	CanPupStart(pupId string) (bool, error)
 
+	// GetPupHealthState returns the health state report for a pup.
+	GetPupHealthState(pup *PupState) PupHealthStateReport
+
 	// CalculateDeps calculates the dependencies for a pup.
 	CalculateDeps(pupID string) ([]PupDependencyReport, error)
 
@@ -289,6 +293,9 @@ func SetPupConfig(newFields map[string]string) func(*PupState, *[]Pupdate) {
 			}
 			p.Config[k] = v
 		}
+
+		// Mark config as saved (satisfies showOnInstall requirement)
+		p.ConfigSaved = true
 
 		p.NeedsConf = ManifestConfigNeedsValues(p.Manifest.Config, p.Config)
 	}

@@ -41,6 +41,11 @@ func (t PupManager) GetPupHealthState(pup *dogeboxd.PupState) dogeboxd.PupHealth
 	// are our required config fields set?
 	configSet := !dogeboxd.ManifestConfigNeedsValues(pup.Manifest.Config, pup.Config)
 
+	// if showOnInstall is true and config hasn't been saved yet, config is not set
+	if pup.Manifest.Config.ShowOnInstall && !pup.ConfigSaved {
+		configSet = false
+	}
+
 	// are our deps met?
 	depsMet := true
 	depsNotRunning := []string{}
