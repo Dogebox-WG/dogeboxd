@@ -9,27 +9,27 @@ import (
 	"github.com/dogeorg/dogeboxd/pkg/utils"
 )
 
-type Keymap struct {
+type Timezone struct {
 	Name  string `json:"name"`
 	Value string `json:"value"`
 }
 
 var (
-	// File keymaps.json contains manually generated keymaps list.
+	// File timezones.json contains manually generated timezone list.
 	// TODO: Find a way to automatically generate this list
-	//go:embed keymaps.json
-	data        []byte
-	precompiled = func() (s []Keymap) {
-		if err := json.Unmarshal(data, &s); err != nil {
+	//go:embed timezones.json
+	tz_data        []byte
+	tz_precompiled = func() (s []Timezone) {
+		if err := json.Unmarshal(tz_data, &s); err != nil {
 			panic(err)
 		}
 		return
 	}()
 )
 
-func (t SystemUpdater) KeymapUpdate(dbxState dogeboxd.DogeboxState, log dogeboxd.SubLogger) error {
+func (t SystemUpdater) TimezoneUpdate(dbxState dogeboxd.DogeboxState, log dogeboxd.SubLogger) error {
 	patch := t.nix.NewPatch(log)
-	//t.nix.UpdateFirewallRules(patch, dbxState)
+	t.nix.UpdateFirewallRules(patch, dbxState)
 
 	values := utils.GetNixSystemTemplateValues(dbxState)
 	t.nix.UpdateSystem(patch, values)
@@ -42,14 +42,14 @@ func (t SystemUpdater) KeymapUpdate(dbxState dogeboxd.DogeboxState, log dogeboxd
 	return nil
 }
 
-func GetKeymaps() ([]Keymap, error) {
-	return precompiled, nil
+func GetTimezones() ([]Timezone, error) {
+	return tz_precompiled, nil
 }
 
-func GetKeymap() (string, error) {
-	keymapString, err := nix.GetConfigValue("console.keyMap")
+func GetTimezone() (string, error) {
+	timezoneString, err := nix.GetConfigValue("time.timeZone")
 	if err != nil {
 		return "", err
 	}
-	return keymapString, nil
+	return timezoneString, nil
 }
