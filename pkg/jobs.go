@@ -274,7 +274,7 @@ func (jm *JobManager) ClearOrphanedJobs(olderThan time.Duration) (int, error) {
 	return count, nil
 }
 
-func (jm *JobManager) markOrphanedJobsAsFailed(finished timeTime, startedBefore time.Time) (int, error) {
+func (jm *JobManager) markOrphanedJobsAsFailed(finished time.Time, startedBefore time.Time) (int, error) {
 	query := fmt.Sprintf(`UPDATE %s SET value = json_set(json_set(json_set(value, '$.status', 'failed'), '$.errorMessage', 'Job was orphaned (stuck in queue)'), '$.finished', ?) WHERE json_extract(value, '$.status') IN ('queued', 'in_progress') AND json_extract(value, '$.started') < ?`, jm.store.Table)
 	count, err := jm.store.ExecWrite(query, finished.Format(time.RFC3339Nano), startedBefore.Format(time.RFC3339Nano))
 	return int(count), err
