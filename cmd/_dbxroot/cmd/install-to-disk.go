@@ -139,14 +139,10 @@ Example:
 		utils.RunCommand("touch", "/mnt/opt/dbx-installed")
 		utils.RunCommand("chown", "dogeboxd:dogebox", "/mnt/opt/dbx-installed")
 
-		flakePath, err := utils.GetFlakePath()
-		if err != nil {
-			log.Printf("Failed to get flake path: %v", err)
-			os.Exit(1)
-		}
+		systemClosure := utils.RunCommand("readlink", "-f", "/run/current-system");
 
 		// Install
-		utils.RunCommand("nixos-install", "--flake", flakePath, "--no-root-passwd", "--root", "/mnt")
+		utils.RunCommand("nixos-install", "--system", strings.TrimSpace(systemClosure), "--no-root-passwd", "--root", "/mnt")
 		// TODO (ando - 28/07/2025) - Figure out if we need umount here, since
 		//                            it did break iso install with `target busy`
 		if variant != builderIso {
