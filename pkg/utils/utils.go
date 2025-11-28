@@ -105,10 +105,10 @@ func GetPupNixAttributes(config dogeboxd.ServerConfig, diskSourcePath string, pu
 
 	cmd := exec.Command("nix", "eval", "--json", "--expr", expr, "--impure")
 	cmd.Dir = diskSourcePath
-	out, err := cmd.Output()
+	out, err := cmd.CombinedOutput()
 	if err != nil {
 		// wrap to keep the call-site stack tidy
-		return nil, fmt.Errorf("nix eval: %w", err)
+		return nil, fmt.Errorf("nix eval: %w\nOutput: %s", err, string(out))
 	}
 
 	var attrs []string

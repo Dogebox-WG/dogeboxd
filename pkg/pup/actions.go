@@ -87,15 +87,23 @@ func (t PupManager) AdoptPup(m dogeboxd.PupManifest, source dogeboxd.ManifestSou
 		return PupID, errors.New("development mode is not available for this pup")
 	}
 
+	defaultConfig, err := dogeboxd.ExtractManifestConfigDefaults(m.Config)
+	if err != nil {
+		return PupID, fmt.Errorf("failed to apply config defaults: %w", err)
+	}
+	if defaultConfig == nil {
+		defaultConfig = map[string]string{}
+	}
+
 	// Set up initial PupState and save it to disk
 	p := dogeboxd.PupState{
 		ID:           PupID,
 		Source:       sourceConfig,
 		Manifest:     m,
-		Config:       map[string]string{},
+		Config:       defaultConfig,
 		Installation: dogeboxd.STATE_INSTALLING,
 		Enabled:      false,
-		NeedsConf:    false, // TODO
+		NeedsConf:    dogeboxd.ManifestConfigNeedsValues(m.Config, defaultConfig),
 		NeedsDeps:    false, // TODO
 		IP:           t.lastIP.String(),
 		Version:      m.Meta.Version,

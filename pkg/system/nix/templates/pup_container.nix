@@ -198,6 +198,10 @@ in
             {{end}}
           ];
 
+          # Load user configuration from secure storage (not exposed on host)
+          # The "-" prefix makes it optional (won't fail if file doesn't exist yet)
+          EnvironmentFile = "-/storage/.dbx/config.env";
+
           PrivateTmp = true;
           ProtectSystem = "full";
           ProtectHome = "yes";
