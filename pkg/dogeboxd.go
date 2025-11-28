@@ -41,6 +41,7 @@ import (
 	"context"
 	"crypto/rand"
 	_ "embed"
+	"encoding/json"
 	"fmt"
 	"os/exec"
 	"sync"
@@ -403,6 +404,13 @@ func (t *Dogeboxd) updatePupConfig(j Job, u UpdatePupConfig) {
 		return
 	}
 
+	// Write config to secure storage (inside pup container, not exposed on host)
+	if err := WritePupConfigToStorage(t.config.DataDir, u.PupID, newState.Config, log); err != nil {
+		j.Err = fmt.Sprintf("failed to write config to storage: %v", err)
+		t.sendFinishedJob("action", j)
+		return
+	}
+
 	// Check if config requirements are now satisfied
 	healthReport := t.Pups.GetPupHealthState(&newState)
 	configNowSatisfied := wasNeedingConfig && !healthReport.NeedsConf && !healthReport.NeedsDeps
@@ -418,6 +426,7 @@ func (t *Dogeboxd) updatePupConfig(j Job, u UpdatePupConfig) {
 		}
 	}
 
+	// Rebuild nix configuration and restart the pup
 	dbxState := t.sm.Get().Dogebox
 	nixPatch := t.nix.NewPatch(log)
 	t.nix.WritePupFile(nixPatch, newState, dbxState)
@@ -426,14 +435,6 @@ func (t *Dogeboxd) updatePupConfig(j Job, u UpdatePupConfig) {
 		j.Err = fmt.Sprintf("failed to apply configuration: %v", err)
 		t.sendFinishedJob("action", j)
 		return
-	}
-
-	if newState.Enabled {
-		if err := restartPupContainer(log, newState.ID); err != nil {
-			j.Err = fmt.Sprintf("failed to restart pup: %v", err)
-			t.sendFinishedJob("action", j)
-			return
-		}
 	}
 
 	j.Success = newState
@@ -519,16 +520,6 @@ func (t Dogeboxd) sendFinishedJob(changeType string, j Job) {
 	t.sendChange(Change{ID: j.ID, Error: j.Err, Type: changeType, Update: j.Success})
 }
 
-func restartPupContainer(log SubLogger, pupID string) error {
-	unit := fmt.Sprintf("container@pup-%s.service", pupID)
-	cmd := exec.Command("sudo", "systemctl", "restart", unit)
-	if log != nil {
-		log.Logf("restarting %s", unit)
-		log.LogCmd(cmd)
-	}
-	return cmd.Run()
-}
-
 // shouldTrackJob determines if a job should create a visible job record
 // Excludes routine background operations that users don't need to see
 func (t Dogeboxd) shouldTrackJob(j Job) bool {
@@ -574,6 +565,54 @@ func (t Dogeboxd) sendSystemJobWithPupDetails(j Job, PupID string) {
 
 	// Send job to the system updater for handling
 	t.enqueue(j)
+}
+
+// WritePupConfigToStorage writes the pup's user configuration to a secure file
+// in the pup's storage directory. This file is loaded by systemd via EnvironmentFile
+// directive, keeping sensitive config values (like passwords) out of the nix files.
+func WritePupConfigToStorage(dataDir string, pupID string, config map[string]string, log SubLogger) error {
+	// Convert config map to JSON
+	configJSON, err := configToJSON(config)
+	if err != nil {
+		if log != nil {
+			log.Errf("Failed to serialize config to JSON: %v", err)
+		}
+		return fmt.Errorf("failed to serialize config: %w", err)
+	}
+
+	cmd := exec.Command("sudo", "_dbxroot", "pup", "write-config",
+		"--data-dir", dataDir,
+		"--pupId", pupID,
+		"--config", configJSON,
+	)
+
+	if log != nil {
+		log.Logf("Writing pup config to storage")
+		log.LogCmd(cmd)
+	}
+
+	if err := cmd.Run(); err != nil {
+		if log != nil {
+			log.Errf("Failed to write pup config: %v", err)
+		}
+		return fmt.Errorf("failed to write pup config: %w", err)
+	}
+
+	return nil
+}
+
+// configToJSON converts a config map to JSON string for passing to _dbxroot
+func configToJSON(config map[string]string) (string, error) {
+	if config == nil {
+		return "{}", nil
+	}
+
+	// Use encoding/json to properly escape values
+	bytes, err := json.Marshal(config)
+	if err != nil {
+		return "", err
+	}
+	return string(bytes), nil
 }
 
 var allowedJournalServices = map[string]string{
