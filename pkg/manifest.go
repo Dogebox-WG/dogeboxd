@@ -259,4 +259,5 @@ type PupManifestMetric struct {
 	Label       string `json:"label"`
 	Type        string `json:"type"` // string, int, float
 	HistorySize int    `json:"history"`
+	Description string `json:"description,omitempty"`
 }

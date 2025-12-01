@@ -517,6 +517,20 @@ func (t Dogeboxd) sendFinishedJob(changeType string, j Job) {
 	if j.Err != "" {
 		j.Logger.Step("queue").Err(j.Err)
 	}
+
+	// Update job record as completed/failed for immediate jobs (those that don't go through SystemUpdater)
+	// This ensures jobs like UpdatePupProviders get properly marked as completed
+	// Only call CompleteJob if the job is still active (not already completed by SystemUpdater path)
+	if t.JobManager != nil && t.shouldTrackJob(j) && t.JobManager.IsJobActive(j.ID) {
+		err := t.JobManager.CompleteJob(j.ID, j.Err)
+		if err == nil {
+			jobRecord, getErr := t.JobManager.GetJob(j.ID)
+			if getErr == nil {
+				t.sendChange(Change{ID: "internal", Type: "job:completed", Update: jobRecord})
+			}
+		}
+	}
+
 	t.sendChange(Change{ID: j.ID, Error: j.Err, Type: changeType, Update: j.Success})
 }
 
