@@ -6,7 +6,6 @@ import (
 	"io"
 	"net/http"
 	"os"
-	"os/exec"
 	"path/filepath"
 
 	dogeboxd "github.com/dogeorg/dogeboxd/pkg"
@@ -89,7 +88,7 @@ func (t api) validateCustomNix(w http.ResponseWriter, r *http.Request) {
 	}
 
 	// Validate the nix content directly (synchronous, no job needed)
-	validationErr := validateNixContent(req.Content, t.config.TmpDir)
+	validationErr := t.dbx.SystemUpdater.ValidateNix(req.Content)
 
 	if validationErr != nil {
 		sendResponse(w, ValidateCustomNixResponse{
@@ -103,38 +102,3 @@ func (t api) validateCustomNix(w http.ResponseWriter, r *http.Request) {
 		Valid: true,
 	})
 }
-
-// validateNixContent validates nix content using nix-instantiate --parse
-func validateNixContent(content string, tmpDir string) error {
-	// Create a temporary file to validate
-	tmpFile, err := os.CreateTemp(tmpDir, "custom-nix-validate-*.nix")
-	if err != nil {
-		return err
-	}
-	defer os.Remove(tmpFile.Name())
-
-	if _, err := tmpFile.WriteString(content); err != nil {
-		tmpFile.Close()
-		return err
-	}
-	tmpFile.Close()
-
-	// Run nix-instantiate --parse to validate syntax
-	cmd := exec.Command("nix-instantiate", "--parse", tmpFile.Name())
-	output, err := cmd.CombinedOutput()
-	if err != nil {
-		return &NixValidationError{Output: string(output)}
-	}
-
-	return nil
-}
-
-// NixValidationError represents a nix validation error
-type NixValidationError struct {
-	Output string
-}
-
-func (e *NixValidationError) Error() string {
-	return e.Output
-}
-

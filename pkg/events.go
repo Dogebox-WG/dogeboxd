@@ -126,7 +126,6 @@ type RemoveSSHKey struct {
 	ID string
 }
 
-// SaveCustomNix saves custom nix configuration and triggers rebuild
 type SaveCustomNix struct {
 	Content string `json:"content"`
 }
