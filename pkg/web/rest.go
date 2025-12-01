@@ -121,6 +121,9 @@ func RESTAPI(
 		"GET /system/updates": a.checkForUpdates,
 		"POST /system/update": a.commenceUpdate,
 
+		"GET /system/stats":    a.getSystemStats,
+		"GET /system/services": a.getSystemServices,
+
 		"GET /jobs":                  a.getJobs,
 		"GET /jobs/active":           a.getActiveJobs,
 		"GET /jobs/recent":           a.getRecentJobs,
