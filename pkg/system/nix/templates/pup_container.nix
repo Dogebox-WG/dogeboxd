@@ -198,8 +198,7 @@ in
             {{end}}
           ];
 
-          # Load user configuration from secure storage (not exposed on host)
-          # The "-" prefix makes it optional (won't fail if file doesn't exist yet)
+          # Load user configuration from secure pup storage
           EnvironmentFile = "-/storage/.dbx/config.env";
 
           PrivateTmp = true;

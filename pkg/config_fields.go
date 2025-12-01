@@ -102,6 +102,7 @@ func CoerceConfigPayload(cfg PupManifestConfigFields, payload map[string]any) (m
 	return normalized, nil
 }
 
+// stringifyConfigValue converts a raw config value to its string representation based on field type.
 func stringifyConfigValue(fieldType string, raw any) (string, error) {
 	if raw == nil {
 		return "", nil
