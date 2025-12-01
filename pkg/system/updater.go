@@ -276,6 +276,13 @@ func (t SystemUpdater) installPup(pupSelection dogeboxd.InstallPup, j dogeboxd.J
 		return t.markPupBroken(s, dogeboxd.BROKEN_REASON_DELEGATE_KEY_WRITE_FAILED, err)
 	}
 
+	// Write initial config to secure storage (includes defaults from manifest)
+	// This ensures config.env exists before the container starts
+	if err := dogeboxd.WritePupConfigToStorage(t.config.DataDir, s.ID, s.Config, log); err != nil {
+		log.Errf("Failed to write initial config to storage: %v", err)
+		return t.markPupBroken(s, dogeboxd.BROKEN_REASON_STORAGE_CREATION_FAILED, err)
+	}
+
 	// Now that we're mostly installed, enable it.
 	newState, err := t.pupManager.UpdatePup(s.ID, dogeboxd.PupEnabled(true))
 	if err != nil {

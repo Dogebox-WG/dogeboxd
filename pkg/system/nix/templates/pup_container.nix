@@ -198,6 +198,9 @@ in
             {{end}}
           ];
 
+          # Load user configuration from secure pup storage
+          EnvironmentFile = "-/storage/.dbx/config.env";
+
           PrivateTmp = true;
           ProtectSystem = "full";
           ProtectHome = "yes";
