@@ -20,6 +20,7 @@ type SystemUpdater interface {
 	EnableSSH(l SubLogger) error
 	ListSSHKeys() ([]DogeboxStateSSHKey, error)
 	AddBinaryCache(j AddBinaryCache, l SubLogger) error
+	ValidateNix(content string) error
 }
 
 // monitors systemd services and returns stats

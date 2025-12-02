@@ -133,6 +133,13 @@ func (t SystemUpdater) Run(started, stopped chan bool, stop chan context.Context
 						}
 						t.done <- j
 
+					case dogeboxd.SaveCustomNix:
+						err := t.SaveCustomNix(a.Content, j.Logger.Step("save custom nix"))
+						if err != nil {
+							j.Err = "Failed to save custom configuration"
+						}
+						t.done <- j
+
 					case dogeboxd.AddBinaryCache:
 						err := t.AddBinaryCache(a, j.Logger.Step("Add binary cache"))
 						if err != nil {
