@@ -41,7 +41,9 @@ import (
 	"context"
 	"crypto/rand"
 	_ "embed"
+	"encoding/json"
 	"fmt"
+	"os/exec"
 	"sync"
 	"time"
 )
@@ -67,6 +69,8 @@ type Dogeboxd struct {
 	queue            *syncQueue
 	jobs             chan Job
 	Changes          chan Change
+	JobManager       *JobManager
+	config           *ServerConfig
 }
 
 func NewDogeboxd(
@@ -80,6 +84,7 @@ func NewDogeboxd(
 	nixManager NixManager,
 	logtailer LogTailer,
 	pupUpdateChecker PupUpdateChecker,
+	config *ServerConfig,
 ) Dogeboxd {
 	q := syncQueue{
 		jobQueue:      []Job{},
@@ -100,11 +105,17 @@ func NewDogeboxd(
 		queue:            &q,
 		jobs:             make(chan Job, 256),
 		Changes:          make(chan Change, 256),
+		config:           config,
 	}
 
 	return s
 	// TODO start monitoring all installed services
 	// SUB TO PUP MANAGER monitor.GetMonChannel() <- []string{"dbus.service"}
+}
+
+// SetJobManager sets the JobManager reference after Dogeboxd is created
+func (t *Dogeboxd) SetJobManager(jm *JobManager) {
+	t.JobManager = jm
 }
 
 // Main Dogeboxd goroutine, handles routing messages in
@@ -135,6 +146,15 @@ func (t Dogeboxd) Run(started, stopped chan bool, stop chan context.Context) err
 						break dance
 					}
 					j.Start = time.Now() // start the job timer
+
+					// Create job record for tracking (skip routine operations like metrics)
+					if t.JobManager != nil && t.shouldTrackJob(j) {
+						record, err := t.JobManager.CreateJobRecord(j)
+						if err == nil {
+							t.sendChange(Change{ID: "internal", Type: "job:created", Update: record})
+						}
+					}
+
 					t.jobDispatcher(j)
 
 				// Handle pupdates from PupManager
@@ -185,6 +205,18 @@ func (t Dogeboxd) Run(started, stopped chan bool, stop chan context.Context) err
 							j.Success = state
 						}
 					}
+
+					// Update job record as completed/failed
+					if t.JobManager != nil {
+						err := t.JobManager.CompleteJob(j.ID, j.Err)
+						if err == nil {
+							jobRecord, getErr := t.JobManager.GetJob(j.ID)
+							if getErr == nil {
+								t.sendChange(Change{ID: "internal", Type: "job_completed", Update: jobRecord})
+							}
+						}
+					}
+
 					t.sendFinishedJob("action", j)
 
 				case <-time.After(time.Millisecond * 100): // Periodic check
@@ -209,6 +241,7 @@ func (t *Dogeboxd) pumpQueue() {
 	if t.queue.jobInProgress.TryLock() {
 		t.queue.jobQLock.Lock()
 		if len(t.queue.jobQueue) > 0 {
+
 			job := t.queue.jobQueue[0]
 			t.queue.jobQueue = t.queue.jobQueue[1:]
 			t.queue.jobQLock.Unlock()
@@ -321,10 +354,16 @@ func (t Dogeboxd) jobDispatcher(j Job) {
 	case RemoveSSHKey:
 		t.enqueue(j)
 
+	case SaveCustomNix:
+		t.enqueue(j)
+
 	case AddBinaryCache:
 		t.enqueue(j)
 
 	case RemoveBinaryCache:
+		t.enqueue(j)
+
+	case SystemUpdate:
 		t.enqueue(j)
 
 	// Pup router actions
@@ -366,19 +405,53 @@ func (t *Dogeboxd) createPupFromManifest(j Job, pupName, pupVersion, sourceId st
 
 // Handle an UpdatePupConfig action
 func (t *Dogeboxd) updatePupConfig(j Job, u UpdatePupConfig) {
-	_, err := t.Pups.UpdatePup(u.PupID, SetPupConfig(u.Payload))
+	log := j.Logger.Step("config")
+
+	// Get state before update to check if we need to auto-enable
+	oldState, _, _ := t.Pups.GetPup(u.PupID)
+	wasNeedingConfig := oldState.NeedsConf
+
+	newState, err := t.Pups.UpdatePup(u.PupID, SetPupConfig(u.Payload))
 	if err != nil {
-		j.Err = fmt.Sprintf("Couldnt update: %s", u.PupID)
+		j.Err = fmt.Sprintf("couldn't update config for %s: %v", u.PupID, err)
 		t.sendFinishedJob("action", j)
 		return
 	}
 
-	j.Success, _, err = t.Pups.GetPup(u.PupID)
-	if err != nil {
-		j.Err = err.Error()
+	// Write config to secure storage (inside pup container, not exposed on host)
+	if err := WritePupConfigToStorage(t.config.DataDir, u.PupID, newState.Config, log); err != nil {
+		j.Err = fmt.Sprintf("failed to write config to storage: %v", err)
 		t.sendFinishedJob("action", j)
 		return
 	}
+
+	// Check if config requirements are now satisfied
+	healthReport := t.Pups.GetPupHealthState(&newState)
+	configNowSatisfied := wasNeedingConfig && !healthReport.NeedsConf && !healthReport.NeedsDeps
+
+	// If config is now satisfied and pup isn't enabled, enable it
+	if configNowSatisfied && !newState.Enabled {
+		log.Logf("Config requirements satisfied, enabling pup")
+		newState, err = t.Pups.UpdatePup(u.PupID, PupEnabled(true))
+		if err != nil {
+			j.Err = fmt.Sprintf("failed to enable pup after config: %v", err)
+			t.sendFinishedJob("action", j)
+			return
+		}
+	}
+
+	// Rebuild nix configuration and restart the pup
+	dbxState := t.sm.Get().Dogebox
+	nixPatch := t.nix.NewPatch(log)
+	t.nix.WritePupFile(nixPatch, newState, dbxState)
+
+	if err := nixPatch.Apply(); err != nil {
+		j.Err = fmt.Sprintf("failed to apply configuration: %v", err)
+		t.sendFinishedJob("action", j)
+		return
+	}
+
+	j.Success = newState
 	t.sendFinishedJob("action", j)
 }
 
@@ -540,11 +613,51 @@ func (t Dogeboxd) sendFinishedJob(changeType string, j Job) {
 	if j.Err != "" {
 		j.Logger.Step("queue").Err(j.Err)
 	}
+
+	// Update job record as completed/failed for immediate jobs (those that don't go through SystemUpdater)
+	// This ensures jobs like UpdatePupProviders get properly marked as completed
+	// Only call CompleteJob if the job is still active (not already completed by SystemUpdater path)
+	if t.JobManager != nil && t.shouldTrackJob(j) && t.JobManager.IsJobActive(j.ID) {
+		err := t.JobManager.CompleteJob(j.ID, j.Err)
+		if err == nil {
+			jobRecord, getErr := t.JobManager.GetJob(j.ID)
+			if getErr == nil {
+				t.sendChange(Change{ID: "internal", Type: "job:completed", Update: jobRecord})
+			}
+		}
+	}
+
 	t.sendChange(Change{ID: j.ID, Error: j.Err, Type: changeType, Update: j.Success})
+}
+
+// shouldTrackJob determines if a job should create a visible job record
+// Excludes routine background operations that users don't need to see
+func (t Dogeboxd) shouldTrackJob(j Job) bool {
+	switch j.A.(type) {
+	case UpdateMetrics:
+		return false // Metrics updates happen every 10s, don't track
+	case UpdatePupConfig:
+		return false // Config updates are instantaneous, don't need tracking
+	case UpdatePupHooks:
+		return false // Hook updates are instantaneous
+	default:
+		return true // Track everything else
+	}
 }
 
 // updates the client on the progress of any inflight actions
 func (t Dogeboxd) sendProgress(p ActionProgress) {
+	// Update job record with progress
+	if t.JobManager != nil {
+		err := t.JobManager.UpdateJobProgress(p)
+		if err == nil {
+			jobRecord, getErr := t.JobManager.GetJob(p.ActionID)
+			if getErr == nil {
+				t.sendChange(Change{ID: "internal", Type: "job:updated", Update: jobRecord})
+			}
+		}
+	}
+
 	t.sendChange(Change{ID: p.ActionID, Type: "progress", Update: p})
 }
 
@@ -564,6 +677,54 @@ func (t Dogeboxd) sendSystemJobWithPupDetails(j Job, PupID string) {
 	t.enqueue(j)
 }
 
+// WritePupConfigToStorage writes the pup's user configuration to a secure file
+// in the pup's storage directory. This file is loaded by systemd via EnvironmentFile
+// directive, keeping sensitive config values (like passwords) out of the nix files.
+func WritePupConfigToStorage(dataDir string, pupID string, config map[string]string, log SubLogger) error {
+	// Convert config map to JSON
+	configJSON, err := configToJSON(config)
+	if err != nil {
+		if log != nil {
+			log.Errf("Failed to serialize config to JSON: %v", err)
+		}
+		return fmt.Errorf("failed to serialize config: %w", err)
+	}
+
+	cmd := exec.Command("sudo", "_dbxroot", "pup", "write-config",
+		"--data-dir", dataDir,
+		"--pupId", pupID,
+		"--config", configJSON,
+	)
+
+	if log != nil {
+		log.Logf("Writing pup config to storage")
+		log.LogCmd(cmd)
+	}
+
+	if err := cmd.Run(); err != nil {
+		if log != nil {
+			log.Errf("Failed to write pup config: %v", err)
+		}
+		return fmt.Errorf("failed to write pup config: %w", err)
+	}
+
+	return nil
+}
+
+// configToJSON converts a config map to JSON string for passing to _dbxroot
+func configToJSON(config map[string]string) (string, error) {
+	if config == nil {
+		return "{}", nil
+	}
+
+	// Use encoding/json to properly escape values
+	bytes, err := json.Marshal(config)
+	if err != nil {
+		return "", err
+	}
+	return string(bytes), nil
+}
+
 var allowedJournalServices = map[string]string{
 	"dbx": "dogeboxd.service",
 	"dkm": "dkm.service",
@@ -574,7 +735,7 @@ func (t Dogeboxd) GetLogChannel(PupID string) (context.CancelFunc, chan string, 
 	// and read everything else (pups) from the container logs we export.
 	service, ok := allowedJournalServices[PupID]
 	if ok {
-		return t.JournalReader.GetJournalChan(service)
+		return t.JournalReader.GetJournalChannel(service)
 	}
 
 	// Check that we've actually got a valid pup id.
@@ -583,5 +744,18 @@ func (t Dogeboxd) GetLogChannel(PupID string) (context.CancelFunc, chan string, 
 		return nil, nil, err
 	}
 
-	return t.logtailer.GetChan(PupID)
+	return t.logtailer.GetChannel(PupID)
+}
+
+// GetJobLogChannel returns a log channel for a specific job
+// Streams logs from the job's ActionLogger in real-time (same system as pup logs)
+func (t Dogeboxd) GetJobLogChannel(JobID string) (context.CancelFunc, chan string, error) {
+	// Verify job exists
+	_, err := t.JobManager.GetJob(JobID)
+	if err != nil {
+		return nil, nil, fmt.Errorf("job not found: %s", JobID)
+	}
+
+	// Get log channel from the action logger for this job
+	return t.logtailer.GetChannel(JobID)
 }

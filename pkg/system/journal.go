@@ -19,7 +19,7 @@ type JournalReader struct {
 	config dogeboxd.ServerConfig
 }
 
-func (t JournalReader) GetJournalChan(service string) (context.CancelFunc, chan string, error) {
+func (t JournalReader) GetJournalChannel(service string) (context.CancelFunc, chan string, error) {
 	ctx, cancel := context.WithCancel(context.Background())
 
 	out := make(chan string, 10)

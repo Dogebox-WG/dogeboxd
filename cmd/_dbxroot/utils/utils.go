@@ -8,6 +8,8 @@ import (
 	"os/exec"
 	"path/filepath"
 	"strings"
+
+	"github.com/dogeorg/dogeboxd/pkg/version"
 )
 
 func IsAlphanumeric(s string) bool {
@@ -84,8 +86,7 @@ func GetFlakePath() (string, error) {
 	return flakePath, nil
 }
 
-func GetRebuildCommand(action string, isDev bool) (string, []string, error) {
-
+func GetRebuildCommand(action string, isDev bool, setRelease string) (string, []string, error) {
 	// Action is allowed to be "boot" or "switch". Throw an error if it's not.
 	if action != "boot" && action != "switch" {
 		return "", nil, fmt.Errorf("invalid action: %s", action)
@@ -96,7 +97,24 @@ func GetRebuildCommand(action string, isDev bool) (string, []string, error) {
 		return "", nil, fmt.Errorf("failed to get flake path: %w", err)
 	}
 
-	return "nixos-rebuild", []string{action, "--flake", flakePath, "--impure"}, nil
+	commandArgs := []string{action, "--flake", flakePath, "--impure"}
+
+	// In dev mode, skip override-inputs to use local flake sources
+	if !isDev {
+		versionInformation := version.GetDBXRelease()
+
+		for pkg, tuple := range versionInformation.Packages {
+			// Only support dogebox-wg thing for now.
+			repo := fmt.Sprintf("github:dogebox-wg/%s/%s", pkg, tuple.Rev)
+			// override release (for upgrade) if setRelease is set
+			if setRelease != "" {
+				repo = fmt.Sprintf("github:dogebox-wg/%s/%s", pkg, setRelease)
+			}
+			commandArgs = append(commandArgs, "--override-input", pkg, repo)
+		}
+	}
+
+	return "nixos-rebuild", commandArgs, nil
 }
 
 func CopyFiles(source string, destination string) error {
