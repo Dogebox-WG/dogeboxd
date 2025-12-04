@@ -171,6 +171,13 @@ func (t Dogeboxd) Run(started, stopped chan bool, stop chan context.Context) err
 					}
 					t.sendChange(Change{"internal", "", "stats", stats})
 
+				// Handle pup update check events
+				case event, ok := <-t.PupUpdateChecker.GetEventChannel():
+					if !ok {
+						break dance
+					}
+					t.sendChange(Change{"internal", "", "pup-updates-checked", event})
+
 				// Handle completed jobs from SystemUpdater
 				case j, ok := <-t.SystemUpdater.GetUpdateChannel():
 					if !ok {
@@ -194,8 +201,12 @@ func (t Dogeboxd) Run(started, stopped chan bool, stop chan context.Context) err
 						t.Pups.FastPollPup(j.State.ID)
 					case UninstallPup:
 						t.Pups.FastPollPup(j.State.ID)
+						// Clear update cache for uninstalled pup
+						t.PupUpdateChecker.ClearCacheEntry(j.State.ID)
 					case PurgePup:
 						t.Pups.FastPollPup(j.State.ID)
+						// Clear update cache for purged pup
+						t.PupUpdateChecker.ClearCacheEntry(j.State.ID)
 					}
 
 					// TODO: explain why we I this
@@ -328,12 +339,11 @@ func (t Dogeboxd) jobDispatcher(j Job) {
 	case CheckPupUpdates:
 		t.checkPupUpdates(j, a)
 
-	// NOTE: UpdatePup and RollbackPupUpdate are not yet implemented.
-	// Initial implementation is just for update detection and notification.
-	// case UpdatePup:
-	// 	t.sendSystemJobWithPupDetails(j, a.PupID)
-	// case RollbackPupUpdate:
-	// 	t.sendSystemJobWithPupDetails(j, a.PupID)
+	case UpgradePup:
+		t.sendSystemJobWithPupDetails(j, a.PupID)
+
+	case RollbackPupUpgrade:
+		t.sendSystemJobWithPupDetails(j, a.PupID)
 
 	case ImportBlockchainData:
 		t.enqueue(j)

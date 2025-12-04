@@ -125,9 +125,10 @@ func RESTAPI(
 		"GET /pup/updates":                    a.getAllPupUpdates,
 		"GET /pup/{pupId}/updates":            a.getPupUpdates,
 		"POST /pup/{pupId}/check-pup-updates": a.checkPupUpdates,
-		"POST /pup/{pupId}/update":            a.updatePup,          // Stub - returns 501 Not Implemented
-		"POST /pup/{pupId}/rollback":          a.rollbackPup,        // Stub - returns 501 Not Implemented
-		"GET /pup/{pupId}/previous-version":   a.getPreviousVersion, // Stub - returns 501 Not Implemented
+		"POST /pup/{pupId}/upgrade":           a.upgradePup,
+		"POST /pup/{pupId}/update":            a.updatePup, // Legacy, redirects to upgrade
+		"POST /pup/{pupId}/rollback":          a.rollbackPup,
+		"GET /pup/{pupId}/previous-version":   a.getPreviousVersion,
 
 		"GET /system/updates": a.checkForUpdates,
 		"POST /system/update": a.commenceUpdate,

@@ -12,6 +12,7 @@ import (
 // Pup states
 const (
 	STATE_INSTALLING   string = "installing"
+	STATE_UPGRADING    string = "upgrading"
 	STATE_READY        string = "ready"
 	STATE_UNREADY      string = "unready"
 	STATE_UNINSTALLING string = "uninstalling"
@@ -310,6 +311,20 @@ func SetPupProviders(newProviders map[string]string) func(*PupState, *[]Pupdate)
 	}
 }
 
+func SetPupVersion(version string) func(*PupState, *[]Pupdate) {
+	return func(p *PupState, pu *[]Pupdate) {
+		p.Version = version
+	}
+}
+
+func SetPupManifest(manifest PupManifest) func(*PupState, *[]Pupdate) {
+	return func(p *PupState, pu *[]Pupdate) {
+		p.Manifest = manifest
+		// Recalculate if config needs values based on new manifest
+		p.NeedsConf = ManifestConfigNeedsValues(p.Manifest.Config, p.Config)
+	}
+}
+
 func PupEnabled(b bool) func(*PupState, *[]Pupdate) {
 	return func(p *PupState, pu *[]Pupdate) {
 		p.Enabled = b
@@ -423,7 +438,14 @@ type CheckPupUpdates struct {
 	PupID string // Empty string = check all pups
 }
 
-/* The PupUpdateCheckeris used to check for pup updates
+// PupUpdatesCheckedEvent is emitted when a pup update check completes
+type PupUpdatesCheckedEvent struct {
+	PupsChecked      int  `json:"pupsChecked"`
+	UpdatesAvailable int  `json:"updatesAvailable"`
+	IsPeriodicCheck  bool `json:"isPeriodicCheck"`
+}
+
+/* The PupUpdateChecker is used to check for pup updates
  */
 type PupUpdateChecker interface {
 	// CheckForUpdates checks for updates for a specific pup
@@ -438,6 +460,15 @@ type PupUpdateChecker interface {
 	// GetAllCachedUpdates retrieves all update information from the cache
 	GetAllCachedUpdates() map[string]PupUpdateInfo
 
+	// ClearCacheEntry removes a specific pup from the update cache
+	ClearCacheEntry(pupID string)
+
 	// StartPeriodicCheck starts a background goroutine that checks for updates periodically
 	StartPeriodicCheck(stop chan bool)
+
+	// GetEventChannel returns the channel for update check completion events
+	GetEventChannel() <-chan PupUpdatesCheckedEvent
+
+	// DetectInterfaceChanges compares interfaces between two manifests and returns changes
+	DetectInterfaceChanges(oldManifest, newManifest PupManifest) []PupInterfaceVersion
 }

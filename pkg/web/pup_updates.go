@@ -1,6 +1,7 @@
 package web
 
 import (
+	"encoding/json"
 	"log"
 	"net/http"
 	"strings"
@@ -53,27 +54,118 @@ func (t api) checkPupUpdates(w http.ResponseWriter, r *http.Request) {
 	sendResponse(w, map[string]string{"jobId": jobID})
 }
 
-// NOTE: The following endpoints are stubs for update execution functionality.
-// Current scope focuses on update detection and notification only.
-// These will be fully implemented in a future phase when we add actual update execution.
-
-// POST /pup/:pupId/update - Trigger pup update (NOT YET IMPLEMENTED)
-func (t api) updatePup(w http.ResponseWriter, r *http.Request) {
-	// TODO: Implement update execution in future phase
-	log.Printf("updatePup endpoint called but not yet implemented - update execution deferred to future phase")
-	sendErrorResponse(w, http.StatusNotImplemented, "Pup update execution not yet implemented - currently only supports update detection and notification")
+// UpgradePupRequest is the request body for the upgrade endpoint
+type UpgradePupRequest struct {
+	TargetVersion string `json:"targetVersion"`
 }
 
-// POST /pup/:pupId/rollback - Rollback to previous version (NOT YET IMPLEMENTED)
+// POST /pup/:pupId/upgrade - Trigger pup upgrade
+func (t api) upgradePup(w http.ResponseWriter, r *http.Request) {
+	pupID := strings.TrimPrefix(r.URL.Path, "/pup/")
+	pupID = strings.TrimSuffix(pupID, "/upgrade")
+
+	// Parse request body
+	var req UpgradePupRequest
+	if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
+		sendErrorResponse(w, http.StatusBadRequest, "Invalid request body")
+		return
+	}
+
+	if req.TargetVersion == "" {
+		sendErrorResponse(w, http.StatusBadRequest, "targetVersion is required")
+		return
+	}
+
+	// Get the pup to find its source
+	pup, _, err := t.pups.GetPup(pupID)
+	if err != nil {
+		sendErrorResponse(w, http.StatusNotFound, "Pup not found")
+		return
+	}
+
+	// Verify the target version is available
+	updateInfo, ok := t.dbx.PupUpdateChecker.GetCachedUpdateInfo(pupID)
+	if !ok {
+		sendErrorResponse(w, http.StatusBadRequest, "No update information available. Check for updates first.")
+		return
+	}
+
+	// Check that target version exists in available versions
+	versionFound := false
+	for _, v := range updateInfo.AvailableVersions {
+		if v.Version == req.TargetVersion {
+			versionFound = true
+			break
+		}
+	}
+	if !versionFound {
+		sendErrorResponse(w, http.StatusBadRequest, "Target version not available")
+		return
+	}
+
+	// Trigger upgrade action
+	jobID := t.dbx.AddAction(dogeboxd.UpgradePup{
+		PupID:         pupID,
+		TargetVersion: req.TargetVersion,
+		SourceId:      pup.Source.ID,
+	})
+
+	log.Printf("upgradePup: triggered upgrade for pup %s to version %s (jobId: %s)", pupID, req.TargetVersion, jobID)
+	sendResponse(w, map[string]string{"jobId": jobID})
+}
+
+// POST /pup/:pupId/rollback - Rollback to previous version
 func (t api) rollbackPup(w http.ResponseWriter, r *http.Request) {
-	// TODO: Implement rollback in future phase
-	log.Printf("rollbackPup endpoint called but not yet implemented - rollback functionality deferred to future phase")
-	sendErrorResponse(w, http.StatusNotImplemented, "Pup rollback not yet implemented - currently only supports update detection and notification")
+	pupID := strings.TrimPrefix(r.URL.Path, "/pup/")
+	pupID = strings.TrimSuffix(pupID, "/rollback")
+
+	// Verify pup exists
+	_, _, err := t.pups.GetPup(pupID)
+	if err != nil {
+		sendErrorResponse(w, http.StatusNotFound, "Pup not found")
+		return
+	}
+
+	// Trigger rollback action
+	jobID := t.dbx.AddAction(dogeboxd.RollbackPupUpgrade{
+		PupID: pupID,
+	})
+
+	log.Printf("rollbackPup: triggered rollback for pup %s (jobId: %s)", pupID, jobID)
+	sendResponse(w, map[string]string{"jobId": jobID})
 }
 
-// GET /pup/:pupId/previous-version - Get previous version snapshot (NOT YET IMPLEMENTED)
+// GET /pup/:pupId/previous-version - Get previous version snapshot
 func (t api) getPreviousVersion(w http.ResponseWriter, r *http.Request) {
-	// TODO: Implement version history in future phase
-	log.Printf("getPreviousVersion endpoint called but not yet implemented - version history deferred to future phase")
-	sendErrorResponse(w, http.StatusNotImplemented, "Version history not yet implemented - currently only supports update detection and notification")
+	pupID := strings.TrimPrefix(r.URL.Path, "/pup/")
+	pupID = strings.TrimSuffix(pupID, "/previous-version")
+
+	// Return null if no snapshot system available or no snapshot exists
+	// For now, we don't have direct access to the snapshot manager from the API
+	// So we'll return a simple response indicating if rollback might be available
+	// The actual snapshot check happens in the rollback handler
+	
+	// Verify pup exists
+	pup, _, err := t.pups.GetPup(pupID)
+	if err != nil {
+		sendErrorResponse(w, http.StatusNotFound, "Pup not found")
+		return
+	}
+
+	// Check if pup is in broken state (which means rollback is likely needed)
+	response := map[string]interface{}{
+		"pupId":            pupID,
+		"currentVersion":   pup.Version,
+		"isBroken":         pup.Installation == dogeboxd.STATE_BROKEN,
+		"brokenReason":     pup.BrokenReason,
+		"rollbackPossible": pup.Installation == dogeboxd.STATE_BROKEN, // Simplified check
+	}
+
+	sendResponse(w, response)
+}
+
+// Backward compatibility - the old updatePup route now redirects to upgradePup
+func (t api) updatePup(w http.ResponseWriter, r *http.Request) {
+	// Redirect to the new upgrade endpoint
+	t.upgradePup(w, r)
 }

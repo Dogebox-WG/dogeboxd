@@ -81,6 +81,18 @@ type DisablePup struct {
 	PupID string
 }
 
+// UpgradePup upgrades a pup to a new version while preserving config and data
+type UpgradePup struct {
+	PupID         string
+	TargetVersion string
+	SourceId      string // Source to download new version from
+}
+
+// RollbackPupUpgrade rolls back a pup to its previous version after a failed upgrade
+type RollbackPupUpgrade struct {
+	PupID string
+}
+
 // Updates the config values in a PUPState object
 type UpdatePupConfig struct {
 	PupID   string

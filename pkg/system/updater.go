@@ -23,7 +23,7 @@ dogeboxd.Dogeboxd, especially as they relate to the operating system.
 
 */
 
-func NewSystemUpdater(config dogeboxd.ServerConfig, networkManager dogeboxd.NetworkManager, nixManager dogeboxd.NixManager, sourceManager dogeboxd.SourceManager, pupManager dogeboxd.PupManager, stateManager dogeboxd.StateManager, dkm dogeboxd.DKMManager) SystemUpdater {
+func NewSystemUpdater(config dogeboxd.ServerConfig, networkManager dogeboxd.NetworkManager, nixManager dogeboxd.NixManager, sourceManager dogeboxd.SourceManager, pupManager dogeboxd.PupManager, stateManager dogeboxd.StateManager, dkm dogeboxd.DKMManager, snapshotManager SnapshotManager) SystemUpdater {
 	return SystemUpdater{
 		config:     config,
 		jobs:       make(chan dogeboxd.Job),
@@ -34,7 +34,16 @@ func NewSystemUpdater(config dogeboxd.ServerConfig, networkManager dogeboxd.Netw
 		pupManager: pupManager,
 		sm:         stateManager,
 		dkm:        dkm,
+		snapshots:  snapshotManager,
 	}
+}
+
+// SnapshotManager interface for pup version snapshots
+type SnapshotManager interface {
+	CreateSnapshot(pupState dogeboxd.PupState) error
+	GetSnapshot(pupID string) (*dogeboxd.PupVersionSnapshot, error)
+	HasSnapshot(pupID string) bool
+	DeleteSnapshot(pupID string) error
 }
 
 type SystemUpdater struct {
@@ -47,6 +56,7 @@ type SystemUpdater struct {
 	pupManager dogeboxd.PupManager
 	sm         dogeboxd.StateManager
 	dkm        dogeboxd.DKMManager
+	snapshots  SnapshotManager
 }
 
 func (t SystemUpdater) Run(started, stopped chan bool, stop chan context.Context) error {
@@ -93,20 +103,18 @@ func (t SystemUpdater) Run(started, stopped chan bool, stop chan context.Context
 							j.Err = "Failed to disable pup"
 						}
 						t.done <- j
-						// NOTE: UpdatePup and RollbackPupUpdate are not yet implemented.
-						// Current scope focuses on update detection and notification only.
-						// case dogeboxd.UpdatePup:
-						// 	err := t.updatePup(a, j)
-						// 	if err != nil {
-						// 		j.Err = "Failed to update pup"
-						// 	}
-						// 	t.done <- j
-						// case dogeboxd.RollbackPupUpdate:
-						// 	err := t.rollbackPup(a, j)
-						// 	if err != nil {
-						// 		j.Err = "Failed to rollback pup"
-						// 	}
-						// 	t.done <- j
+					case dogeboxd.UpgradePup:
+						err := t.upgradePup(a, j)
+						if err != nil {
+							j.Err = "Failed to upgrade pup"
+						}
+						t.done <- j
+					case dogeboxd.RollbackPupUpgrade:
+						err := t.rollbackPupUpgrade(j)
+						if err != nil {
+							j.Err = "Failed to rollback pup"
+						}
+						t.done <- j
 					case dogeboxd.ImportBlockchainData:
 						err := t.importBlockchainData(j)
 						if err != nil {
@@ -599,4 +607,223 @@ func (t SystemUpdater) removeBinaryCache(j dogeboxd.RemoveBinaryCache) error {
 	}
 
 	return t.sm.SetDogebox(dbxState)
+}
+
+// upgradePup handles upgrading a pup to a new version while preserving config and data
+func (t SystemUpdater) upgradePup(upgrade dogeboxd.UpgradePup, j dogeboxd.Job) error {
+	s := *j.State
+	log := j.Logger.Step("upgrade")
+	nixPatch := t.nix.NewPatch(log)
+
+	log.Logf("Upgrading pup %s (%s) from %s to %s", s.Manifest.Meta.Name, s.ID, s.Version, upgrade.TargetVersion)
+
+	// 1. Record if pup was enabled
+	wasEnabled := s.Enabled
+
+	// 2. Stop the pup if it's running
+	if s.Enabled {
+		log.Log("Stopping pup before upgrade...")
+		cmd := exec.Command("sudo", "_dbxroot", "pup", "stop", "--pupId", s.ID)
+		log.LogCmd(cmd)
+		if err := cmd.Run(); err != nil {
+			log.Errf("Warning: failed to stop pup: %v", err)
+			// Continue anyway, might not be running
+		}
+	}
+
+	// 3. Create a snapshot of current state for rollback
+	log.Log("Creating snapshot for rollback...")
+	if t.snapshots != nil {
+		if err := t.snapshots.CreateSnapshot(s); err != nil {
+			log.Errf("Warning: failed to create snapshot: %v", err)
+			// Continue anyway - upgrade is more important than rollback capability
+		}
+	}
+
+	// 4. Update state to UPGRADING
+	if _, err := t.pupManager.UpdatePup(s.ID, dogeboxd.SetPupInstallation(dogeboxd.STATE_UPGRADING)); err != nil {
+		log.Errf("Failed to update pup installation state: %v", err)
+		return t.markPupBroken(s, dogeboxd.BROKEN_REASON_STATE_UPDATE_FAILED, err)
+	}
+
+	// 5. Download new version (overwrites existing pup directory)
+	pupPath := filepath.Join(t.config.DataDir, "pups", s.ID)
+	log.Logf("Downloading new version to %s", pupPath)
+
+	err := t.sources.DownloadPup(pupPath, upgrade.SourceId, s.Manifest.Meta.Name, upgrade.TargetVersion)
+	if err != nil {
+		log.Errf("Failed to download new version: %v", err)
+		return t.markPupBroken(s, dogeboxd.BROKEN_REASON_DOWNLOAD_FAILED, err)
+	}
+
+	// 6. Load the new manifest
+	newManifest, err := dogeboxd.LoadManifestFromPath(pupPath)
+	if err != nil {
+		log.Errf("Failed to load new manifest: %v", err)
+		return t.markPupBroken(s, "manifest_load_failed", err)
+	}
+
+	// 7. Verify nix file hash
+	nixFile, err := os.ReadFile(filepath.Join(pupPath, newManifest.Container.Build.NixFile))
+	if err != nil {
+		log.Errf("Failed to read nix file: %v", err)
+		return t.markPupBroken(s, dogeboxd.BROKEN_REASON_NIX_FILE_MISSING, err)
+	}
+	nixFileSha256 := sha256.Sum256(nixFile)
+	if fmt.Sprintf("%x", nixFileSha256) != newManifest.Container.Build.NixFileSha256 {
+		log.Errf("Nix file hash mismatch")
+		if !s.IsDevModeEnabled {
+			return t.markPupBroken(s, dogeboxd.BROKEN_REASON_NIX_HASH_MISMATCH, fmt.Errorf("nix hash mismatch"))
+		}
+	}
+
+	// 8. Update pup state with new version and manifest, preserving config/providers/hooks
+	_, err = t.pupManager.UpdatePup(s.ID,
+		dogeboxd.SetPupVersion(upgrade.TargetVersion),
+		dogeboxd.SetPupManifest(newManifest),
+		// Config, Providers, Hooks are preserved automatically
+	)
+	if err != nil {
+		log.Errf("Failed to update pup state: %v", err)
+		return t.markPupBroken(s, dogeboxd.BROKEN_REASON_STATE_UPDATE_FAILED, err)
+	}
+
+	// 9. Write updated config to storage (in case manifest has new config fields)
+	updatedState, _, err := t.pupManager.GetPup(s.ID)
+	if err != nil {
+		log.Errf("Failed to get updated pup state: %v", err)
+		return t.markPupBroken(s, dogeboxd.BROKEN_REASON_STATE_UPDATE_FAILED, err)
+	}
+
+	if err := dogeboxd.WritePupConfigToStorage(t.config.DataDir, s.ID, updatedState.Config, log); err != nil {
+		log.Errf("Failed to write config to storage: %v", err)
+		return t.markPupBroken(s, dogeboxd.BROKEN_REASON_STORAGE_CREATION_FAILED, err)
+	}
+
+	// 10. Rebuild nix configuration
+	dbxState := t.sm.Get().Dogebox
+	t.nix.WritePupFile(nixPatch, updatedState, dbxState)
+	t.nix.UpdateIncludesFile(nixPatch, t.pupManager)
+
+	if err := nixPatch.Apply(); err != nil {
+		log.Errf("Failed to apply nix patch: %v", err)
+		return t.markPupBroken(s, dogeboxd.BROKEN_REASON_NIX_APPLY_FAILED, err)
+	}
+
+	// 11. Mark as ready
+	if _, err := t.pupManager.UpdatePup(s.ID, dogeboxd.SetPupInstallation(dogeboxd.STATE_READY)); err != nil {
+		log.Errf("Failed to update pup installation state: %v", err)
+		return t.markPupBroken(s, dogeboxd.BROKEN_REASON_STATE_UPDATE_FAILED, err)
+	}
+
+	// 12. Re-enable if it was enabled before
+	if wasEnabled {
+		log.Log("Re-enabling pup after upgrade...")
+		if _, err := t.pupManager.UpdatePup(s.ID, dogeboxd.PupEnabled(true)); err != nil {
+			log.Errf("Warning: failed to re-enable pup: %v", err)
+			// Not a fatal error
+		}
+	}
+
+	log.Logf("Successfully upgraded pup %s to version %s", s.Manifest.Meta.Name, upgrade.TargetVersion)
+	return nil
+}
+
+// rollbackPupUpgrade handles rolling back a pup to its previous version using a snapshot
+func (t SystemUpdater) rollbackPupUpgrade(j dogeboxd.Job) error {
+	s := *j.State
+	log := j.Logger.Step("rollback")
+	nixPatch := t.nix.NewPatch(log)
+
+	log.Logf("Rolling back pup %s (%s)", s.Manifest.Meta.Name, s.ID)
+
+	// 1. Check if snapshot exists
+	if t.snapshots == nil {
+		return fmt.Errorf("snapshot manager not available")
+	}
+
+	snapshot, err := t.snapshots.GetSnapshot(s.ID)
+	if err != nil {
+		log.Errf("Failed to get snapshot: %v", err)
+		return fmt.Errorf("failed to get snapshot: %w", err)
+	}
+	if snapshot == nil {
+		log.Errf("No snapshot found for rollback")
+		return fmt.Errorf("no snapshot available for rollback")
+	}
+
+	log.Logf("Found snapshot: rolling back to version %s", snapshot.Version)
+
+	// 2. Stop the pup if running
+	cmd := exec.Command("sudo", "_dbxroot", "pup", "stop", "--pupId", s.ID)
+	log.LogCmd(cmd)
+	_ = cmd.Run() // Ignore error, might not be running
+
+	// 3. Update state to indicate rollback in progress
+	if _, err := t.pupManager.UpdatePup(s.ID, dogeboxd.SetPupInstallation(dogeboxd.STATE_UPGRADING)); err != nil {
+		log.Errf("Failed to update state: %v", err)
+		return t.markPupBroken(s, dogeboxd.BROKEN_REASON_STATE_UPDATE_FAILED, err)
+	}
+
+	// 4. Download the previous version
+	pupPath := filepath.Join(t.config.DataDir, "pups", s.ID)
+	log.Logf("Downloading previous version %s", snapshot.Version)
+
+	err = t.sources.DownloadPup(pupPath, snapshot.SourceID, s.Manifest.Meta.Name, snapshot.Version)
+	if err != nil {
+		log.Errf("Failed to download previous version: %v", err)
+		return t.markPupBroken(s, dogeboxd.BROKEN_REASON_DOWNLOAD_FAILED, err)
+	}
+
+	// 5. Restore state from snapshot
+	_, err = t.pupManager.UpdatePup(s.ID,
+		dogeboxd.SetPupVersion(snapshot.Version),
+		dogeboxd.SetPupManifest(snapshot.Manifest),
+		dogeboxd.SetPupConfig(snapshot.Config),
+		dogeboxd.SetPupProviders(snapshot.Providers),
+	)
+	if err != nil {
+		log.Errf("Failed to restore pup state: %v", err)
+		return t.markPupBroken(s, dogeboxd.BROKEN_REASON_STATE_UPDATE_FAILED, err)
+	}
+
+	// 6. Write config to storage
+	if err := dogeboxd.WritePupConfigToStorage(t.config.DataDir, s.ID, snapshot.Config, log); err != nil {
+		log.Errf("Failed to write config to storage: %v", err)
+		return t.markPupBroken(s, dogeboxd.BROKEN_REASON_STORAGE_CREATION_FAILED, err)
+	}
+
+	// 7. Rebuild nix configuration
+	restoredState, _, _ := t.pupManager.GetPup(s.ID)
+	dbxState := t.sm.Get().Dogebox
+	t.nix.WritePupFile(nixPatch, restoredState, dbxState)
+	t.nix.UpdateIncludesFile(nixPatch, t.pupManager)
+
+	if err := nixPatch.Apply(); err != nil {
+		log.Errf("Failed to apply nix patch: %v", err)
+		return t.markPupBroken(s, dogeboxd.BROKEN_REASON_NIX_APPLY_FAILED, err)
+	}
+
+	// 8. Mark as ready
+	if _, err := t.pupManager.UpdatePup(s.ID, dogeboxd.SetPupInstallation(dogeboxd.STATE_READY)); err != nil {
+		log.Errf("Failed to update installation state: %v", err)
+		return t.markPupBroken(s, dogeboxd.BROKEN_REASON_STATE_UPDATE_FAILED, err)
+	}
+
+	// 9. Re-enable if it was enabled before
+	if snapshot.Enabled {
+		log.Log("Re-enabling pup after rollback...")
+		if _, err := t.pupManager.UpdatePup(s.ID, dogeboxd.PupEnabled(true)); err != nil {
+			log.Errf("Warning: failed to re-enable pup: %v", err)
+		}
+	}
+
+	// 10. Delete the snapshot after successful rollback
+	if err := t.snapshots.DeleteSnapshot(s.ID); err != nil {
+		log.Errf("Warning: failed to delete snapshot: %v", err)
+		// Not a fatal error
+	}
+
+	log.Logf("Successfully rolled back pup %s to version %s", s.Manifest.Meta.Name, snapshot.Version)
+	return nil
 }

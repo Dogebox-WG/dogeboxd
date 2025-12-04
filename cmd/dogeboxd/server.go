@@ -53,7 +53,10 @@ func (t server) Start() {
 	networkManager := network.NewNetworkManager(nixManager, t.sm)
 	lifecycleManager := lifecycle.NewLifecycleManager(t.config)
 
-	systemUpdater := system.NewSystemUpdater(t.config, networkManager, nixManager, sourceManager, pups, t.sm, dkm)
+	// Create snapshot manager for pup upgrade rollbacks
+	snapshotManager := pup.NewSnapshotManager(t.config.DataDir)
+
+	systemUpdater := system.NewSystemUpdater(t.config, networkManager, nixManager, sourceManager, pups, t.sm, dkm, snapshotManager)
 	journalReader := system.NewJournalReader(t.config)
 	logtailer := system.NewLogTailer(t.config)
 
@@ -74,7 +77,7 @@ func (t server) Start() {
 	// Set up Dogeboxd, the beating heart of the beast
 
 	// Create update checker for pup upgrades
-	updateChecker := pup.NewUpdateChecker(pups, sourceManager)
+	updateChecker := pup.NewUpdateChecker(pups, sourceManager, t.config.DataDir)
 
 	// Create Dogeboxd instance
 	dbx := dogeboxd.NewDogeboxd(t.sm, pups, systemUpdater, systemMonitor, journalReader, networkManager, sourceManager, nixManager, logtailer, updateChecker, &t.config)
