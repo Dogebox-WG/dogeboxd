@@ -10,13 +10,12 @@ import (
 )
 
 var nixRSSetRelease string
-var nixRSIsDev bool
 
 var rsCmd = &cobra.Command{
 	Use:   "rs",
 	Short: "Executes nixos-rebuild switch",
 	Run: func(cmd *cobra.Command, args []string) {
-		rebuildCommand, rebuildArgs, err := utils.GetRebuildCommand("switch", nixRSIsDev, nixRSSetRelease)
+		rebuildCommand, rebuildArgs, err := utils.GetRebuildCommand("switch", nixRSSetRelease)
 		if err != nil {
 			fmt.Fprintf(os.Stderr, "Error getting rebuild command: %v\n", err)
 			os.Exit(1)
@@ -35,7 +34,6 @@ var rsCmd = &cobra.Command{
 }
 
 func init() {
-	rsCmd.Flags().BoolVarP(&nixRSIsDev, "dev", "d", false, "use local flake sources (skip GitHub override-inputs)")
 	rsCmd.Flags().StringVarP(&nixRSSetRelease, "set-release", "s", "", "rebuild with specific release (used for upgrades)")
 	nixCmd.AddCommand(rsCmd)
 }
