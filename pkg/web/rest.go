@@ -121,9 +121,19 @@ func RESTAPI(
 		"PUT /system/binary-cache":         a.addBinaryCache,
 		"DELETE /system/binary-cache/{id}": a.removeBinaryCache,
 
+		// Pup update routes
+		"GET /pup/updates":                    a.getAllPupUpdates,
+		"GET /pup/{pupId}/updates":            a.getPupUpdates,
+		"POST /pup/{pupId}/check-pup-updates": a.checkPupUpdates,
+		"POST /pup/{pupId}/upgrade":           a.upgradePup,
+		"POST /pup/{pupId}/update":            a.updatePup, // Legacy, redirects to upgrade
+		"POST /pup/{pupId}/rollback":          a.rollbackPup,
+		"GET /pup/{pupId}/previous-version":   a.getPreviousVersion,
+
 		"GET /system/updates": a.checkForUpdates,
 		"POST /system/update": a.commenceUpdate,
 
+		// Job management routes
 		"GET /jobs":                  a.getJobs,
 		"GET /jobs/active":           a.getActiveJobs,
 		"GET /jobs/recent":           a.getRecentJobs,

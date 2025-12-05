@@ -6,11 +6,13 @@ import (
 	"encoding/json"
 	"errors"
 	"fmt"
+	"time"
 )
 
 // Pup states
 const (
 	STATE_INSTALLING   string = "installing"
+	STATE_UPGRADING    string = "upgrading"
 	STATE_READY        string = "ready"
 	STATE_UNREADY      string = "unready"
 	STATE_UNINSTALLING string = "uninstalling"
@@ -258,10 +260,6 @@ type PupManager interface {
 	GetPupSpecificEnvironmentVariablesForContainer(pupID string) map[string]string
 }
 
-/*****************************************************************************/
-/*                Varadic Update Funcs for PupManager.UpdatePup:             */
-/*****************************************************************************/
-
 func SetPupInstallation(state string) func(*PupState, *[]Pupdate) {
 	return func(p *PupState, pu *[]Pupdate) {
 		p.Installation = state
@@ -313,6 +311,20 @@ func SetPupProviders(newProviders map[string]string) func(*PupState, *[]Pupdate)
 	}
 }
 
+func SetPupVersion(version string) func(*PupState, *[]Pupdate) {
+	return func(p *PupState, pu *[]Pupdate) {
+		p.Version = version
+	}
+}
+
+func SetPupManifest(manifest PupManifest) func(*PupState, *[]Pupdate) {
+	return func(p *PupState, pu *[]Pupdate) {
+		p.Manifest = manifest
+		// Recalculate if config needs values based on new manifest
+		p.NeedsConf = ManifestConfigNeedsValues(p.Manifest.Config, p.Config)
+	}
+}
+
 func PupEnabled(b bool) func(*PupState, *[]Pupdate) {
 	return func(p *PupState, pu *[]Pupdate) {
 		p.Enabled = b
@@ -346,4 +358,117 @@ func newID(l int) (string, error) {
 		return ID, err
 	}
 	return fmt.Sprintf("%x", b), nil
+}
+
+// ===========================================
+// =============== Pup Updates ===============
+// ===========================================
+
+/* Pup update types
+ */
+// PupUpdateInfo tracks available updates for a pup
+type PupUpdateInfo struct {
+	PupID             string       `json:"pupId"`
+	CurrentVersion    string       `json:"currentVersion"`
+	LatestVersion     string       `json:"latestVersion"`
+	AvailableVersions []PupVersion `json:"availableVersions"`
+	UpdateAvailable   bool         `json:"updateAvailable"`
+	LastChecked       time.Time    `json:"lastChecked"`
+}
+
+// PupVersion represents a version available for update
+type PupVersion struct {
+	Version          string                `json:"version"`
+	ReleaseNotes     string                `json:"releaseNotes"` // From GitHub release body
+	ReleaseDate      time.Time             `json:"releaseDate"`
+	ReleaseURL       string                `json:"releaseUrl"` // GitHub release URL
+	BreakingChanges  []string              `json:"breakingChanges"`
+	InterfaceChanges []PupInterfaceVersion `json:"interfaceChanges"`
+}
+
+// PupInterfaceVersion tracks changes to provided interfaces
+type PupInterfaceVersion struct {
+	InterfaceName string   `json:"interfaceName"`
+	OldVersion    string   `json:"oldVersion"`
+	NewVersion    string   `json:"newVersion"`
+	ChangeType    string   `json:"changeType"`   // "major", "minor", "patch"
+	AffectedPups  []string `json:"affectedPups"` // PupIDs that depend on this interface
+}
+
+// IgnoredPupUpdateVersion tracks ignored updates (managed on frontend, this is for reference)
+type IgnoredPupUpdateVersion struct {
+	PupID          string    `json:"pupId"`
+	IgnoredVersion string    `json:"ignoredVersion"`
+	IgnoredAt      time.Time `json:"ignoredAt"`
+}
+
+// PupUpdatePreviousVersion tracks update history for rollback
+type PupUpdatePreviousVersion struct {
+	PupID           string              `json:"pupId"`
+	PreviousVersion *PupVersionSnapshot `json:"previousVersion"` // Only keep last version
+}
+
+// PupVersionSnapshot stores data needed for rollback
+// Note: User data in storage directory is NOT snapshotted - only state/config
+type PupVersionSnapshot struct {
+	Version        string            `json:"version"`
+	Manifest       PupManifest       `json:"manifest"`
+	Config         map[string]string `json:"config"`
+	Providers      map[string]string `json:"providers"`
+	Enabled        bool              `json:"enabled"`
+	SnapshotDate   time.Time         `json:"snapshotDate"`
+	SourceID       string            `json:"sourceId"`
+	SourceLocation string            `json:"sourceLocation"` // For re-downloading
+}
+
+// GitHubRelease represents a release from GitHub API
+type GitHubRelease struct {
+	TagName     string    `json:"tag_name"`
+	Name        string    `json:"name"`
+	Body        string    `json:"body"`
+	HTMLURL     string    `json:"html_url"`
+	PublishedAt time.Time `json:"published_at"`
+	Prerelease  bool      `json:"prerelease"`
+	Draft       bool      `json:"draft"`
+}
+
+/* Pup update actions
+ */
+type CheckPupUpdates struct {
+	PupID string // Empty string = check all pups
+}
+
+// PupUpdatesCheckedEvent is emitted when a pup update check completes
+type PupUpdatesCheckedEvent struct {
+	PupsChecked      int  `json:"pupsChecked"`
+	UpdatesAvailable int  `json:"updatesAvailable"`
+	IsPeriodicCheck  bool `json:"isPeriodicCheck"`
+}
+
+/* The PupUpdateChecker is used to check for pup updates
+ */
+type PupUpdateChecker interface {
+	// CheckForUpdates checks for updates for a specific pup
+	CheckForUpdates(pupID string) (PupUpdateInfo, error)
+
+	// CheckAllPupUpdates checks for updates for all installed pups
+	CheckAllPupUpdates() map[string]PupUpdateInfo
+
+	// GetCachedUpdateInfo retrieves update information from the cache
+	GetCachedUpdateInfo(pupID string) (PupUpdateInfo, bool)
+
+	// GetAllCachedUpdates retrieves all update information from the cache
+	GetAllCachedUpdates() map[string]PupUpdateInfo
+
+	// ClearCacheEntry removes a specific pup from the update cache
+	ClearCacheEntry(pupID string)
+
+	// StartPeriodicCheck starts a background goroutine that checks for updates periodically
+	StartPeriodicCheck(stop chan bool)
+
+	// GetEventChannel returns the channel for update check completion events
+	GetEventChannel() <-chan PupUpdatesCheckedEvent
+
+	// DetectInterfaceChanges compares interfaces between two manifests and returns changes
+	DetectInterfaceChanges(oldManifest, newManifest PupManifest) []PupInterfaceVersion
 }

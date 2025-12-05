@@ -3,7 +3,7 @@ module github.com/dogeorg/dogeboxd
 go 1.23.0
 
 require (
-	github.com/Masterminds/semver v1.5.0
+	github.com/Masterminds/semver/v3 v3.4.0
 	github.com/carlmjohnson/versioninfo v0.22.5
 	github.com/charmbracelet/bubbletea v1.3.6
 	github.com/charmbracelet/lipgloss v1.1.0

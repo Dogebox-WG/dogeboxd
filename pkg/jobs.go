@@ -364,6 +364,41 @@ func (jm *JobManager) getDisplayName(j Job) string {
 		return "System Update"
 	case UpdateMetrics:
 		return "Update Metrics"
+	case CheckPupUpdates:
+		if a.PupID != "" {
+			// Checking specific pup
+			if jm.dbx != nil {
+				if pup, _, err := jm.dbx.Pups.GetPup(a.PupID); err == nil {
+					return fmt.Sprintf("Check Updates for %s", pup.Manifest.Meta.Name)
+				}
+			}
+			return "Check Pup Updates"
+		}
+		return "Check All Pup Updates"
+	case UpgradePup:
+		// Try to get pup name from state first
+		if j.State != nil && j.State.Manifest.Meta.Name != "" {
+			return fmt.Sprintf("Upgrade %s to %s", j.State.Manifest.Meta.Name, a.TargetVersion)
+		}
+		// Fallback: look up pup by ID if we have access to dbx
+		if jm.dbx != nil {
+			if pup, _, err := jm.dbx.Pups.GetPup(a.PupID); err == nil {
+				return fmt.Sprintf("Upgrade %s to %s", pup.Manifest.Meta.Name, a.TargetVersion)
+			}
+		}
+		return "Upgrade Pup"
+	case RollbackPupUpgrade:
+		// Try to get pup name from state first
+		if j.State != nil && j.State.Manifest.Meta.Name != "" {
+			return fmt.Sprintf("Rollback %s", j.State.Manifest.Meta.Name)
+		}
+		// Fallback: look up pup by ID if we have access to dbx
+		if jm.dbx != nil {
+			if pup, _, err := jm.dbx.Pups.GetPup(a.PupID); err == nil {
+				return fmt.Sprintf("Rollback %s", pup.Manifest.Meta.Name)
+			}
+		}
+		return "Rollback Pup"
 	default:
 		return "System Operation"
 	}
