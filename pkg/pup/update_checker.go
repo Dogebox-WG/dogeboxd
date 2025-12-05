@@ -32,9 +32,9 @@ type UpdateChecker struct {
 
 // updateCacheFile represents the structure stored on disk
 type updateCacheFile struct {
-	Version   int                                `json:"version"`
-	UpdatedAt time.Time                          `json:"updatedAt"`
-	Cache     map[string]dogeboxd.PupUpdateInfo  `json:"cache"`
+	Version   int                               `json:"version"`
+	UpdatedAt time.Time                         `json:"updatedAt"`
+	Cache     map[string]dogeboxd.PupUpdateInfo `json:"cache"`
 }
 
 // NewUpdateChecker creates a new update checker
@@ -476,10 +476,8 @@ func (uc *UpdateChecker) StartPeriodicCheck(stop chan bool) {
 		for {
 			select {
 			case <-ticker.C:
-				log.Println("Running periodic pup update check...")
 				uc.checkAllPupUpdatesInternal(true)
 			case <-stop:
-				log.Println("Stopping periodic update checker")
 				return
 			}
 		}

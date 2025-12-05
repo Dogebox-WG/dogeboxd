@@ -56,21 +56,22 @@ type syncQueue struct {
 }
 
 type Dogeboxd struct {
-	Pups             PupManager
-	SystemUpdater    SystemUpdater
-	SystemMonitor    SystemMonitor
-	JournalReader    JournalReader
-	NetworkManager   NetworkManager
-	PupUpdateChecker PupUpdateChecker
-	sm               StateManager
-	sources          SourceManager
-	nix              NixManager
-	logtailer        LogTailer
-	queue            *syncQueue
-	jobs             chan Job
-	Changes          chan Change
-	JobManager       *JobManager
-	config           *ServerConfig
+	Pups                  PupManager
+	SystemUpdater         SystemUpdater
+	SystemMonitor         SystemMonitor
+	JournalReader         JournalReader
+	NetworkManager        NetworkManager
+	PupUpdateChecker      PupUpdateChecker
+	SkippedUpdatesManager SkippedUpdatesManager
+	sm                    StateManager
+	sources               SourceManager
+	nix                   NixManager
+	logtailer             LogTailer
+	queue                 *syncQueue
+	jobs                  chan Job
+	Changes               chan Change
+	JobManager            *JobManager
+	config                *ServerConfig
 }
 
 func NewDogeboxd(
@@ -84,6 +85,7 @@ func NewDogeboxd(
 	nixManager NixManager,
 	logtailer LogTailer,
 	pupUpdateChecker PupUpdateChecker,
+	skippedUpdatesManager SkippedUpdatesManager,
 	config *ServerConfig,
 ) Dogeboxd {
 	q := syncQueue{
@@ -92,20 +94,21 @@ func NewDogeboxd(
 		jobInProgress: sync.Mutex{},
 	}
 	s := Dogeboxd{
-		Pups:             pups,
-		SystemUpdater:    updater,
-		SystemMonitor:    monitor,
-		JournalReader:    journal,
-		NetworkManager:   networkManager,
-		PupUpdateChecker: pupUpdateChecker,
-		sm:               stateManager,
-		sources:          sourceManager,
-		nix:              nixManager,
-		logtailer:        logtailer,
-		queue:            &q,
-		jobs:             make(chan Job, 256),
-		Changes:          make(chan Change, 256),
-		config:           config,
+		Pups:                  pups,
+		SystemUpdater:         updater,
+		SystemMonitor:         monitor,
+		JournalReader:         journal,
+		NetworkManager:        networkManager,
+		PupUpdateChecker:      pupUpdateChecker,
+		SkippedUpdatesManager: skippedUpdatesManager,
+		sm:                    stateManager,
+		sources:               sourceManager,
+		nix:                   nixManager,
+		logtailer:             logtailer,
+		queue:                 &q,
+		jobs:                  make(chan Job, 256),
+		Changes:               make(chan Change, 256),
+		config:                config,
 	}
 
 	return s

@@ -129,6 +129,9 @@ func RESTAPI(
 		"POST /pup/{pupId}/update":            a.updatePup, // Legacy, redirects to upgrade
 		"POST /pup/{pupId}/rollback":          a.rollbackPup,
 		"GET /pup/{pupId}/previous-version":   a.getPreviousVersion,
+		"GET /pup/skipped-updates":            a.getAllSkippedUpdates,
+		"POST /pup/{pupId}/skip-update":       a.skipPupUpdate,
+		"DELETE /pup/{pupId}/skip-update":     a.clearSkippedUpdate,
 
 		"GET /system/updates": a.checkForUpdates,
 		"POST /system/update": a.commenceUpdate,

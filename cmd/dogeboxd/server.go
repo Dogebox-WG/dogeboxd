@@ -79,8 +79,11 @@ func (t server) Start() {
 	// Create update checker for pup upgrades
 	updateChecker := pup.NewUpdateChecker(pups, sourceManager, t.config.DataDir)
 
+	// Create skipped updates manager
+	skippedUpdatesManager := pup.NewSkippedUpdatesManager(t.config.DataDir)
+
 	// Create Dogeboxd instance
-	dbx := dogeboxd.NewDogeboxd(t.sm, pups, systemUpdater, systemMonitor, journalReader, networkManager, sourceManager, nixManager, logtailer, updateChecker, &t.config)
+	dbx := dogeboxd.NewDogeboxd(t.sm, pups, systemUpdater, systemMonitor, journalReader, networkManager, sourceManager, nixManager, logtailer, updateChecker, skippedUpdatesManager, &t.config)
 
 	// Create JobManager
 	jobManager := dogeboxd.NewJobManager(t.store, &dbx)

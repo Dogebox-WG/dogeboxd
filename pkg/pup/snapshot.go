@@ -207,4 +207,3 @@ func (sm *SnapshotManager) CleanOldSnapshots(maxAge time.Duration) (int, error) 
 
 	return cleanedCount, nil
 }
-

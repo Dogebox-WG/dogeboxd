@@ -14,16 +14,25 @@ import (
 	"time"
 
 	dogeboxd "github.com/dogeorg/dogeboxd/pkg"
+	"github.com/dogeorg/dogeboxd/pkg/version"
 )
 
 const (
 	githubAPIBase       = "https://api.github.com"
-	userAgent           = "Dogebox/1.0"
 	defaultPerPage      = 100
 	maxRetries          = 3
 	initialBackoffSecs  = 5
 	rateLimitBackoffMin = 60 // Wait at least 60 seconds on rate limit
 )
+
+// getUserAgent returns the User-Agent string with the actual Dogebox version
+func getUserAgent() string {
+	ver := version.GetDBXRelease().Release
+	if ver == "" || ver == "unknown" {
+		return "Dogebox/dev"
+	}
+	return fmt.Sprintf("Dogebox/%s", ver)
+}
 
 // GitHubClient handles interactions with GitHub API
 type GitHubClient struct {
@@ -95,7 +104,7 @@ func (e *RateLimitError) Error() string {
 
 // doRequest performs an HTTP request with rate limit handling and retries
 func (c *GitHubClient) doRequest(req *http.Request) (*http.Response, error) {
-	req.Header.Set("User-Agent", userAgent)
+	req.Header.Set("User-Agent", getUserAgent())
 	req.Header.Set("Accept", "application/vnd.github.v3+json")
 
 	if c.token != "" {
@@ -263,7 +272,7 @@ func (c *GitHubClient) GetRateLimitStatus() (remaining int, resetTime time.Time,
 		return 0, time.Time{}, err
 	}
 
-	req.Header.Set("User-Agent", userAgent)
+	req.Header.Set("User-Agent", getUserAgent())
 	if c.token != "" {
 		req.Header.Set("Authorization", fmt.Sprintf("Bearer %s", c.token))
 	}

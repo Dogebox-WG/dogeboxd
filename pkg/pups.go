@@ -395,11 +395,12 @@ type PupInterfaceVersion struct {
 	AffectedPups  []string `json:"affectedPups"` // PupIDs that depend on this interface
 }
 
-// IgnoredPupUpdateVersion tracks ignored updates (managed on frontend, this is for reference)
-type IgnoredPupUpdateVersion struct {
-	PupID          string    `json:"pupId"`
-	IgnoredVersion string    `json:"ignoredVersion"`
-	IgnoredAt      time.Time `json:"ignoredAt"`
+// SkippedPupUpdate tracks skipped updates (persisted on backend)
+type SkippedPupUpdate struct {
+	PupID               string    `json:"pupId"`
+	SkippedAtVersion    string    `json:"skippedAtVersion"`
+	LatestVersionAtSkip string    `json:"latestVersionAtSkip"`
+	SkippedAt           time.Time `json:"skippedAt"`
 }
 
 // PupUpdatePreviousVersion tracks update history for rollback
@@ -471,4 +472,23 @@ type PupUpdateChecker interface {
 
 	// DetectInterfaceChanges compares interfaces between two manifests and returns changes
 	DetectInterfaceChanges(oldManifest, newManifest PupManifest) []PupInterfaceVersion
+}
+
+/* The SkippedUpdatesManager manages user preferences for skipped pup updates
+ */
+type SkippedUpdatesManager interface {
+	// SkipUpdate marks updates as skipped for a specific pup
+	SkipUpdate(pupID, currentVersion, latestVersion string) error
+
+	// ClearSkipped removes the skip status for a specific pup
+	ClearSkipped(pupID string) error
+
+	// IsSkipped checks if updates are currently skipped for a pup
+	IsSkipped(pupID, latestVersion string) bool
+
+	// GetSkipInfo retrieves skip info for a specific pup
+	GetSkipInfo(pupID string) (SkippedPupUpdate, bool)
+
+	// GetAllSkipped returns all skipped updates
+	GetAllSkipped() map[string]SkippedPupUpdate
 }

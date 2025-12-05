@@ -169,3 +169,56 @@ func (t api) updatePup(w http.ResponseWriter, r *http.Request) {
 	// Redirect to the new upgrade endpoint
 	t.upgradePup(w, r)
 }
+
+// GET /pup/skipped-updates - Get all skipped updates
+func (t api) getAllSkippedUpdates(w http.ResponseWriter, r *http.Request) {
+	skipped := t.dbx.SkippedUpdatesManager.GetAllSkipped()
+	log.Printf("getAllSkippedUpdates: returning %d skipped update(s)", len(skipped))
+	sendResponse(w, skipped)
+}
+
+// POST /pup/:pupId/skip-update - Skip updates for a specific pup
+func (t api) skipPupUpdate(w http.ResponseWriter, r *http.Request) {
+	pupID := strings.TrimPrefix(r.URL.Path, "/pup/")
+	pupID = strings.TrimSuffix(pupID, "/skip-update")
+
+	// Get the pup to find its current version
+	pup, _, err := t.pups.GetPup(pupID)
+	if err != nil {
+		sendErrorResponse(w, http.StatusNotFound, "Pup not found")
+		return
+	}
+
+	// Get update info to find the latest version
+	updateInfo, ok := t.dbx.PupUpdateChecker.GetCachedUpdateInfo(pupID)
+	if !ok || !updateInfo.UpdateAvailable {
+		sendErrorResponse(w, http.StatusBadRequest, "No update available to skip")
+		return
+	}
+
+	// Skip the update
+	err = t.dbx.SkippedUpdatesManager.SkipUpdate(pupID, pup.Version, updateInfo.LatestVersion)
+	if err != nil {
+		sendErrorResponse(w, http.StatusInternalServerError, "Failed to skip update")
+		return
+	}
+
+	log.Printf("skipPupUpdate: skipped updates for pup %s up to version %s", pupID, updateInfo.LatestVersion)
+	sendResponse(w, map[string]string{"status": "success"})
+}
+
+// DELETE /pup/:pupId/skip-update - Clear skip status for a specific pup
+func (t api) clearSkippedUpdate(w http.ResponseWriter, r *http.Request) {
+	pupID := strings.TrimPrefix(r.URL.Path, "/pup/")
+	pupID = strings.TrimSuffix(pupID, "/skip-update")
+
+	// Clear the skip status
+	err := t.dbx.SkippedUpdatesManager.ClearSkipped(pupID)
+	if err != nil {
+		sendErrorResponse(w, http.StatusInternalServerError, "Failed to clear skip status")
+		return
+	}
+
+	log.Printf("clearSkippedUpdate: cleared skip status for pup %s", pupID)
+	sendResponse(w, map[string]string{"status": "success"})
+}
