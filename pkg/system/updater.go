@@ -23,7 +23,7 @@ dogeboxd.Dogeboxd, especially as they relate to the operating system.
 
 */
 
-func NewSystemUpdater(config dogeboxd.ServerConfig, networkManager dogeboxd.NetworkManager, nixManager dogeboxd.NixManager, sourceManager dogeboxd.SourceManager, pupManager dogeboxd.PupManager, stateManager dogeboxd.StateManager, dkm dogeboxd.DKMManager, snapshotManager SnapshotManager) SystemUpdater {
+func NewSystemUpdater(config dogeboxd.ServerConfig, networkManager dogeboxd.NetworkManager, nixManager dogeboxd.NixManager, sourceManager dogeboxd.SourceManager, pupManager dogeboxd.PupManager, stateManager dogeboxd.StateManager, dkm dogeboxd.DKMManager) SystemUpdater {
 	return SystemUpdater{
 		config:     config,
 		jobs:       make(chan dogeboxd.Job),
@@ -34,16 +34,7 @@ func NewSystemUpdater(config dogeboxd.ServerConfig, networkManager dogeboxd.Netw
 		pupManager: pupManager,
 		sm:         stateManager,
 		dkm:        dkm,
-		snapshots:  snapshotManager,
 	}
-}
-
-// SnapshotManager interface for pup version snapshots
-type SnapshotManager interface {
-	CreateSnapshot(pupState dogeboxd.PupState) error
-	GetSnapshot(pupID string) (*dogeboxd.PupVersionSnapshot, error)
-	HasSnapshot(pupID string) bool
-	DeleteSnapshot(pupID string) error
 }
 
 type SystemUpdater struct {
@@ -56,7 +47,6 @@ type SystemUpdater struct {
 	pupManager dogeboxd.PupManager
 	sm         dogeboxd.StateManager
 	dkm        dogeboxd.DKMManager
-	snapshots  SnapshotManager
 }
 
 func (t SystemUpdater) Run(started, stopped chan bool, stop chan context.Context) error {
@@ -209,6 +199,16 @@ func (t SystemUpdater) GetUpdateChannel() chan dogeboxd.Job {
 	return t.done
 }
 
+// HasSnapshot checks if a snapshot exists for a pup (for rollback)
+func (t SystemUpdater) HasSnapshot(pupID string) bool {
+	return t.pupManager.HasSnapshot(pupID)
+}
+
+// GetSnapshot retrieves a snapshot for a pup if it exists
+func (t SystemUpdater) GetSnapshot(pupID string) (*dogeboxd.PupVersionSnapshot, error) {
+	return t.pupManager.GetSnapshot(pupID)
+}
+
 func (t SystemUpdater) markPupBroken(s dogeboxd.PupState, reason string, upstreamError error) error {
 	_, err := t.pupManager.UpdatePup(s.ID, dogeboxd.SetPupBrokenReason(reason), dogeboxd.SetPupInstallation(dogeboxd.STATE_BROKEN))
 	if err != nil {
@@ -221,6 +221,27 @@ func (t SystemUpdater) markPupBroken(s dogeboxd.PupState, reason string, upstrea
 	return upstreamError
 }
 
+// verifyNixFileHash verifies that the nix file matches the expected hash from the manifest
+func (t SystemUpdater) verifyNixFileHash(pupPath string, manifest dogeboxd.PupManifest, isDevMode bool, logger dogeboxd.SubLogger) error {
+	nixFile, err := os.ReadFile(filepath.Join(pupPath, manifest.Container.Build.NixFile))
+	if err != nil {
+		return fmt.Errorf("failed to read nix file: %w", err)
+	}
+
+	nixFileSha256 := sha256.Sum256(nixFile)
+	actualHash := fmt.Sprintf("%x", nixFileSha256)
+
+	if actualHash != manifest.Container.Build.NixFileSha256 {
+		logger.Errf("Nix file hash mismatch: expected %s, got %s", manifest.Container.Build.NixFileSha256, actualHash)
+		if !isDevMode {
+			return fmt.Errorf("nix file hash mismatch")
+		}
+		logger.Log("Warning: Nix hash mismatch ignored in dev mode")
+	}
+
+	return nil
+}
+
 /* InstallPup takes a PupManifest and ensures a nix config
  * is written and any packages installed so that the Pup can
  * be started.
@@ -228,6 +249,9 @@ func (t SystemUpdater) markPupBroken(s dogeboxd.PupState, reason string, upstrea
 func (t SystemUpdater) installPup(pupSelection dogeboxd.InstallPup, j dogeboxd.Job) error {
 	s := *j.State
 	log := j.Logger.Step("install")
+
+	log.Logf("Installing pup: name=%s, version=%s, manifestVersion=%s",
+		s.Manifest.Meta.Name, s.Version, s.Manifest.Meta.Version)
 	nixPatch := t.nix.NewPatch(log)
 
 	if _, err := t.pupManager.UpdatePup(s.ID, dogeboxd.SetPupInstallation(dogeboxd.STATE_INSTALLING)); err != nil {
@@ -239,29 +263,15 @@ func (t SystemUpdater) installPup(pupSelection dogeboxd.InstallPup, j dogeboxd.J
 	pupPath := filepath.Join(t.config.DataDir, "pups", s.ID)
 
 	log.Logf("Downloading pup to %s", pupPath)
-	err := t.sources.DownloadPup(pupPath, pupSelection.SourceId, pupSelection.PupName, pupSelection.PupVersion)
+	downloadedManifest, err := t.sources.DownloadPup(pupPath, pupSelection.SourceId, pupSelection.PupName, pupSelection.PupVersion)
 	if err != nil {
 		log.Errf("Failed to download pup: %v", err)
 		return t.markPupBroken(s, dogeboxd.BROKEN_REASON_DOWNLOAD_FAILED, err)
 	}
 
-	// Ensure the nix file configured in the manifest matches the hash specified.
-	// Read pupPath s.Manifest.Container.Build.NixFile and hash it with sha256
-	nixFile, err := os.ReadFile(filepath.Join(pupPath, s.Manifest.Container.Build.NixFile))
-	if err != nil {
-		log.Errf("Failed to read specified nix file: %v", err)
-		return t.markPupBroken(s, dogeboxd.BROKEN_REASON_NIX_FILE_MISSING, err)
-	}
-	nixFileSha256 := sha256.Sum256(nixFile)
-
-	// Compare the sha256 hash of the nix file to the hash specified in the manifest
-	if fmt.Sprintf("%x", nixFileSha256) != s.Manifest.Container.Build.NixFileSha256 {
-		log.Errf("Nix file hash mismatch, should be %s but is %s", fmt.Sprintf("%x", nixFileSha256), s.Manifest.Container.Build.NixFileSha256)
-
-		// Log, but only actually return an error if we're not in dev mode.
-		if !s.IsDevModeEnabled {
-			return t.markPupBroken(s, dogeboxd.BROKEN_REASON_NIX_HASH_MISMATCH, err)
-		}
+	// Verify nix file hash using the downloaded manifest
+	if err := t.verifyNixFileHash(pupPath, downloadedManifest, s.IsDevModeEnabled, log); err != nil {
+		return t.markPupBroken(s, dogeboxd.BROKEN_REASON_NIX_HASH_MISMATCH, err)
 	}
 
 	// create the storage dir
@@ -329,6 +339,8 @@ func (t SystemUpdater) installPup(pupSelection dogeboxd.InstallPup, j dogeboxd.J
 		log.Errf("Failed to update pup installation state: %v", err)
 		return t.markPupBroken(s, dogeboxd.BROKEN_REASON_STATE_UPDATE_FAILED, err)
 	}
+
+	log.Logf("Pup installation complete: pupID=%s, version=%s, name=%s", s.ID, s.Version, s.Manifest.Meta.Name)
 
 	return nil
 }
@@ -603,9 +615,7 @@ func (t SystemUpdater) upgradePup(upgrade dogeboxd.UpgradePup, j dogeboxd.Job) e
 	// Stop the pup if it's running
 	if s.Enabled {
 		log.Log("Stopping pup before upgrade...")
-		cmd := exec.Command("sudo", "_dbxroot", "pup", "stop", "--pupId", s.ID)
-		log.LogCmd(cmd)
-		if err := cmd.Run(); err != nil {
+		if err := t.pupManager.StopPup(s.ID, t.nix, log); err != nil {
 			log.Errf("Warning: failed to stop pup: %v", err)
 			// Continue anyway, might not be running
 		}
@@ -613,59 +623,47 @@ func (t SystemUpdater) upgradePup(upgrade dogeboxd.UpgradePup, j dogeboxd.Job) e
 
 	// Create a snapshot of current state for rollback
 	log.Log("Creating snapshot for rollback...")
-	if t.snapshots != nil {
-		if err := t.snapshots.CreateSnapshot(s); err != nil {
-			log.Errf("Warning: failed to create snapshot: %v", err)
-			// Continue anyway - upgrade is more important than rollback capability
-		}
+	if err := t.pupManager.CreateSnapshot(s); err != nil {
+		log.Errf("Failed to create snapshot: %v", err)
+		return fmt.Errorf("cannot proceed with upgrade without rollback capability: %w", err)
 	}
 
-	// Update state to UPGRADING
-	if _, err := t.pupManager.UpdatePup(s.ID, dogeboxd.SetPupInstallation(dogeboxd.STATE_UPGRADING)); err != nil {
-		log.Errf("Failed to update pup installation state: %v", err)
+	// Fetch the new manifest FIRST (before downloading files)
+	// This allows us to update state before modifying files on disk
+	log.Logf("Fetching manifest for version %s", upgrade.TargetVersion)
+	newManifest, _, err := t.sources.GetSourceManifest(upgrade.SourceId, s.Manifest.Meta.Name, upgrade.TargetVersion)
+	if err != nil {
+		log.Errf("Failed to fetch manifest for target version: %v", err)
+		return t.markPupBroken(s, "manifest_fetch_failed", err)
+	}
+
+	// Update state with new version/manifest BEFORE downloading files
+	// This ensures state is always consistent - if download fails later,
+	// we're in a broken state at the TARGET version (not old version with new files)
+	// This mirrors the install flow where AdoptPup sets version before download
+	_, err = t.pupManager.UpdatePup(s.ID,
+		dogeboxd.SetPupInstallation(dogeboxd.STATE_UPGRADING),
+		dogeboxd.SetPupVersion(upgrade.TargetVersion),
+		dogeboxd.SetPupManifest(newManifest),
+	)
+	if err != nil {
+		log.Errf("Failed to update pup state: %v", err)
 		return t.markPupBroken(s, dogeboxd.BROKEN_REASON_STATE_UPDATE_FAILED, err)
 	}
 
-	// Download new version (overwrites existing pup directory)
+	// Now download files - state already reflects target version
 	pupPath := filepath.Join(t.config.DataDir, "pups", s.ID)
 	log.Logf("Downloading new version to %s", pupPath)
 
-	err := t.sources.DownloadPup(pupPath, upgrade.SourceId, s.Manifest.Meta.Name, upgrade.TargetVersion)
+	_, err = t.sources.DownloadPup(pupPath, upgrade.SourceId, s.Manifest.Meta.Name, upgrade.TargetVersion)
 	if err != nil {
 		log.Errf("Failed to download new version: %v", err)
 		return t.markPupBroken(s, dogeboxd.BROKEN_REASON_DOWNLOAD_FAILED, err)
 	}
 
-	// Load the new manifest
-	newManifest, err := dogeboxd.LoadManifestFromPath(pupPath)
-	if err != nil {
-		log.Errf("Failed to load new manifest: %v", err)
-		return t.markPupBroken(s, "manifest_load_failed", err)
-	}
-
 	// Verify nix file hash
-	nixFile, err := os.ReadFile(filepath.Join(pupPath, newManifest.Container.Build.NixFile))
-	if err != nil {
-		log.Errf("Failed to read nix file: %v", err)
-		return t.markPupBroken(s, dogeboxd.BROKEN_REASON_NIX_FILE_MISSING, err)
-	}
-	nixFileSha256 := sha256.Sum256(nixFile)
-	if fmt.Sprintf("%x", nixFileSha256) != newManifest.Container.Build.NixFileSha256 {
-		log.Errf("Nix file hash mismatch")
-		if !s.IsDevModeEnabled {
-			return t.markPupBroken(s, dogeboxd.BROKEN_REASON_NIX_HASH_MISMATCH, fmt.Errorf("nix hash mismatch"))
-		}
-	}
-
-	// Update pup state with new version and manifest, preserving config/providers/hooks
-	_, err = t.pupManager.UpdatePup(s.ID,
-		dogeboxd.SetPupVersion(upgrade.TargetVersion),
-		dogeboxd.SetPupManifest(newManifest),
-		// Config, Providers, Hooks are preserved automatically
-	)
-	if err != nil {
-		log.Errf("Failed to update pup state: %v", err)
-		return t.markPupBroken(s, dogeboxd.BROKEN_REASON_STATE_UPDATE_FAILED, err)
+	if err := t.verifyNixFileHash(pupPath, newManifest, s.IsDevModeEnabled, log); err != nil {
+		return t.markPupBroken(s, dogeboxd.BROKEN_REASON_NIX_HASH_MISMATCH, err)
 	}
 
 	// Write updated config to storage (in case manifest has new config fields)
@@ -699,9 +697,9 @@ func (t SystemUpdater) upgradePup(upgrade dogeboxd.UpgradePup, j dogeboxd.Job) e
 	// Re-enable if it was enabled before
 	if wasEnabled {
 		log.Log("Re-enabling pup after upgrade...")
-		if _, err := t.pupManager.UpdatePup(s.ID, dogeboxd.PupEnabled(true)); err != nil {
+		if err := t.pupManager.StartPup(s.ID, t.nix, log); err != nil {
 			log.Errf("Warning: failed to re-enable pup: %v", err)
-			// Not a fatal error
+			// Not a fatal error - pup is upgraded but user will need to manually start it
 		}
 	}
 
@@ -717,12 +715,7 @@ func (t SystemUpdater) rollbackPupUpgrade(j dogeboxd.Job) error {
 
 	log.Logf("Rolling back pup %s (%s)", s.Manifest.Meta.Name, s.ID)
 
-	// Check if snapshot exists
-	if t.snapshots == nil {
-		return fmt.Errorf("snapshot manager not available")
-	}
-
-	snapshot, err := t.snapshots.GetSnapshot(s.ID)
+	snapshot, err := t.pupManager.GetSnapshot(s.ID)
 	if err != nil {
 		log.Errf("Failed to get snapshot: %v", err)
 		return fmt.Errorf("failed to get snapshot: %w", err)
@@ -749,13 +742,13 @@ func (t SystemUpdater) rollbackPupUpgrade(j dogeboxd.Job) error {
 	pupPath := filepath.Join(t.config.DataDir, "pups", s.ID)
 	log.Logf("Downloading previous version %s", snapshot.Version)
 
-	err = t.sources.DownloadPup(pupPath, snapshot.SourceID, s.Manifest.Meta.Name, snapshot.Version)
+	_, err = t.sources.DownloadPup(pupPath, snapshot.SourceID, s.Manifest.Meta.Name, snapshot.Version)
 	if err != nil {
 		log.Errf("Failed to download previous version: %v", err)
 		return t.markPupBroken(s, dogeboxd.BROKEN_REASON_DOWNLOAD_FAILED, err)
 	}
 
-	// Restore state from snapshot
+	// Restore state from snapshot (using manifest from snapshot, not downloaded one)
 	_, err = t.pupManager.UpdatePup(s.ID,
 		dogeboxd.SetPupVersion(snapshot.Version),
 		dogeboxd.SetPupManifest(snapshot.Manifest),
@@ -799,7 +792,7 @@ func (t SystemUpdater) rollbackPupUpgrade(j dogeboxd.Job) error {
 	}
 
 	// Delete the snapshot after successful rollback
-	if err := t.snapshots.DeleteSnapshot(s.ID); err != nil {
+	if err := t.pupManager.DeleteSnapshot(s.ID); err != nil {
 		log.Errf("Warning: failed to delete snapshot: %v", err)
 		// Not a fatal error
 	}

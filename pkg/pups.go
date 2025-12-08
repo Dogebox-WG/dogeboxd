@@ -87,6 +87,9 @@ type PupState struct {
 
 	IsDevModeEnabled bool     `json:"isDevModeEnabled"`
 	DevModeServices  []string `json:"devModeServices"`
+
+	// Update management
+	SkippedVersion string `json:"skippedVersion,omitempty"` // Version up to which updates are skipped
 }
 
 // Represents a Web UI exposed port from the manifest
@@ -258,6 +261,20 @@ type PupManager interface {
 	FastPollPup(pupId string)
 
 	GetPupSpecificEnvironmentVariablesForContainer(pupID string) map[string]string
+
+	// StopPup stops a running pup by disabling it and triggering a rebuild
+	StopPup(pupID string, nixManager NixManager, logger SubLogger) error
+
+	// StartPup starts a stopped pup by enabling it and triggering a rebuild
+	StartPup(pupID string, nixManager NixManager, logger SubLogger) error
+
+	// Snapshot management
+	CreateSnapshot(pupState PupState) error
+	GetSnapshot(pupID string) (*PupVersionSnapshot, error)
+	HasSnapshot(pupID string) bool
+	DeleteSnapshot(pupID string) error
+	ListSnapshots() ([]string, error)
+	CleanOldSnapshots(maxAge time.Duration) (int, error)
 }
 
 func SetPupInstallation(state string) func(*PupState, *[]Pupdate) {
@@ -314,6 +331,12 @@ func SetPupProviders(newProviders map[string]string) func(*PupState, *[]Pupdate)
 func SetPupVersion(version string) func(*PupState, *[]Pupdate) {
 	return func(p *PupState, pu *[]Pupdate) {
 		p.Version = version
+	}
+}
+
+func SetPupSkippedVersion(version string) func(*PupState, *[]Pupdate) {
+	return func(p *PupState, pu *[]Pupdate) {
+		p.SkippedVersion = version
 	}
 }
 
@@ -395,14 +418,6 @@ type PupInterfaceVersion struct {
 	AffectedPups  []string `json:"affectedPups"` // PupIDs that depend on this interface
 }
 
-// SkippedPupUpdate tracks skipped updates (persisted on backend)
-type SkippedPupUpdate struct {
-	PupID               string    `json:"pupId"`
-	SkippedAtVersion    string    `json:"skippedAtVersion"`
-	LatestVersionAtSkip string    `json:"latestVersionAtSkip"`
-	SkippedAt           time.Time `json:"skippedAt"`
-}
-
 // PupUpdatePreviousVersion tracks update history for rollback
 type PupUpdatePreviousVersion struct {
 	PupID           string              `json:"pupId"`
@@ -420,17 +435,6 @@ type PupVersionSnapshot struct {
 	SnapshotDate   time.Time         `json:"snapshotDate"`
 	SourceID       string            `json:"sourceId"`
 	SourceLocation string            `json:"sourceLocation"` // For re-downloading
-}
-
-// GitHubRelease represents a release from GitHub API
-type GitHubRelease struct {
-	TagName     string    `json:"tag_name"`
-	Name        string    `json:"name"`
-	Body        string    `json:"body"`
-	HTMLURL     string    `json:"html_url"`
-	PublishedAt time.Time `json:"published_at"`
-	Prerelease  bool      `json:"prerelease"`
-	Draft       bool      `json:"draft"`
 }
 
 /* Pup update actions
@@ -472,23 +476,4 @@ type PupUpdateChecker interface {
 
 	// DetectInterfaceChanges compares interfaces between two manifests and returns changes
 	DetectInterfaceChanges(oldManifest, newManifest PupManifest) []PupInterfaceVersion
-}
-
-/* The SkippedUpdatesManager manages user preferences for skipped pup updates
- */
-type SkippedUpdatesManager interface {
-	// SkipUpdate marks updates as skipped for a specific pup
-	SkipUpdate(pupID, currentVersion, latestVersion string) error
-
-	// ClearSkipped removes the skip status for a specific pup
-	ClearSkipped(pupID string) error
-
-	// IsSkipped checks if updates are currently skipped for a pup
-	IsSkipped(pupID, latestVersion string) bool
-
-	// GetSkipInfo retrieves skip info for a specific pup
-	GetSkipInfo(pupID string) (SkippedPupUpdate, bool)
-
-	// GetAllSkipped returns all skipped updates
-	GetAllSkipped() map[string]SkippedPupUpdate
 }

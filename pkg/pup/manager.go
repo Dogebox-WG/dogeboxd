@@ -2,6 +2,7 @@ package pup
 
 import (
 	"context"
+	"encoding/json"
 	"fmt"
 	"log"
 	"net"
@@ -10,6 +11,7 @@ import (
 	"strconv"
 	"strings"
 	"sync"
+	"time"
 
 	dogeboxd "github.com/dogeorg/dogeboxd/pkg"
 	"github.com/dogeorg/dogeboxd/pkg/utils"
@@ -29,6 +31,7 @@ const (
 type PupManager struct {
 	config            dogeboxd.ServerConfig
 	pupDir            string // Where pup state is stored
+	snapshotsDir      string // Where pup snapshots are stored
 	lastIP            net.IP // last issued IP address
 	lastPort          int    // last issued Port
 	mu                *sync.Mutex
@@ -38,6 +41,7 @@ type PupManager struct {
 	statsSubscribers  map[chan []dogeboxd.PupStats]bool // listeners for 'PupStats'
 	monitor           dogeboxd.SystemMonitor
 	sourceManager     dogeboxd.SourceManager
+	updateChecker     *UpdateChecker // Embedded update checker
 }
 
 func NewPupManager(config dogeboxd.ServerConfig, monitor dogeboxd.SystemMonitor) (*PupManager, error) {
@@ -51,10 +55,17 @@ func NewPupManager(config dogeboxd.ServerConfig, monitor dogeboxd.SystemMonitor)
 		}
 	}
 
+	// Create snapshots directory
+	snapshotsDir := filepath.Join(config.DataDir, "pup-snapshots")
+	if err := os.MkdirAll(snapshotsDir, 0755); err != nil {
+		log.Printf("Warning: failed to create snapshots directory: %v", err)
+	}
+
 	mu := sync.Mutex{}
 	p := PupManager{
 		config:            config,
 		pupDir:            pupDir,
+		snapshotsDir:      snapshotsDir,
 		state:             map[string]*dogeboxd.PupState{},
 		stats:             map[string]*dogeboxd.PupStats{},
 		updateSubscribers: map[chan dogeboxd.Pupdate]bool{},
@@ -178,6 +189,124 @@ func (t PupManager) Run(started, stopped chan bool, stop chan context.Context) e
 
 func (t *PupManager) SetSourceManager(sourceManager dogeboxd.SourceManager) {
 	t.sourceManager = sourceManager
+
+	// Initialize update checker now that we have source manager
+	if t.updateChecker == nil {
+		t.updateChecker = NewUpdateChecker(t, sourceManager, t.config.DataDir)
+	}
+}
+
+// Update checking methods - delegate to embedded UpdateChecker
+
+func (t *PupManager) CheckForUpdates(pupID string) (dogeboxd.PupUpdateInfo, error) {
+	if t.updateChecker == nil {
+		return dogeboxd.PupUpdateInfo{}, fmt.Errorf("update checker not initialized")
+	}
+	return t.updateChecker.CheckForUpdates(pupID)
+}
+
+func (t *PupManager) CheckAllPupUpdates() map[string]dogeboxd.PupUpdateInfo {
+	if t.updateChecker == nil {
+		return make(map[string]dogeboxd.PupUpdateInfo)
+	}
+	return t.updateChecker.CheckAllPupUpdates()
+}
+
+func (t *PupManager) GetCachedUpdateInfo(pupID string) (dogeboxd.PupUpdateInfo, bool) {
+	if t.updateChecker == nil {
+		return dogeboxd.PupUpdateInfo{}, false
+	}
+	return t.updateChecker.GetCachedUpdateInfo(pupID)
+}
+
+func (t *PupManager) GetAllCachedUpdates() map[string]dogeboxd.PupUpdateInfo {
+	if t.updateChecker == nil {
+		return make(map[string]dogeboxd.PupUpdateInfo)
+	}
+	return t.updateChecker.GetAllCachedUpdates()
+}
+
+func (t *PupManager) ClearCacheEntry(pupID string) {
+	if t.updateChecker != nil {
+		t.updateChecker.ClearCacheEntry(pupID)
+	}
+}
+
+func (t *PupManager) StartPeriodicCheck(stop chan bool) {
+	if t.updateChecker != nil {
+		t.updateChecker.StartPeriodicCheck(stop)
+	}
+}
+
+func (t *PupManager) GetEventChannel() <-chan dogeboxd.PupUpdatesCheckedEvent {
+	if t.updateChecker == nil {
+		ch := make(chan dogeboxd.PupUpdatesCheckedEvent)
+		close(ch)
+		return ch
+	}
+	return t.updateChecker.GetEventChannel()
+}
+
+func (t *PupManager) DetectInterfaceChanges(oldManifest, newManifest dogeboxd.PupManifest) []dogeboxd.PupInterfaceVersion {
+	if t.updateChecker == nil {
+		return []dogeboxd.PupInterfaceVersion{}
+	}
+	return t.updateChecker.DetectInterfaceChanges(oldManifest, newManifest)
+}
+
+// StopPup stops a running pup by disabling it and triggering a rebuild
+// This is safer than using _dbxroot pup stop directly as it ensures proper state management
+func (t *PupManager) StopPup(pupID string, nixManager dogeboxd.NixManager, logger dogeboxd.SubLogger) error {
+	// Get current pup state
+	pup, _, err := t.GetPup(pupID)
+	if err != nil {
+		return fmt.Errorf("failed to get pup: %w", err)
+	}
+
+	if !pup.Enabled {
+		// Already stopped
+		return nil
+	}
+
+	// Disable the pup
+	_, err = t.UpdatePup(pupID, dogeboxd.PupEnabled(false))
+	if err != nil {
+		return fmt.Errorf("failed to disable pup: %w", err)
+	}
+
+	// Rebuild to apply the change
+	if err := nixManager.Rebuild(logger); err != nil {
+		return fmt.Errorf("failed to rebuild after disabling pup: %w", err)
+	}
+
+	return nil
+}
+
+// StartPup starts a stopped pup by enabling it and triggering a rebuild
+func (t *PupManager) StartPup(pupID string, nixManager dogeboxd.NixManager, logger dogeboxd.SubLogger) error {
+	// Get current pup state
+	pup, _, err := t.GetPup(pupID)
+	if err != nil {
+		return fmt.Errorf("failed to get pup: %w", err)
+	}
+
+	if pup.Enabled {
+		// Already started
+		return nil
+	}
+
+	// Enable the pup
+	_, err = t.UpdatePup(pupID, dogeboxd.PupEnabled(true))
+	if err != nil {
+		return fmt.Errorf("failed to enable pup: %w", err)
+	}
+
+	// Rebuild to apply the change
+	if err := nixManager.Rebuild(logger); err != nil {
+		return fmt.Errorf("failed to rebuild after enabling pup: %w", err)
+	}
+
+	return nil
 }
 
 /* Hand out channels to pupdate subscribers */
@@ -358,4 +487,170 @@ func (t *PupManager) recoverStuckPups() {
 			}
 		}
 	}
+}
+
+// Snapshot management methods
+
+// getSnapshotFilePath returns the path to a specific pup's snapshot file
+func (t *PupManager) getSnapshotFilePath(pupID string) string {
+	return filepath.Join(t.snapshotsDir, fmt.Sprintf("%s.json", pupID))
+}
+
+// CreateSnapshot creates a snapshot of the current pup state before an upgrade
+func (t *PupManager) CreateSnapshot(pupState dogeboxd.PupState) error {
+	t.mu.Lock()
+	defer t.mu.Unlock()
+
+	snapshot := dogeboxd.PupVersionSnapshot{
+		Version:        pupState.Version,
+		Manifest:       pupState.Manifest,
+		Config:         pupState.Config,
+		Providers:      pupState.Providers,
+		Enabled:        pupState.Enabled,
+		SnapshotDate:   time.Now(),
+		SourceID:       pupState.Source.ID,
+		SourceLocation: pupState.Source.Location,
+	}
+
+	data, err := json.MarshalIndent(snapshot, "", "  ")
+	if err != nil {
+		return fmt.Errorf("failed to marshal snapshot: %w", err)
+	}
+
+	filePath := t.getSnapshotFilePath(pupState.ID)
+
+	// Write to temp file first, then rename for atomicity
+	tmpPath := filePath + ".tmp"
+	if err := os.WriteFile(tmpPath, data, 0644); err != nil {
+		return fmt.Errorf("failed to write snapshot file: %w", err)
+	}
+
+	if err := os.Rename(tmpPath, filePath); err != nil {
+		os.Remove(tmpPath)
+		return fmt.Errorf("failed to rename snapshot file: %w", err)
+	}
+
+	log.Printf("Created upgrade snapshot for pup %s (version %s)", pupState.ID, pupState.Version)
+	return nil
+}
+
+// GetSnapshot retrieves a pup's version snapshot if it exists
+func (t *PupManager) GetSnapshot(pupID string) (*dogeboxd.PupVersionSnapshot, error) {
+	t.mu.Lock()
+	defer t.mu.Unlock()
+
+	filePath := t.getSnapshotFilePath(pupID)
+
+	data, err := os.ReadFile(filePath)
+	if err != nil {
+		if os.IsNotExist(err) {
+			return nil, nil // No snapshot exists
+		}
+		return nil, fmt.Errorf("failed to read snapshot file: %w", err)
+	}
+
+	var snapshot dogeboxd.PupVersionSnapshot
+	if err := json.Unmarshal(data, &snapshot); err != nil {
+		return nil, fmt.Errorf("failed to parse snapshot file: %w", err)
+	}
+
+	return &snapshot, nil
+}
+
+// HasSnapshot checks if a snapshot exists for a pup
+func (t *PupManager) HasSnapshot(pupID string) bool {
+	t.mu.Lock()
+	defer t.mu.Unlock()
+
+	filePath := t.getSnapshotFilePath(pupID)
+	_, err := os.Stat(filePath)
+	return err == nil
+}
+
+// DeleteSnapshot removes a pup's version snapshot
+func (t *PupManager) DeleteSnapshot(pupID string) error {
+	t.mu.Lock()
+	defer t.mu.Unlock()
+
+	filePath := t.getSnapshotFilePath(pupID)
+
+	if err := os.Remove(filePath); err != nil {
+		if os.IsNotExist(err) {
+			return nil // Already deleted, not an error
+		}
+		return fmt.Errorf("failed to delete snapshot file: %w", err)
+	}
+
+	log.Printf("Deleted upgrade snapshot for pup %s", pupID)
+	return nil
+}
+
+// ListSnapshots returns a list of all pup IDs that have snapshots
+func (t *PupManager) ListSnapshots() ([]string, error) {
+	t.mu.Lock()
+	defer t.mu.Unlock()
+
+	entries, err := os.ReadDir(t.snapshotsDir)
+	if err != nil {
+		if os.IsNotExist(err) {
+			return []string{}, nil
+		}
+		return nil, fmt.Errorf("failed to read snapshots directory: %w", err)
+	}
+
+	var pupIDs []string
+	for _, entry := range entries {
+		if entry.IsDir() {
+			continue
+		}
+		name := entry.Name()
+		if filepath.Ext(name) == ".json" {
+			pupIDs = append(pupIDs, name[:len(name)-5]) // Remove .json extension
+		}
+	}
+
+	return pupIDs, nil
+}
+
+// CleanOldSnapshots removes snapshots older than the specified duration
+func (t *PupManager) CleanOldSnapshots(maxAge time.Duration) (int, error) {
+	t.mu.Lock()
+	defer t.mu.Unlock()
+
+	entries, err := os.ReadDir(t.snapshotsDir)
+	if err != nil {
+		if os.IsNotExist(err) {
+			return 0, nil
+		}
+		return 0, fmt.Errorf("failed to read snapshots directory: %w", err)
+	}
+
+	cleanedCount := 0
+	cutoff := time.Now().Add(-maxAge)
+
+	for _, entry := range entries {
+		if entry.IsDir() || filepath.Ext(entry.Name()) != ".json" {
+			continue
+		}
+
+		filePath := filepath.Join(t.snapshotsDir, entry.Name())
+		data, err := os.ReadFile(filePath)
+		if err != nil {
+			continue
+		}
+
+		var snapshot dogeboxd.PupVersionSnapshot
+		if err := json.Unmarshal(data, &snapshot); err != nil {
+			continue
+		}
+
+		if snapshot.SnapshotDate.Before(cutoff) {
+			if err := os.Remove(filePath); err == nil {
+				cleanedCount++
+				log.Printf("Cleaned old snapshot: %s (created %s)", entry.Name(), snapshot.SnapshotDate)
+			}
+		}
+	}
+
+	return cleanedCount, nil
 }

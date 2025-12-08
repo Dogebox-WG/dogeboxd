@@ -138,11 +138,6 @@ func (t api) getPreviousVersion(w http.ResponseWriter, r *http.Request) {
 	pupID := strings.TrimPrefix(r.URL.Path, "/pup/")
 	pupID = strings.TrimSuffix(pupID, "/previous-version")
 
-	// Return null if no snapshot system available or no snapshot exists
-	// For now, we don't have direct access to the snapshot manager from the API
-	// So we'll return a simple response indicating if rollback might be available
-	// The actual snapshot check happens in the rollback handler
-	
 	// Verify pup exists
 	pup, _, err := t.pups.GetPup(pupID)
 	if err != nil {
@@ -150,13 +145,31 @@ func (t api) getPreviousVersion(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	// Check if pup is in broken state (which means rollback is likely needed)
+	// Check if a snapshot actually exists for this pup
+	hasSnapshot := t.dbx.SystemUpdater.HasSnapshot(pupID)
+
+	// Get snapshot details if available
+	var previousVersion string
+	if hasSnapshot {
+		snapshot, err := t.dbx.SystemUpdater.GetSnapshot(pupID)
+		if err == nil && snapshot != nil {
+			previousVersion = snapshot.Version
+		}
+	}
+
+	// Only rollback is possible if:
+	// 1. A snapshot exists (meaning there was a previous version to roll back to)
+	// 2. The pup is in a broken state
+	rollbackPossible := hasSnapshot && pup.Installation == dogeboxd.STATE_BROKEN
+
 	response := map[string]interface{}{
 		"pupId":            pupID,
 		"currentVersion":   pup.Version,
+		"previousVersion":  previousVersion,
 		"isBroken":         pup.Installation == dogeboxd.STATE_BROKEN,
 		"brokenReason":     pup.BrokenReason,
-		"rollbackPossible": pup.Installation == dogeboxd.STATE_BROKEN, // Simplified check
+		"hasSnapshot":      hasSnapshot,
+		"rollbackPossible": rollbackPossible,
 	}
 
 	sendResponse(w, response)
@@ -170,7 +183,16 @@ func (t api) updatePup(w http.ResponseWriter, r *http.Request) {
 
 // GET /pup/skipped-updates - Get all skipped updates
 func (t api) getAllSkippedUpdates(w http.ResponseWriter, r *http.Request) {
-	skipped := t.dbx.SkippedUpdatesManager.GetAllSkipped()
+	// Return map of pupID -> skippedVersion
+	skipped := make(map[string]string)
+
+	pupStates := t.pups.GetStateMap()
+	for pupID, pupState := range pupStates {
+		if pupState.SkippedVersion != "" {
+			skipped[pupID] = pupState.SkippedVersion
+		}
+	}
+
 	sendResponse(w, skipped)
 }
 
@@ -179,8 +201,8 @@ func (t api) skipPupUpdate(w http.ResponseWriter, r *http.Request) {
 	pupID := strings.TrimPrefix(r.URL.Path, "/pup/")
 	pupID = strings.TrimSuffix(pupID, "/skip-update")
 
-	// Get the pup to find its current version
-	pup, _, err := t.pups.GetPup(pupID)
+	// Verify pup exists
+	_, _, err := t.pups.GetPup(pupID)
 	if err != nil {
 		sendErrorResponse(w, http.StatusNotFound, "Pup not found")
 		return
@@ -193,8 +215,8 @@ func (t api) skipPupUpdate(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	// Skip the update
-	err = t.dbx.SkippedUpdatesManager.SkipUpdate(pupID, pup.Version, updateInfo.LatestVersion)
+	// Skip the update by storing the latest version in the pup state
+	_, err = t.pups.UpdatePup(pupID, dogeboxd.SetPupSkippedVersion(updateInfo.LatestVersion))
 	if err != nil {
 		sendErrorResponse(w, http.StatusInternalServerError, "Failed to skip update")
 		return
@@ -209,8 +231,8 @@ func (t api) clearSkippedUpdate(w http.ResponseWriter, r *http.Request) {
 	pupID := strings.TrimPrefix(r.URL.Path, "/pup/")
 	pupID = strings.TrimSuffix(pupID, "/skip-update")
 
-	// Clear the skip status
-	err := t.dbx.SkippedUpdatesManager.ClearSkipped(pupID)
+	// Clear the skip status by setting SkippedVersion to empty
+	_, err := t.pups.UpdatePup(pupID, dogeboxd.SetPupSkippedVersion(""))
 	if err != nil {
 		sendErrorResponse(w, http.StatusInternalServerError, "Failed to clear skip status")
 		return

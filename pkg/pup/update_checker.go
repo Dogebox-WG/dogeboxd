@@ -22,7 +22,6 @@ const (
 type UpdateChecker struct {
 	pupManager    dogeboxd.PupManager
 	sourceManager dogeboxd.SourceManager
-	githubClient  *GitHubClient
 	checkInterval time.Duration
 	updateCache   map[string]dogeboxd.PupUpdateInfo
 	cacheMutex    sync.RWMutex
@@ -42,7 +41,6 @@ func NewUpdateChecker(pm dogeboxd.PupManager, sm dogeboxd.SourceManager, dataDir
 	uc := &UpdateChecker{
 		pupManager:    pm,
 		sourceManager: sm,
-		githubClient:  NewGitHubClient(),
 		checkInterval: time.Hour, // Check every hour
 		updateCache:   make(map[string]dogeboxd.PupUpdateInfo),
 		dataDir:       dataDir,
@@ -234,58 +232,56 @@ func (uc *UpdateChecker) CheckForUpdates(pupID string) (dogeboxd.PupUpdateInfo, 
 
 	// Only check for updates from git sources
 	if pup.Source.Type != "git" {
-		log.Printf("Skipping: source type '%s' not supported for updates", pup.Source.Type)
 		return updateInfo, nil
 	}
 
-	// Fetch releases from GitHub
-	releases, err := uc.githubClient.FetchReleases(pup.Source.Location)
+	// Get the source to fetch available versions
+	source, err := uc.sourceManager.GetSource(pup.Source.ID)
 	if err != nil {
-		log.Printf("Failed to fetch releases: %v", err)
-		return updateInfo, fmt.Errorf("failed to fetch releases: %w", err)
+		return updateInfo, fmt.Errorf("failed to get source: %w", err)
 	}
 
-	// Filter to stable releases only and parse versions
+	// Force refresh to get latest versions from git tags
+	sourceList, err := source.List(true)
+	if err != nil {
+		return updateInfo, fmt.Errorf("failed to list source pups: %w", err)
+	}
+
+	// Parse current version
 	currentVer, err := ParseVersionLenient(pup.Version)
 	if err != nil {
-		log.Printf("Failed to parse current version '%s': %v", pup.Version, err)
 		return updateInfo, fmt.Errorf("failed to parse current version: %w", err)
 	}
 
 	var availableVersions []dogeboxd.PupVersion
 	var latestVersion *semver.Version
-	skippedCount := 0
 
-	for _, release := range releases {
-		// Skip drafts and pre-releases
-		if release.Draft || release.Prerelease {
-			skippedCount++
+	// Find all versions of this specific pup from the source
+	for _, sourcePup := range sourceList.Pups {
+		// Match by pup name
+		if sourcePup.Name != pup.Manifest.Meta.Name {
 			continue
 		}
 
-		// Parse version from tag name
-		versionStr := strings.TrimPrefix(release.TagName, "v")
-		ver, err := ParseVersionLenient(versionStr)
+		// Parse the manifest version
+		ver, err := ParseVersionLenient(sourcePup.Version)
 		if err != nil {
-			skippedCount++
 			continue
 		}
 
 		// Only include versions newer than current
 		if ver.GreaterThan(currentVer) {
 			availableVersions = append(availableVersions, dogeboxd.PupVersion{
-				Version:      versionStr,
-				ReleaseNotes: release.Body,
-				ReleaseDate:  release.PublishedAt,
-				ReleaseURL:   release.HTMLURL,
+				Version:      sourcePup.Version,
+				ReleaseNotes: "",          // Manifests don't have release notes
+				ReleaseDate:  time.Time{}, // No release date in manifests
+				ReleaseURL:   "",
 			})
 
 			// Track latest version
 			if latestVersion == nil || ver.GreaterThan(latestVersion) {
 				latestVersion = ver
 			}
-		} else {
-			skippedCount++
 		}
 	}
 
@@ -294,13 +290,17 @@ func (uc *UpdateChecker) CheckForUpdates(pupID string) (dogeboxd.PupUpdateInfo, 
 	if latestVersion != nil {
 		updateInfo.LatestVersion = latestVersion.String()
 		updateInfo.UpdateAvailable = true
-		log.Printf("✓ Update available: %s → %s", pup.Version, latestVersion.String())
 	}
 
 	// Cache the result
 	uc.cacheMutex.Lock()
 	uc.updateCache[pupID] = updateInfo
 	uc.cacheMutex.Unlock()
+
+	// Save to disk immediately for this single pup check
+	if err := uc.saveCacheToDisk(); err != nil {
+		log.Printf("Failed to save update cache to disk: %v", err)
+	}
 
 	return updateInfo, nil
 }

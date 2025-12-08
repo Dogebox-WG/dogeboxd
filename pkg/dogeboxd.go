@@ -43,6 +43,7 @@ import (
 	_ "embed"
 	"encoding/json"
 	"fmt"
+	"log"
 	"os/exec"
 	"sync"
 	"time"
@@ -56,22 +57,21 @@ type syncQueue struct {
 }
 
 type Dogeboxd struct {
-	Pups                  PupManager
-	SystemUpdater         SystemUpdater
-	SystemMonitor         SystemMonitor
-	JournalReader         JournalReader
-	NetworkManager        NetworkManager
-	PupUpdateChecker      PupUpdateChecker
-	SkippedUpdatesManager SkippedUpdatesManager
-	sm                    StateManager
-	sources               SourceManager
-	nix                   NixManager
-	logtailer             LogTailer
-	queue                 *syncQueue
-	jobs                  chan Job
-	Changes               chan Change
-	JobManager            *JobManager
-	config                *ServerConfig
+	Pups             PupManager
+	SystemUpdater    SystemUpdater
+	SystemMonitor    SystemMonitor
+	JournalReader    JournalReader
+	NetworkManager   NetworkManager
+	PupUpdateChecker PupUpdateChecker
+	sm               StateManager
+	sources          SourceManager
+	nix              NixManager
+	logtailer        LogTailer
+	queue            *syncQueue
+	jobs             chan Job
+	Changes          chan Change
+	JobManager       *JobManager
+	config           *ServerConfig
 }
 
 func NewDogeboxd(
@@ -85,7 +85,6 @@ func NewDogeboxd(
 	nixManager NixManager,
 	logtailer LogTailer,
 	pupUpdateChecker PupUpdateChecker,
-	skippedUpdatesManager SkippedUpdatesManager,
 	config *ServerConfig,
 ) Dogeboxd {
 	q := syncQueue{
@@ -94,21 +93,20 @@ func NewDogeboxd(
 		jobInProgress: sync.Mutex{},
 	}
 	s := Dogeboxd{
-		Pups:                  pups,
-		SystemUpdater:         updater,
-		SystemMonitor:         monitor,
-		JournalReader:         journal,
-		NetworkManager:        networkManager,
-		PupUpdateChecker:      pupUpdateChecker,
-		SkippedUpdatesManager: skippedUpdatesManager,
-		sm:                    stateManager,
-		sources:               sourceManager,
-		nix:                   nixManager,
-		logtailer:             logtailer,
-		queue:                 &q,
-		jobs:                  make(chan Job, 256),
-		Changes:               make(chan Change, 256),
-		config:                config,
+		Pups:             pups,
+		SystemUpdater:    updater,
+		SystemMonitor:    monitor,
+		JournalReader:    journal,
+		NetworkManager:   networkManager,
+		PupUpdateChecker: pupUpdateChecker,
+		sm:               stateManager,
+		sources:          sourceManager,
+		nix:              nixManager,
+		logtailer:        logtailer,
+		queue:            &q,
+		jobs:             make(chan Job, 256),
+		Changes:          make(chan Change, 256),
+		config:           config,
 	}
 
 	return s
@@ -179,7 +177,8 @@ func (t Dogeboxd) Run(started, stopped chan bool, stop chan context.Context) err
 					if !ok {
 						break dance
 					}
-					t.sendChange(Change{"internal", "", "pup-updates-checked", event})
+					// Event consumed but not sent to frontend
+					_ = event
 
 				// Handle completed jobs from SystemUpdater
 				case j, ok := <-t.SystemUpdater.GetUpdateChannel():
@@ -196,6 +195,31 @@ func (t Dogeboxd) Run(started, stopped chan bool, stop chan context.Context) err
 					switch j.A.(type) {
 					case InstallPup:
 						t.Pups.FastPollPup(j.State.ID)
+						// Trigger an update check for the newly installed pup
+						if j.State != nil {
+							go func(pupID string) {
+								// Small delay to ensure pup state is fully settled
+								time.Sleep(2 * time.Second)
+
+								// Check for updates
+								updateInfo, err := t.PupUpdateChecker.CheckForUpdates(pupID)
+								if err != nil {
+									log.Printf("Failed to check updates for newly installed pup %s: %v", pupID, err)
+									return
+								}
+
+								// Emit event to notify frontend (cache is already saved in CheckForUpdates)
+								t.sendChange(Change{
+									ID:   "pup-updates",
+									Type: "pup-updates-checked",
+									Update: map[string]interface{}{
+										"pupsChecked":     1,
+										"updateAvailable": updateInfo.UpdateAvailable,
+										"pupId":           pupID,
+									},
+								})
+							}(j.State.ID)
+						}
 					case EnablePup:
 						t.Pups.FastPollPup(j.State.ID)
 					case DisablePup:

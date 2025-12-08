@@ -53,10 +53,7 @@ func (t server) Start() {
 	networkManager := network.NewNetworkManager(nixManager, t.sm)
 	lifecycleManager := lifecycle.NewLifecycleManager(t.config)
 
-	// Create snapshot manager for pup upgrade rollbacks
-	snapshotManager := pup.NewSnapshotManager(t.config.DataDir)
-
-	systemUpdater := system.NewSystemUpdater(t.config, networkManager, nixManager, sourceManager, pups, t.sm, dkm, snapshotManager)
+	systemUpdater := system.NewSystemUpdater(t.config, networkManager, nixManager, sourceManager, pups, t.sm, dkm)
 	journalReader := system.NewJournalReader(t.config)
 	logtailer := system.NewLogTailer(t.config)
 
@@ -76,14 +73,8 @@ func (t server) Start() {
 	/* ----------------------------------------------------------------------- */
 	// Set up Dogeboxd, the beating heart of the beast
 
-	// Create update checker for pup upgrades
-	updateChecker := pup.NewUpdateChecker(pups, sourceManager, t.config.DataDir)
-
-	// Create skipped updates manager
-	skippedUpdatesManager := pup.NewSkippedUpdatesManager(t.config.DataDir)
-
 	// Create Dogeboxd instance
-	dbx := dogeboxd.NewDogeboxd(t.sm, pups, systemUpdater, systemMonitor, journalReader, networkManager, sourceManager, nixManager, logtailer, updateChecker, skippedUpdatesManager, &t.config)
+	dbx := dogeboxd.NewDogeboxd(t.sm, pups, systemUpdater, systemMonitor, journalReader, networkManager, sourceManager, nixManager, logtailer, pups, &t.config)
 
 	// Create JobManager
 	jobManager := dogeboxd.NewJobManager(t.store, &dbx)
