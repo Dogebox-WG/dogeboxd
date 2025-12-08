@@ -25,8 +25,8 @@ type SkippedUpdatesManager struct {
 
 // skippedUpdatesFile represents the structure stored on disk
 type skippedUpdatesFile struct {
-	Version        int                                `json:"version"`
-	UpdatedAt      time.Time                          `json:"updatedAt"`
+	Version        int                                  `json:"version"`
+	UpdatedAt      time.Time                            `json:"updatedAt"`
 	SkippedUpdates map[string]dogeboxd.SkippedPupUpdate `json:"skippedUpdates"`
 }
 
@@ -162,10 +162,23 @@ func (sm *SkippedUpdatesManager) IsSkipped(pupID, latestVersion string) bool {
 		return false
 	}
 
-	// Simple string comparison for versions
-	// In practice, this should use proper semver comparison
-	// but for now we keep it simple like the frontend implementation
-	return latestVersion <= skipInfo.LatestVersionAtSkip
+	// Parse versions using lenient parsing (same as update checker)
+	current, err := ParseVersionLenient(latestVersion)
+	if err != nil {
+		log.Printf("Failed to parse current version '%s' in IsSkipped: %v", latestVersion, err)
+		// Fall back to string comparison if parsing fails
+		return latestVersion <= skipInfo.LatestVersionAtSkip
+	}
+
+	skip, err := ParseVersionLenient(skipInfo.LatestVersionAtSkip)
+	if err != nil {
+		log.Printf("Failed to parse skip version '%s' in IsSkipped: %v", skipInfo.LatestVersionAtSkip, err)
+		// Fall back to string comparison if parsing fails
+		return latestVersion <= skipInfo.LatestVersionAtSkip
+	}
+
+	// Return true if current version is less than or equal to the skipped version
+	return current.LessThan(skip) || current.Equal(skip)
 }
 
 // GetSkipInfo retrieves skip info for a specific pup
@@ -189,4 +202,3 @@ func (sm *SkippedUpdatesManager) GetAllSkipped() map[string]dogeboxd.SkippedPupU
 	}
 	return result
 }
-

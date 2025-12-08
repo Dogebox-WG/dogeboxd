@@ -178,8 +178,8 @@ func (uc *UpdateChecker) ClearAllCache() {
 	log.Printf("Cleared all update cache entries")
 }
 
-// parseVersionLenient attempts to parse a version string, handling non-semver formats
-func parseVersionLenient(versionStr string) (*semver.Version, error) {
+// ParseVersionLenient attempts to parse a version string, handling non-semver formats
+func ParseVersionLenient(versionStr string) (*semver.Version, error) {
 	// First try standard semver parsing
 	ver, err := semver.NewVersion(versionStr)
 	if err == nil {
@@ -224,9 +224,6 @@ func (uc *UpdateChecker) CheckForUpdates(pupID string) (dogeboxd.PupUpdateInfo, 
 		return dogeboxd.PupUpdateInfo{}, fmt.Errorf("failed to get pup: %w", err)
 	}
 
-	log.Printf("Checking pup: %s (current version: %s)", pup.Manifest.Meta.Name, pup.Version)
-	log.Printf("Source: %s (%s)", pup.Source.Type, pup.Source.Location)
-
 	updateInfo := dogeboxd.PupUpdateInfo{
 		PupID:             pupID,
 		CurrentVersion:    pup.Version,
@@ -242,16 +239,14 @@ func (uc *UpdateChecker) CheckForUpdates(pupID string) (dogeboxd.PupUpdateInfo, 
 	}
 
 	// Fetch releases from GitHub
-	log.Printf("Fetching releases from GitHub...")
 	releases, err := uc.githubClient.FetchReleases(pup.Source.Location)
 	if err != nil {
 		log.Printf("Failed to fetch releases: %v", err)
 		return updateInfo, fmt.Errorf("failed to fetch releases: %w", err)
 	}
-	log.Printf("Found %d total releases", len(releases))
 
 	// Filter to stable releases only and parse versions
-	currentVer, err := parseVersionLenient(pup.Version)
+	currentVer, err := ParseVersionLenient(pup.Version)
 	if err != nil {
 		log.Printf("Failed to parse current version '%s': %v", pup.Version, err)
 		return updateInfo, fmt.Errorf("failed to parse current version: %w", err)
@@ -270,16 +265,14 @@ func (uc *UpdateChecker) CheckForUpdates(pupID string) (dogeboxd.PupUpdateInfo, 
 
 		// Parse version from tag name
 		versionStr := strings.TrimPrefix(release.TagName, "v")
-		ver, err := parseVersionLenient(versionStr)
+		ver, err := ParseVersionLenient(versionStr)
 		if err != nil {
-			log.Printf("Skipping invalid version %s: %v", versionStr, err)
 			skippedCount++
 			continue
 		}
 
 		// Only include versions newer than current
 		if ver.GreaterThan(currentVer) {
-			log.Printf("Found newer version: %s (released %s)", versionStr, release.PublishedAt.Format("2006-01-02"))
 			availableVersions = append(availableVersions, dogeboxd.PupVersion{
 				Version:      versionStr,
 				ReleaseNotes: release.Body,
@@ -296,16 +289,12 @@ func (uc *UpdateChecker) CheckForUpdates(pupID string) (dogeboxd.PupUpdateInfo, 
 		}
 	}
 
-	log.Printf("Filtered results: %d newer versions found, %d skipped (older/draft/pre-release/invalid)", len(availableVersions), skippedCount)
-
 	// Update the info struct
 	updateInfo.AvailableVersions = availableVersions
 	if latestVersion != nil {
 		updateInfo.LatestVersion = latestVersion.String()
 		updateInfo.UpdateAvailable = true
 		log.Printf("✓ Update available: %s → %s", pup.Version, latestVersion.String())
-	} else {
-		log.Printf("✓ No updates available, pup is up to date")
 	}
 
 	// Cache the result
@@ -327,11 +316,8 @@ func (uc *UpdateChecker) checkAllPupUpdatesInternal(isPeriodic bool) map[string]
 	allUpdates := make(map[string]dogeboxd.PupUpdateInfo)
 	stateMap := uc.pupManager.GetStateMap()
 
-	log.Printf("Checking %d installed pup(s) for updates", len(stateMap))
-
 	updatesAvailable := 0
 	for pupID, pupState := range stateMap {
-		log.Printf("--- Checking %s ---", pupState.Manifest.Meta.Name)
 		updateInfo, err := uc.CheckForUpdates(pupID)
 		if err != nil {
 			log.Printf("Error checking %s: %v", pupState.Manifest.Meta.Name, err)

@@ -13,7 +13,6 @@ import (
 func (t api) getAllPupUpdates(w http.ResponseWriter, r *http.Request) {
 	updates := t.dbx.PupUpdateChecker.GetAllCachedUpdates()
 
-	log.Printf("getAllPupUpdates: returning %d cached update(s)", len(updates))
 	sendResponse(w, updates)
 }
 
@@ -32,7 +31,6 @@ func (t api) getPupUpdates(w http.ResponseWriter, r *http.Request) {
 		}
 	}
 
-	log.Printf("getPupUpdates: returning update info for pup %s (updateAvailable: %v)", pupID, updateInfo.UpdateAvailable)
 	sendResponse(w, updateInfo)
 }
 
@@ -173,7 +171,6 @@ func (t api) updatePup(w http.ResponseWriter, r *http.Request) {
 // GET /pup/skipped-updates - Get all skipped updates
 func (t api) getAllSkippedUpdates(w http.ResponseWriter, r *http.Request) {
 	skipped := t.dbx.SkippedUpdatesManager.GetAllSkipped()
-	log.Printf("getAllSkippedUpdates: returning %d skipped update(s)", len(skipped))
 	sendResponse(w, skipped)
 }
 
