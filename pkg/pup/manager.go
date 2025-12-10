@@ -155,7 +155,6 @@ func (t PupManager) Run(started, stopped chan bool, stop chan context.Context) e
 					// are changing state (shutting down, starting up)
 					// these should not be recorded in the floatBuffers
 					// but only to rapidly track STATUS change
-					log.Printf("[DEBUG] PupManager: received fast stats for %d service(s)", len(stats))
 					for k, v := range stats {
 						id := k[strings.Index(k, "-")+1 : strings.Index(k, ".")]
 						s, ok := t.stats[id]
@@ -165,7 +164,6 @@ func (t PupManager) Run(started, stopped chan bool, stop chan context.Context) e
 						}
 						// Calculate our status
 						p := t.state[id]
-						oldStatus := s.Status
 						if v.Running && p.Enabled {
 							s.Status = dogeboxd.STATE_RUNNING
 						} else if v.Running && !p.Enabled {
@@ -174,22 +172,6 @@ func (t PupManager) Run(started, stopped chan bool, stop chan context.Context) e
 							s.Status = dogeboxd.STATE_STARTING
 						} else {
 							s.Status = dogeboxd.STATE_STOPPED
-						}
-						if oldStatus != s.Status {
-							log.Printf("[DEBUG] PupManager: status change for %s: %s → %s (running=%v, enabled=%v, installation=%s)",
-								id, oldStatus, s.Status, v.Running, p.Enabled, p.Installation)
-						} else {
-							log.Printf("[DEBUG] PupManager: status unchanged for %s: %s (running=%v, enabled=%v, installation=%s)",
-								id, s.Status, v.Running, p.Enabled, p.Installation)
-						}
-
-						// Log when pup is stuck in starting state
-						if s.Status == dogeboxd.STATE_STARTING && oldStatus == dogeboxd.STATE_STARTING {
-							// Check if this is a problematic "stuck starting" situation
-							if p.Installation != dogeboxd.STATE_INSTALLING && p.Installation != dogeboxd.STATE_UPGRADING {
-								log.Printf("[WARN] PupManager: pup %s appears stuck in STARTING state (enabled=true, running=false, installation=%s)",
-									id, p.Installation)
-							}
 						}
 
 						t.healthCheckPupState(p)
@@ -468,12 +450,6 @@ func (t PupManager) sendStats() {
 
 	for _, v := range t.stats {
 		stats = append(stats, *v)
-	}
-
-	log.Printf("[DEBUG] PupManager: sendStats() sending stats for %d pup(s) to %d subscriber(s)",
-		len(stats), len(t.statsSubscribers))
-	for _, s := range stats {
-		log.Printf("[DEBUG] PupManager:   - %s: status=%s", s.ID, s.Status)
 	}
 
 	// Collect channels to remove (closed or full)

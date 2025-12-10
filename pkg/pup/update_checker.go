@@ -302,9 +302,6 @@ func (uc *UpdateChecker) CheckForUpdates(pupID string) (dogeboxd.PupUpdateInfo, 
 		log.Printf("Failed to save update cache to disk: %v", err)
 	}
 
-	log.Printf("[DEBUG] CheckForUpdates completed for %s: updateAvailable=%v, current=%s, latest=%s",
-		pupID, updateInfo.UpdateAvailable, updateInfo.CurrentVersion, updateInfo.LatestVersion)
-
 	// Emit event to notify that cache has been updated
 	updatesAvailable := 0
 	if updateInfo.UpdateAvailable {

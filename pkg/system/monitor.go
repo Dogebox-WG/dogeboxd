@@ -108,7 +108,6 @@ func (t SystemMonitor) Run(started, stopped chan bool, stop chan context.Context
 func (t *SystemMonitor) fastLooper(service string, stop context.Context) {
 	// fast looper, one specific pup
 	go func() {
-		fmt.Printf("[DEBUG] SystemMonitor: fastLooper started for %s\n", service)
 		intervals := []time.Duration{
 			1 * time.Second,
 			1 * time.Second,
@@ -124,31 +123,21 @@ func (t *SystemMonitor) fastLooper(service string, stop context.Context) {
 		for {
 			select {
 			case <-stop.Done():
-				fmt.Printf("[DEBUG] SystemMonitor: fastLooper stopped for %s\n", service)
 				break
 			case <-timer.C:
-				fmt.Printf("[DEBUG] SystemMonitor: polling %s (iteration %d)\n", service, place+1)
 				stats, err := t.runChecks([]string{service})
 				if err != nil {
-					fmt.Printf("[DEBUG] SystemMonitor: error checking %s: %v\n", service, err)
 					continue
-				}
-
-				for k, v := range stats {
-					fmt.Printf("[DEBUG] SystemMonitor: %s -> Running=%v, CPU=%.2f%%, Mem=%.2fMB\n",
-						k, v.Running, v.CPUPercent, v.MEMMb)
 				}
 
 				select {
 				case t.fastStats <- stats:
-					fmt.Printf("[DEBUG] SystemMonitor: sent fast stats for %s\n", service)
 				default:
 					fmt.Println("couldn't write to output channel")
 				}
 
 				place++
 				if place >= len(intervals) {
-					fmt.Printf("[DEBUG] SystemMonitor: fastLooper completed all iterations for %s\n", service)
 					break
 				}
 				timer.Reset(intervals[place])
