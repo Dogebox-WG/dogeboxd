@@ -1,7 +1,6 @@
 package system
 
 import (
-	"bytes"
 	"context"
 	"crypto/rand"
 	"crypto/sha256"
@@ -627,42 +626,40 @@ func getServiceStatus(serviceName string) (status string, recentLogs []string, e
 	return status, recentLogs, err
 }
 
-// waitForSystemdReady waits for systemd activation to complete after a rebuild
-func waitForSystemdReady(timeout dogeboxd.SubLogger) error {
-	ctx, cancel := context.WithTimeout(context.Background(), 30*time.Second)
-	defer cancel()
+// waitForContainerRunning polls systemctl until container is active and running
+// This replaces manual systemctl start - we let NixOS autoStart handle it
+func waitForContainerRunning(serviceName string, timeout time.Duration, log dogeboxd.SubLogger) error {
+	deadline := time.Now().Add(timeout)
+	checkInterval := 2 * time.Second
 
-	cmd := exec.CommandContext(ctx, "sudo", "systemctl", "is-system-running", "--wait")
-	output, err := cmd.CombinedOutput()
-	state := strings.TrimSpace(string(output))
+	for time.Now().Before(deadline) {
+		// Check if service is active and running
+		cmd := exec.Command("sudo", "systemctl", "is-active", serviceName)
+		output, _ := cmd.CombinedOutput()
+		state := strings.TrimSpace(string(output))
 
-	// Accept "running" or "degraded" as success
-	// "degraded" means system is functional but some service failed
-	if state == "running" || state == "degraded" {
-		timeout.Logf("Systemd state: %s", state)
-		return nil
+		if state == "active" {
+			// Double-check it's actually running (not just activated)
+			cmd = exec.Command("sudo", "systemctl", "show", serviceName, "--property=SubState")
+			output, _ = cmd.CombinedOutput()
+			subState := strings.TrimSpace(strings.TrimPrefix(string(output), "SubState="))
+
+			if subState == "running" {
+				log.Logf("Container is active and running")
+				return nil
+			}
+
+			log.Logf("Container state: %s (substate: %s), waiting...", state, subState)
+		} else if state == "activating" {
+			log.Logf("Container is activating, NixOS building system...")
+		} else {
+			log.Logf("Container state: %s, waiting for NixOS to build and start...", state)
+		}
+
+		time.Sleep(checkInterval)
 	}
 
-	if ctx.Err() == context.DeadlineExceeded {
-		return fmt.Errorf("timeout waiting for systemd (state: %s)", state)
-	}
-
-	return fmt.Errorf("systemd not ready (state: %s): %w", state, err)
-}
-
-// verifyServiceReady checks that a container service is loaded and ready
-func verifyServiceReady(serviceName string, log dogeboxd.SubLogger) error {
-	// Check if service is loaded by systemd
-	cmd := exec.Command("sudo", "systemctl", "is-enabled", serviceName)
-	output, _ := cmd.CombinedOutput()
-	result := strings.TrimSpace(string(output))
-
-	if result == "not-found" {
-		return fmt.Errorf("service not loaded by systemd yet")
-	}
-
-	log.Logf("Service enabled state: %s", result)
-	return nil
+	return fmt.Errorf("timeout after %v waiting for container to start", timeout)
 }
 
 // upgradePup handles upgrading a pup to a new version while preserving config and data
@@ -756,6 +753,26 @@ func (t SystemUpdater) upgradePup(upgrade dogeboxd.UpgradePup, j dogeboxd.Job) e
 		return t.markPupBroken(s, dogeboxd.BROKEN_REASON_NIX_APPLY_FAILED, err)
 	}
 
+	// For ephemeral containers, completely remove from NixOS config before re-adding
+	// This forces NixOS to treat it as a NEW container and rebuild its system
+	if wasEnabled {
+		log.Log("Removing pup from NixOS config (will re-add as new)...")
+		removeNixPatch := t.nix.NewPatch(log)
+		removeNixPatch.RemovePupFile(s.ID)
+		if err := removeNixPatch.Apply(); err != nil {
+			log.Errf("Failed to remove pup from config: %v", err)
+			return t.markPupBroken(s, dogeboxd.BROKEN_REASON_NIX_APPLY_FAILED, err)
+		}
+
+		// Delete container directory to ensure clean slate
+		containerDir := fmt.Sprintf("/var/lib/nixos-containers/pup-%s", s.ID)
+		log.Logf("Cleaning container directory: %s", containerDir)
+		if err := os.RemoveAll(containerDir); err != nil {
+			log.Errf("Warning: failed to remove container directory: %v", err)
+			// Not fatal, continue
+		}
+	}
+
 	// Mark as ready and re-enable if it was enabled before
 	updates := []func(*dogeboxd.PupState, *[]dogeboxd.Pupdate){dogeboxd.SetPupInstallation(dogeboxd.STATE_READY)}
 	if wasEnabled {
@@ -770,86 +787,43 @@ func (t SystemUpdater) upgradePup(upgrade dogeboxd.UpgradePup, j dogeboxd.Job) e
 	}
 
 	// Write pup file with updated state (including Enabled=true if re-enabling) and rebuild
+	// Since we removed it completely, NixOS will treat this as a NEW container
 	if wasEnabled {
+		log.Log("Adding pup back to NixOS config as new container...")
 		nixPatch := t.nix.NewPatch(log)
 		t.nix.WritePupFile(nixPatch, newState, dbxState)
+		t.nix.UpdateIncludesFile(nixPatch, t.pupManager)
 		if err := nixPatch.Apply(); err != nil {
-			log.Errf("Warning: failed to apply nix patch after re-enable: %v", err)
-			// Not fatal - pup is upgraded but may need manual start
+			log.Errf("Failed to add pup back to config: %v", err)
+			return t.markPupBroken(s, dogeboxd.BROKEN_REASON_NIX_APPLY_FAILED, err)
 		}
 
+		// Container should start automatically via autoStart=true
+		// NixOS will build the container system and start it because it's "new"
 		serviceName := fmt.Sprintf("container@pup-%s.service", s.ID)
+		log.Logf("Waiting for container to start (NixOS treating as new container)...")
 
-		// Wait for systemd activation to complete
-		log.Logf("Waiting for systemd activation to complete...")
-		if err := waitForSystemdReady(log); err != nil {
-			log.Errf("Systemd activation timeout: %v", err)
-			// Continue anyway, we'll get detailed errors from start attempt
-		}
+		if err := waitForContainerRunning(serviceName, 60*time.Second, log); err != nil {
+			log.Errf("Container did not start within timeout: %v", err)
 
-		// Verify the container service is ready
-		log.Logf("Verifying container service is ready...")
-		if err := verifyServiceReady(serviceName, log); err != nil {
-			log.Errf("Container service not ready: %v", err)
-			// Continue anyway, we'll get detailed errors from start attempt
-		} else {
-			log.Logf("Container service %s is ready to start", serviceName)
-		}
-
-		// Explicitly start the container - NixOS autoStart only starts NEW containers,
-		// not containers that were previously stopped
-		cmd := exec.Command("sudo", "systemctl", "start", serviceName)
-		var stdout, stderr bytes.Buffer
-		cmd.Stdout = &stdout
-		cmd.Stderr = &stderr
-		log.LogCmd(cmd)
-
-		startErr := cmd.Run()
-		if startErr != nil {
-			log.Errf("Failed to start container after re-enable: %v", startErr)
-
-			// Capture detailed error information
-			if stderr.Len() > 0 {
-				log.Errf("systemctl stderr: %s", strings.TrimSpace(stderr.String()))
-			}
-			if stdout.Len() > 0 {
-				log.Logf("systemctl stdout: %s", strings.TrimSpace(stdout.String()))
-			}
-
-			// Get detailed service status and logs
+			// Get detailed service status and logs for debugging
 			status, logs, statusErr := getServiceStatus(serviceName)
 			if statusErr != nil {
 				log.Errf("Failed to get service status: %v", statusErr)
-			}
-
-			// Log service status
-			if status != "" {
-				log.Logf("Service status:\n%s", status)
-			}
-
-			// Log recent service logs
-			if len(logs) > 0 {
-				log.Logf("Recent service logs (last %d lines):", len(logs))
-				for _, logLine := range logs {
-					log.Logf("  %s", logLine)
-				}
 			} else {
-				log.Logf("No recent service logs available")
-			}
-
-			// Check if service is in failed state
-			checkCmd := exec.Command("sudo", "systemctl", "is-failed", serviceName)
-			if checkOutput, _ := checkCmd.Output(); string(checkOutput) == "failed\n" {
-				log.Errf("Service is in FAILED state")
-
-				// Try to get the failure reason
-				failCmd := exec.Command("sudo", "systemctl", "show", serviceName, "-p", "Result", "--value")
-				if failOutput, _ := failCmd.Output(); len(failOutput) > 0 {
-					log.Errf("Failure result: %s", strings.TrimSpace(string(failOutput)))
+				if status != "" {
+					log.Logf("Service status:\n%s", status)
+				}
+				if len(logs) > 0 {
+					log.Logf("Recent service logs (last %d lines):", len(logs))
+					for _, logLine := range logs {
+						log.Logf("  %s", logLine)
+					}
 				}
 			}
 
-			log.Errf("Container failed to start - pup may remain in broken/starting state")
+			log.Errf("Check container logs: journalctl -u %s", serviceName)
+			log.Errf("Container may still start in background, but upgrade workflow completing")
 		} else {
 			log.Logf("Container started successfully")
 		}
