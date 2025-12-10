@@ -62,7 +62,12 @@ func (t server) Start() {
 	//
 
 	for k, p := range pups.GetStateMap() {
-		fmt.Printf("pups %s:\n %+v\n", k, p)
+		logoInfo := "(none)"
+		if len(p.LogoBase64) > 0 {
+			logoInfo = fmt.Sprintf("(%d bytes)", len(p.LogoBase64))
+		}
+		fmt.Printf("pup %s: Name=%s, Version=%s, Installation=%s, Logo=%s\n",
+			k, p.Manifest.Meta.Name, p.Version, p.Installation, logoInfo)
 	}
 
 	// Check if we have pending reflector data to submit.

@@ -2,6 +2,7 @@ package pup
 
 import (
 	"fmt"
+	"log"
 
 	dogeboxd "github.com/dogeorg/dogeboxd/pkg"
 )
@@ -10,7 +11,10 @@ import (
 // this will rapidly poll for a few seconds and update
 // the frontend with status.
 func (t PupManager) FastPollPup(id string) {
-	t.monitor.GetFastMonChannel() <- fmt.Sprintf("container@pup-%s.service", id)
+	serviceName := fmt.Sprintf("container@pup-%s.service", id)
+	log.Printf("[DEBUG] FastPollPup: sending fast poll request for %s (service: %s)", id, serviceName)
+	t.monitor.GetFastMonChannel() <- serviceName
+	log.Printf("[DEBUG] FastPollPup: fast poll request sent for %s", id)
 }
 
 /* Set the list of monitored services on the SystemMonitor */

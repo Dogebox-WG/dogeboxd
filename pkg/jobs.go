@@ -24,6 +24,7 @@ type JobRecord struct {
 	Started        time.Time  `json:"started"`
 	Finished       *time.Time `json:"finished"` // nil if not finished
 	DisplayName    string     `json:"displayName"`
+	Action         string     `json:"action"`   // Action type: install, upgrade, uninstall, etc.
 	Progress       int        `json:"progress"` // 0-100
 	Status         JobStatus  `json:"status"`
 	SummaryMessage string     `json:"summaryMessage"`
@@ -58,12 +59,14 @@ func (jm *JobManager) CreateJobRecord(j Job) (*JobRecord, error) {
 	defer jm.jobsMutex.Unlock()
 
 	displayName := jm.getDisplayName(j)
+	action := jm.getActionName(j)
 
 	record := &JobRecord{
 		ID:             j.ID,
 		Started:        j.Start,
 		Finished:       nil,
 		DisplayName:    displayName,
+		Action:         action,
 		Progress:       0,
 		Status:         JobStatusQueued,
 		SummaryMessage: "Job queued",
@@ -401,6 +404,40 @@ func (jm *JobManager) getDisplayName(j Job) string {
 		return "Rollback Pup"
 	default:
 		return "System Operation"
+	}
+}
+
+// getActionName returns the action type identifier for the job
+func (jm *JobManager) getActionName(j Job) string {
+	switch j.A.(type) {
+	case InstallPup:
+		return "install"
+	case InstallPups:
+		return "install"
+	case UninstallPup:
+		return "uninstall"
+	case PurgePup:
+		return "purge"
+	case EnablePup:
+		return "enable"
+	case DisablePup:
+		return "disable"
+	case UpgradePup:
+		return "upgrade"
+	case RollbackPupUpgrade:
+		return "rollback"
+	case CheckPupUpdates:
+		return "check-updates"
+	case UpdatePupConfig:
+		return "config"
+	case UpdatePupProviders:
+		return "providers"
+	case ImportBlockchainData:
+		return "import-blockchain"
+	case SystemUpdate:
+		return "system-update"
+	default:
+		return "system"
 	}
 }
 

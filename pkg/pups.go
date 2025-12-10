@@ -275,6 +275,9 @@ type PupManager interface {
 	DeleteSnapshot(pupID string) error
 	ListSnapshots() ([]string, error)
 	CleanOldSnapshots(maxAge time.Duration) (int, error)
+
+	// ClearCacheEntry removes a specific pup from the update cache
+	ClearCacheEntry(pupID string)
 }
 
 func SetPupInstallation(state string) func(*PupState, *[]Pupdate) {

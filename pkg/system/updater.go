@@ -1,6 +1,7 @@
 package system
 
 import (
+	"bytes"
 	"context"
 	"crypto/rand"
 	"crypto/sha256"
@@ -10,6 +11,8 @@ import (
 	"os"
 	"os/exec"
 	"path/filepath"
+	"strings"
+	"time"
 
 	dogeboxd "github.com/dogeorg/dogeboxd/pkg"
 	"github.com/dogeorg/dogeboxd/pkg/utils"
@@ -601,6 +604,67 @@ func (t SystemUpdater) removeBinaryCache(j dogeboxd.RemoveBinaryCache) error {
 	return t.sm.SetDogebox(dbxState)
 }
 
+// getServiceStatus returns detailed status information about a systemd service
+func getServiceStatus(serviceName string) (status string, recentLogs []string, err error) {
+	// Get service status
+	statusCmd := exec.Command("sudo", "systemctl", "status", serviceName, "--no-pager", "--lines=0")
+	statusOutput, statusErr := statusCmd.CombinedOutput()
+	status = strings.TrimSpace(string(statusOutput))
+
+	// Get recent logs (last 20 lines)
+	logsCmd := exec.Command("sudo", "journalctl", "-u", serviceName, "-n", "20", "--no-pager")
+	logsOutput, logsErr := logsCmd.CombinedOutput()
+	if logsErr == nil {
+		logLines := strings.Split(strings.TrimSpace(string(logsOutput)), "\n")
+		recentLogs = logLines
+	}
+
+	if statusErr != nil {
+		// Service might not exist or be in failed state
+		err = fmt.Errorf("service status check failed: %w", statusErr)
+	}
+
+	return status, recentLogs, err
+}
+
+// waitForSystemdReady waits for systemd activation to complete after a rebuild
+func waitForSystemdReady(timeout dogeboxd.SubLogger) error {
+	ctx, cancel := context.WithTimeout(context.Background(), 30*time.Second)
+	defer cancel()
+
+	cmd := exec.CommandContext(ctx, "sudo", "systemctl", "is-system-running", "--wait")
+	output, err := cmd.CombinedOutput()
+	state := strings.TrimSpace(string(output))
+
+	// Accept "running" or "degraded" as success
+	// "degraded" means system is functional but some service failed
+	if state == "running" || state == "degraded" {
+		timeout.Logf("Systemd state: %s", state)
+		return nil
+	}
+
+	if ctx.Err() == context.DeadlineExceeded {
+		return fmt.Errorf("timeout waiting for systemd (state: %s)", state)
+	}
+
+	return fmt.Errorf("systemd not ready (state: %s): %w", state, err)
+}
+
+// verifyServiceReady checks that a container service is loaded and ready
+func verifyServiceReady(serviceName string, log dogeboxd.SubLogger) error {
+	// Check if service is loaded by systemd
+	cmd := exec.Command("sudo", "systemctl", "is-enabled", serviceName)
+	output, _ := cmd.CombinedOutput()
+	result := strings.TrimSpace(string(output))
+
+	if result == "not-found" {
+		return fmt.Errorf("service not loaded by systemd yet")
+	}
+
+	log.Logf("Service enabled state: %s", result)
+	return nil
+}
+
 // upgradePup handles upgrading a pup to a new version while preserving config and data
 func (t SystemUpdater) upgradePup(upgrade dogeboxd.UpgradePup, j dogeboxd.Job) error {
 	s := *j.State
@@ -651,6 +715,10 @@ func (t SystemUpdater) upgradePup(upgrade dogeboxd.UpgradePup, j dogeboxd.Job) e
 		return t.markPupBroken(s, dogeboxd.BROKEN_REASON_STATE_UPDATE_FAILED, err)
 	}
 
+	// Clear the update cache entry now that version has changed
+	// This ensures the "update available" badge disappears immediately
+	t.pupManager.ClearCacheEntry(s.ID)
+
 	// Now download files - state already reflects target version
 	pupPath := filepath.Join(t.config.DataDir, "pups", s.ID)
 	log.Logf("Downloading new version to %s", pupPath)
@@ -688,18 +756,102 @@ func (t SystemUpdater) upgradePup(upgrade dogeboxd.UpgradePup, j dogeboxd.Job) e
 		return t.markPupBroken(s, dogeboxd.BROKEN_REASON_NIX_APPLY_FAILED, err)
 	}
 
-	// Mark as ready
-	if _, err := t.pupManager.UpdatePup(s.ID, dogeboxd.SetPupInstallation(dogeboxd.STATE_READY)); err != nil {
-		log.Errf("Failed to update pup installation state: %v", err)
+	// Mark as ready and re-enable if it was enabled before
+	updates := []func(*dogeboxd.PupState, *[]dogeboxd.Pupdate){dogeboxd.SetPupInstallation(dogeboxd.STATE_READY)}
+	if wasEnabled {
+		log.Log("Re-enabling pup after upgrade...")
+		updates = append(updates, dogeboxd.PupEnabled(true))
+	}
+
+	newState, err := t.pupManager.UpdatePup(s.ID, updates...)
+	if err != nil {
+		log.Errf("Failed to update pup state: %v", err)
 		return t.markPupBroken(s, dogeboxd.BROKEN_REASON_STATE_UPDATE_FAILED, err)
 	}
 
-	// Re-enable if it was enabled before
+	// Write pup file with updated state (including Enabled=true if re-enabling) and rebuild
 	if wasEnabled {
-		log.Log("Re-enabling pup after upgrade...")
-		if err := t.pupManager.StartPup(s.ID, t.nix, log); err != nil {
-			log.Errf("Warning: failed to re-enable pup: %v", err)
-			// Not a fatal error - pup is upgraded but user will need to manually start it
+		nixPatch := t.nix.NewPatch(log)
+		t.nix.WritePupFile(nixPatch, newState, dbxState)
+		if err := nixPatch.Apply(); err != nil {
+			log.Errf("Warning: failed to apply nix patch after re-enable: %v", err)
+			// Not fatal - pup is upgraded but may need manual start
+		}
+
+		serviceName := fmt.Sprintf("container@pup-%s.service", s.ID)
+
+		// Wait for systemd activation to complete
+		log.Logf("Waiting for systemd activation to complete...")
+		if err := waitForSystemdReady(log); err != nil {
+			log.Errf("Systemd activation timeout: %v", err)
+			// Continue anyway, we'll get detailed errors from start attempt
+		}
+
+		// Verify the container service is ready
+		log.Logf("Verifying container service is ready...")
+		if err := verifyServiceReady(serviceName, log); err != nil {
+			log.Errf("Container service not ready: %v", err)
+			// Continue anyway, we'll get detailed errors from start attempt
+		} else {
+			log.Logf("Container service %s is ready to start", serviceName)
+		}
+
+		// Explicitly start the container - NixOS autoStart only starts NEW containers,
+		// not containers that were previously stopped
+		cmd := exec.Command("sudo", "systemctl", "start", serviceName)
+		var stdout, stderr bytes.Buffer
+		cmd.Stdout = &stdout
+		cmd.Stderr = &stderr
+		log.LogCmd(cmd)
+
+		startErr := cmd.Run()
+		if startErr != nil {
+			log.Errf("Failed to start container after re-enable: %v", startErr)
+
+			// Capture detailed error information
+			if stderr.Len() > 0 {
+				log.Errf("systemctl stderr: %s", strings.TrimSpace(stderr.String()))
+			}
+			if stdout.Len() > 0 {
+				log.Logf("systemctl stdout: %s", strings.TrimSpace(stdout.String()))
+			}
+
+			// Get detailed service status and logs
+			status, logs, statusErr := getServiceStatus(serviceName)
+			if statusErr != nil {
+				log.Errf("Failed to get service status: %v", statusErr)
+			}
+
+			// Log service status
+			if status != "" {
+				log.Logf("Service status:\n%s", status)
+			}
+
+			// Log recent service logs
+			if len(logs) > 0 {
+				log.Logf("Recent service logs (last %d lines):", len(logs))
+				for _, logLine := range logs {
+					log.Logf("  %s", logLine)
+				}
+			} else {
+				log.Logf("No recent service logs available")
+			}
+
+			// Check if service is in failed state
+			checkCmd := exec.Command("sudo", "systemctl", "is-failed", serviceName)
+			if checkOutput, _ := checkCmd.Output(); string(checkOutput) == "failed\n" {
+				log.Errf("Service is in FAILED state")
+
+				// Try to get the failure reason
+				failCmd := exec.Command("sudo", "systemctl", "show", serviceName, "-p", "Result", "--value")
+				if failOutput, _ := failCmd.Output(); len(failOutput) > 0 {
+					log.Errf("Failure result: %s", strings.TrimSpace(string(failOutput)))
+				}
+			}
+
+			log.Errf("Container failed to start - pup may remain in broken/starting state")
+		} else {
+			log.Logf("Container started successfully")
 		}
 	}
 
@@ -766,7 +918,19 @@ func (t SystemUpdater) rollbackPupUpgrade(j dogeboxd.Job) error {
 		return t.markPupBroken(s, dogeboxd.BROKEN_REASON_STORAGE_CREATION_FAILED, err)
 	}
 
-	// Rebuild nix configuration
+	// Mark as ready and re-enable if it was enabled before
+	updates := []func(*dogeboxd.PupState, *[]dogeboxd.Pupdate){dogeboxd.SetPupInstallation(dogeboxd.STATE_READY)}
+	if snapshot.Enabled {
+		log.Log("Re-enabling pup after rollback...")
+		updates = append(updates, dogeboxd.PupEnabled(true))
+	}
+
+	if _, err := t.pupManager.UpdatePup(s.ID, updates...); err != nil {
+		log.Errf("Failed to update pup state: %v", err)
+		return t.markPupBroken(s, dogeboxd.BROKEN_REASON_STATE_UPDATE_FAILED, err)
+	}
+
+	// Rebuild nix configuration with all state updates (ready + enabled)
 	restoredState, _, _ := t.pupManager.GetPup(s.ID)
 	dbxState := t.sm.Get().Dogebox
 	t.nix.WritePupFile(nixPatch, restoredState, dbxState)
@@ -777,17 +941,15 @@ func (t SystemUpdater) rollbackPupUpgrade(j dogeboxd.Job) error {
 		return t.markPupBroken(s, dogeboxd.BROKEN_REASON_NIX_APPLY_FAILED, err)
 	}
 
-	// Mark as ready
-	if _, err := t.pupManager.UpdatePup(s.ID, dogeboxd.SetPupInstallation(dogeboxd.STATE_READY)); err != nil {
-		log.Errf("Failed to update installation state: %v", err)
-		return t.markPupBroken(s, dogeboxd.BROKEN_REASON_STATE_UPDATE_FAILED, err)
-	}
-
-	// Re-enable if it was enabled before
+	// Explicitly start the container if it was enabled - NixOS autoStart only starts
+	// NEW containers, not containers that were previously stopped
 	if snapshot.Enabled {
-		log.Log("Re-enabling pup after rollback...")
-		if _, err := t.pupManager.UpdatePup(s.ID, dogeboxd.PupEnabled(true)); err != nil {
-			log.Errf("Warning: failed to re-enable pup: %v", err)
+		serviceName := fmt.Sprintf("container@pup-%s.service", s.ID)
+		cmd := exec.Command("sudo", "systemctl", "start", serviceName)
+		log.LogCmd(cmd)
+		if err := cmd.Run(); err != nil {
+			log.Errf("Warning: failed to start container after rollback: %v", err)
+			// Not fatal - container may start via other means
 		}
 	}
 

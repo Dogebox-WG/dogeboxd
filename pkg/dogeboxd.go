@@ -43,7 +43,6 @@ import (
 	_ "embed"
 	"encoding/json"
 	"fmt"
-	"log"
 	"os/exec"
 	"sync"
 	"time"
@@ -130,6 +129,12 @@ func (t Dogeboxd) Run(started, stopped chan bool, stop chan context.Context) err
 
 	go func() {
 		go func() {
+			// Create channels once outside the loop to avoid subscriber leak
+			pupdateChannel := t.Pups.GetUpdateChannel()
+			statsChannel := t.Pups.GetStatsChannel()
+			eventChannel := t.PupUpdateChecker.GetEventChannel()
+			updaterChannel := t.SystemUpdater.GetUpdateChannel()
+
 		mainloop:
 			for {
 			dance:
@@ -159,29 +164,29 @@ func (t Dogeboxd) Run(started, stopped chan bool, stop chan context.Context) err
 					t.jobDispatcher(j)
 
 				// Handle pupdates from PupManager
-				case p, ok := <-t.Pups.GetUpdateChannel():
+				case p, ok := <-pupdateChannel:
 					if !ok {
 						break dance
 					}
 					t.sendChange(Change{"internal", "", "pup", p.State})
 
 				// Handle stats from PupManager
-				case stats, ok := <-t.Pups.GetStatsChannel():
+				case stats, ok := <-statsChannel:
 					if !ok {
 						break dance
 					}
 					t.sendChange(Change{"internal", "", "stats", stats})
 
 				// Handle pup update check events
-				case event, ok := <-t.PupUpdateChecker.GetEventChannel():
+				case event, ok := <-eventChannel:
 					if !ok {
 						break dance
 					}
-					// Event consumed but not sent to frontend
-					_ = event
+					// Send event to frontend so it can refresh its cache
+					t.sendChange(Change{"internal", "", "pup-updates-checked", event})
 
 				// Handle completed jobs from SystemUpdater
-				case j, ok := <-t.SystemUpdater.GetUpdateChannel():
+				case j, ok := <-updaterChannel:
 					if !ok {
 						break dance
 					}
@@ -195,30 +200,9 @@ func (t Dogeboxd) Run(started, stopped chan bool, stop chan context.Context) err
 					switch j.A.(type) {
 					case InstallPup:
 						t.Pups.FastPollPup(j.State.ID)
-						// Trigger an update check for the newly installed pup
+						// Check for updates in background (cache will be ready for next frontend refresh)
 						if j.State != nil {
-							go func(pupID string) {
-								// Small delay to ensure pup state is fully settled
-								time.Sleep(2 * time.Second)
-
-								// Check for updates
-								updateInfo, err := t.PupUpdateChecker.CheckForUpdates(pupID)
-								if err != nil {
-									log.Printf("Failed to check updates for newly installed pup %s: %v", pupID, err)
-									return
-								}
-
-								// Emit event to notify frontend (cache is already saved in CheckForUpdates)
-								t.sendChange(Change{
-									ID:   "pup-updates",
-									Type: "pup-updates-checked",
-									Update: map[string]interface{}{
-										"pupsChecked":     1,
-										"updateAvailable": updateInfo.UpdateAvailable,
-										"pupId":           pupID,
-									},
-								})
-							}(j.State.ID)
+							go t.PupUpdateChecker.CheckForUpdates(j.State.ID)
 						}
 					case EnablePup:
 						t.Pups.FastPollPup(j.State.ID)
@@ -226,13 +210,23 @@ func (t Dogeboxd) Run(started, stopped chan bool, stop chan context.Context) err
 						t.Pups.FastPollPup(j.State.ID)
 					case UpdatePupProviders:
 						t.Pups.FastPollPup(j.State.ID)
+					case UpgradePup:
+						t.Pups.FastPollPup(j.State.ID)
+						// Check for updates at the new version (will overwrite stale cache entry)
+						if j.Err == "" && j.State != nil {
+							go t.PupUpdateChecker.CheckForUpdates(j.State.ID)
+						}
+					case RollbackPupUpgrade:
+						t.Pups.FastPollPup(j.State.ID)
+						// Check for updates at the rolled-back version (will overwrite stale cache entry)
+						if j.Err == "" && j.State != nil {
+							go t.PupUpdateChecker.CheckForUpdates(j.State.ID)
+						}
 					case UninstallPup:
 						t.Pups.FastPollPup(j.State.ID)
-						// Clear update cache for uninstalled pup
 						t.PupUpdateChecker.ClearCacheEntry(j.State.ID)
 					case PurgePup:
 						t.Pups.FastPollPup(j.State.ID)
-						// Clear update cache for purged pup
 						t.PupUpdateChecker.ClearCacheEntry(j.State.ID)
 					}
 
@@ -558,7 +552,8 @@ func (t *Dogeboxd) checkPupUpdates(j Job, c CheckPupUpdates) {
 	log := j.Logger.Step("check-pup-updates")
 
 	// Handle errors and send result (deferred to avoid duplication)
-	defer t.sendFinishedJob("action", j)
+	// Use closure to capture j by reference so modifications are visible
+	defer func() { t.sendFinishedJob("action", j) }()
 
 	if c.PupID == "" {
 		// Check all pups

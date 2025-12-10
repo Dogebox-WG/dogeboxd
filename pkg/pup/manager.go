@@ -155,6 +155,7 @@ func (t PupManager) Run(started, stopped chan bool, stop chan context.Context) e
 					// are changing state (shutting down, starting up)
 					// these should not be recorded in the floatBuffers
 					// but only to rapidly track STATUS change
+					log.Printf("[DEBUG] PupManager: received fast stats for %d service(s)", len(stats))
 					for k, v := range stats {
 						id := k[strings.Index(k, "-")+1 : strings.Index(k, ".")]
 						s, ok := t.stats[id]
@@ -164,6 +165,7 @@ func (t PupManager) Run(started, stopped chan bool, stop chan context.Context) e
 						}
 						// Calculate our status
 						p := t.state[id]
+						oldStatus := s.Status
 						if v.Running && p.Enabled {
 							s.Status = dogeboxd.STATE_RUNNING
 						} else if v.Running && !p.Enabled {
@@ -173,6 +175,23 @@ func (t PupManager) Run(started, stopped chan bool, stop chan context.Context) e
 						} else {
 							s.Status = dogeboxd.STATE_STOPPED
 						}
+						if oldStatus != s.Status {
+							log.Printf("[DEBUG] PupManager: status change for %s: %s → %s (running=%v, enabled=%v, installation=%s)",
+								id, oldStatus, s.Status, v.Running, p.Enabled, p.Installation)
+						} else {
+							log.Printf("[DEBUG] PupManager: status unchanged for %s: %s (running=%v, enabled=%v, installation=%s)",
+								id, s.Status, v.Running, p.Enabled, p.Installation)
+						}
+
+						// Log when pup is stuck in starting state
+						if s.Status == dogeboxd.STATE_STARTING && oldStatus == dogeboxd.STATE_STARTING {
+							// Check if this is a problematic "stuck starting" situation
+							if p.Installation != dogeboxd.STATE_INSTALLING && p.Installation != dogeboxd.STATE_UPGRADING {
+								log.Printf("[WARN] PupManager: pup %s appears stuck in STARTING state (enabled=true, running=false, installation=%s)",
+									id, p.Installation)
+							}
+						}
+
 						t.healthCheckPupState(p)
 					}
 					t.sendStats()
@@ -282,7 +301,10 @@ func (t *PupManager) StopPup(pupID string, nixManager dogeboxd.NixManager, logge
 	return nil
 }
 
-// StartPup starts a stopped pup by enabling it and triggering a rebuild
+// StartPup starts a stopped pup by enabling it and triggering a rebuild.
+// Note: This only updates the in-memory state and triggers a rebuild. For the container
+// to actually start, the caller must ensure the nix pup file is written with Enabled=true
+// before this is called. Prefer using enablePup in SystemUpdater which handles this correctly.
 func (t *PupManager) StartPup(pupID string, nixManager dogeboxd.NixManager, logger dogeboxd.SubLogger) error {
 	// Get current pup state
 	pup, _, err := t.GetPup(pupID)
@@ -291,11 +313,11 @@ func (t *PupManager) StartPup(pupID string, nixManager dogeboxd.NixManager, logg
 	}
 
 	if pup.Enabled {
-		// Already started
+		// Already enabled
 		return nil
 	}
 
-	// Enable the pup
+	// Enable the pup in memory
 	_, err = t.UpdatePup(pupID, dogeboxd.PupEnabled(true))
 	if err != nil {
 		return fmt.Errorf("failed to enable pup: %w", err)
@@ -311,7 +333,7 @@ func (t *PupManager) StartPup(pupID string, nixManager dogeboxd.NixManager, logg
 
 /* Hand out channels to pupdate subscribers */
 func (t PupManager) GetUpdateChannel() chan dogeboxd.Pupdate {
-	ch := make(chan dogeboxd.Pupdate)
+	ch := make(chan dogeboxd.Pupdate, 50)
 	t.mu.Lock()
 	defer t.mu.Unlock()
 	t.updateSubscribers[ch] = true
@@ -320,7 +342,7 @@ func (t PupManager) GetUpdateChannel() chan dogeboxd.Pupdate {
 
 /* Hand out channels to stat subscribers */
 func (t PupManager) GetStatsChannel() chan []dogeboxd.PupStats {
-	ch := make(chan []dogeboxd.PupStats)
+	ch := make(chan []dogeboxd.PupStats, 50)
 	t.mu.Lock()
 	defer t.mu.Unlock()
 	t.statsSubscribers[ch] = true
@@ -409,14 +431,31 @@ func (t PupManager) sendPupdate(p dogeboxd.Pupdate) {
 	t.mu.Lock()
 	defer t.mu.Unlock()
 
+	// Collect channels to remove (closed or full)
+	toRemove := []chan dogeboxd.Pupdate{}
+
 	for ch := range t.updateSubscribers {
-		select {
-		case ch <- p:
-			// sent pupdate to subscriber
-		default:
-			// channel is closed or full, delete it
-			delete(t.updateSubscribers, ch)
-		}
+		// Use recover to catch panics from closed channels
+		func(ch chan dogeboxd.Pupdate) {
+			defer func() {
+				if r := recover(); r != nil {
+					// Channel is closed, mark for removal
+					toRemove = append(toRemove, ch)
+				}
+			}()
+			select {
+			case ch <- p:
+				// sent pupdate to subscriber
+			default:
+				// channel is full, mark for removal
+				toRemove = append(toRemove, ch)
+			}
+		}(ch)
+	}
+
+	// Remove closed/full channels
+	for _, ch := range toRemove {
+		delete(t.updateSubscribers, ch)
 	}
 }
 
@@ -431,14 +470,37 @@ func (t PupManager) sendStats() {
 		stats = append(stats, *v)
 	}
 
+	log.Printf("[DEBUG] PupManager: sendStats() sending stats for %d pup(s) to %d subscriber(s)",
+		len(stats), len(t.statsSubscribers))
+	for _, s := range stats {
+		log.Printf("[DEBUG] PupManager:   - %s: status=%s", s.ID, s.Status)
+	}
+
+	// Collect channels to remove (closed or full)
+	toRemove := []chan []dogeboxd.PupStats{}
+
 	for ch := range t.statsSubscribers {
-		select {
-		case ch <- stats:
-			// sent stats to subscriber
-		default:
-			// channel is closed or full, delete it
-			delete(t.statsSubscribers, ch)
-		}
+		// Use recover to catch panics from closed channels
+		func(ch chan []dogeboxd.PupStats) {
+			defer func() {
+				if r := recover(); r != nil {
+					// Channel is closed, mark for removal
+					toRemove = append(toRemove, ch)
+				}
+			}()
+			select {
+			case ch <- stats:
+				// sent stats to subscriber
+			default:
+				// channel is full, mark for removal
+				toRemove = append(toRemove, ch)
+			}
+		}(ch)
+	}
+
+	// Remove closed/full channels
+	for _, ch := range toRemove {
+		delete(t.statsSubscribers, ch)
 	}
 }
 

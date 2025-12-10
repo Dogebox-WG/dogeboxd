@@ -143,7 +143,13 @@ func (sourceManager *sourceManager) DownloadPup(path, sourceId, pupName, pupVers
 		return dogeboxd.PupManifest{}, err
 	}
 
-	log.Printf("got source pup: %+v", sourcePup)
+	// Log sourcePup without the massive base64 logo
+	logoInfo := "(none)"
+	if len(sourcePup.LogoBase64) > 0 {
+		logoInfo = fmt.Sprintf("(%d bytes)", len(sourcePup.LogoBase64))
+	}
+	log.Printf("got source pup: Name=%s, Version=%s, Logo=%s",
+		sourcePup.Name, sourcePup.Version, logoInfo)
 
 	// Clean up existing directory to avoid file merge issues during upgrades
 	if _, err := os.Stat(path); err == nil {
