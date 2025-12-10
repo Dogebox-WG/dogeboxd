@@ -58,12 +58,14 @@ func (t AdminRouter) Run(started, stopped chan bool, stop chan context.Context) 
 	t.updateProxies()
 	go func() {
 		go func() {
+			// Create channel once outside the loop to avoid subscriber leak
+			pupdateChannel := t.pm.GetUpdateChannel()
 		mainloop:
 			for {
 				select {
 				case <-stop:
 					break mainloop
-				case p, ok := <-t.pm.GetUpdateChannel():
+				case p, ok := <-pupdateChannel:
 					if !ok {
 						break mainloop
 					}

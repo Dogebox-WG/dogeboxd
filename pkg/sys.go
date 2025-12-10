@@ -21,6 +21,10 @@ type SystemUpdater interface {
 	ListSSHKeys() ([]DogeboxStateSSHKey, error)
 	AddBinaryCache(j AddBinaryCache, l SubLogger) error
 	ValidateNix(content string) error
+
+	// Snapshot management for pup rollbacks
+	HasSnapshot(pupID string) bool
+	GetSnapshot(pupID string) (*PupVersionSnapshot, error)
 }
 
 // monitors systemd services and returns stats
@@ -198,7 +202,7 @@ type SourceManager interface {
 	GetSource(name string) (ManifestSource, error)
 	AddSource(location string) (ManifestSource, error)
 	RemoveSource(id string) error
-	DownloadPup(diskPath, sourceId, pupName, pupVersion string) error
+	DownloadPup(diskPath, sourceId, pupName, pupVersion string) (PupManifest, error)
 	GetAllSourceConfigurations() []ManifestSourceConfiguration
 }
 
