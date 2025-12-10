@@ -129,7 +129,7 @@ func (t Dogeboxd) Run(started, stopped chan bool, stop chan context.Context) err
 
 	go func() {
 		go func() {
-			// Create channels once outside the loop to avoid subscriber leak
+			// Create channels once outside the loop
 			pupdateChannel := t.Pups.GetUpdateChannel()
 			statsChannel := t.Pups.GetStatsChannel()
 			eventChannel := t.PupUpdateChecker.GetEventChannel()
@@ -200,7 +200,7 @@ func (t Dogeboxd) Run(started, stopped chan bool, stop chan context.Context) err
 					switch j.A.(type) {
 					case InstallPup:
 						t.Pups.FastPollPup(j.State.ID)
-						// Check for updates in background (cache will be ready for next frontend refresh)
+						// Check for updates at the new version (will overwrite stale cache entry)
 						if j.State != nil {
 							go t.PupUpdateChecker.CheckForUpdates(j.State.ID)
 						}
@@ -552,7 +552,6 @@ func (t *Dogeboxd) checkPupUpdates(j Job, c CheckPupUpdates) {
 	log := j.Logger.Step("check-pup-updates")
 
 	// Handle errors and send result (deferred to avoid duplication)
-	// Use closure to capture j by reference so modifications are visible
 	defer func() { t.sendFinishedJob("action", j) }()
 
 	if c.PupID == "" {

@@ -168,6 +168,7 @@ func (sourceManager *sourceManager) DownloadPup(path, sourceId, pupName, pupVers
 		return dogeboxd.PupManifest{}, err
 	}
 
+	// Validate the manifest
 	manifestPath := filepath.Join(path, "manifest.json")
 	manifestData, err := os.ReadFile(manifestPath)
 	if err != nil {

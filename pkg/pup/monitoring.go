@@ -10,8 +10,7 @@ import (
 // this will rapidly poll for a few seconds and update
 // the frontend with status.
 func (t PupManager) FastPollPup(id string) {
-	serviceName := fmt.Sprintf("container@pup-%s.service", id)
-	t.monitor.GetFastMonChannel() <- serviceName
+	t.monitor.GetFastMonChannel() <- fmt.Sprintf("container@pup-%s.service", id)
 }
 
 /* Set the list of monitored services on the SystemMonitor */
