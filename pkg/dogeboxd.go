@@ -649,7 +649,9 @@ func (t Dogeboxd) sendFinishedJob(changeType string, j Job) {
 	// Update job record as completed/failed for immediate jobs (those that don't go through SystemUpdater)
 	// This ensures jobs like UpdatePupProviders get properly marked as completed
 	// Only call CompleteJob if the job is still active (not already completed by SystemUpdater path)
+	jobWasActive := false
 	if t.JobManager != nil && t.shouldTrackJob(j) && t.JobManager.IsJobActive(j.ID) {
+		jobWasActive = true
 		err := t.JobManager.CompleteJob(j.ID, j.Err)
 		if err == nil {
 			jobRecord, getErr := t.JobManager.GetJob(j.ID)
@@ -659,7 +661,12 @@ func (t Dogeboxd) sendFinishedJob(changeType string, j Job) {
 		}
 	}
 
-	t.sendChange(Change{ID: j.ID, Error: j.Err, Type: changeType, Update: j.Success})
+	// Only send "action" event for jobs that were NOT already completed by JobManager
+	// Jobs completed by SystemUpdater (like upgrade) already send job:completed events
+	// and don't need a redundant "action" event
+	if t.JobManager == nil || !t.shouldTrackJob(j) || jobWasActive {
+		t.sendChange(Change{ID: j.ID, Error: j.Err, Type: changeType, Update: j.Success})
+	}
 }
 
 // shouldTrackJob determines if a job should create a visible job record
