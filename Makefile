@@ -1,6 +1,10 @@
 default: build
 
-.PHONY: clean test
+.PHONY: clean mkbuild build multipassdev dpanel-build dev recovery test dbxdev
+
+DPANEL_DIR ?= ../dpanel
+DPANEL_DIST ?= $(DPANEL_DIR)/dist
+
 clean:
 	rm -rf ./build
 
@@ -27,8 +31,29 @@ build/_dbxroot: clean mkbuild
 multipassdev:
 	go run ./cmd/dogeboxd -v -addr 0.0.0.0 -pups ~/
 
-dev:
-	make && /run/wrappers/bin/dogeboxd -v --addr 0.0.0.0 --danger-dev --data ~/data --nix ~/data/nix --containerlogdir ~/data/containerlogs --port 3000 --uiport 8080 --unix-socket ~/data/dbx-socket $(ARGS)
+dpanel-build:
+	@set -eu; \
+	if command -v npm >/dev/null 2>&1; then \
+		if [ ! -x "$(DPANEL_DIR)/node_modules/.bin/vite" ]; then \
+			npm --prefix "$(DPANEL_DIR)" ci; \
+		fi; \
+		npm --prefix "$(DPANEL_DIR)" run build; \
+	elif command -v nix >/dev/null 2>&1; then \
+		DPANEL_DIR="$(DPANEL_DIR)" nix shell nixpkgs#nodejs_22 --command sh -lc '\
+			cd "$$DPANEL_DIR" && \
+			if [ ! -x node_modules/.bin/vite ]; then npm ci; fi && \
+			npm run build \
+		'; \
+	else \
+		echo "error: missing npm (and nix). Install Node/npm or prebuild $(DPANEL_DIST)" >&2; \
+		exit 127; \
+	fi
+
+dev: build dpanel-build
+	/run/wrappers/bin/dogeboxd -v --addr 0.0.0.0 --danger-dev \
+		--data ~/data --nix ~/data/nix --containerlogdir ~/data/containerlogs \
+		--port 3000 --uiport 8080 --uidir $(DPANEL_DIST) \
+		--unix-socket ~/data/dbx-socket $(ARGS)
 
 recovery:
 	ARGS=--force-recovery make dev
@@ -47,8 +72,6 @@ delete-loop-device:
 
 delete-loop-device-2:
 	sudo losetup -d /dev/loop1 && sudo rm /loop1.img
-
-.PHONY: dbxdev
 
 dbxdev:
 	DEV_DIR=~/data/dev DBX_SOCKET=~/data/dbx-socket DBX_CONTAINER_LOG_DIR=~/data/containerlogs go run ./cmd/dbx dev
