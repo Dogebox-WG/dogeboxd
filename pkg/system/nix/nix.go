@@ -312,10 +312,6 @@ func (nm nixManager) UpdateStorageOverlay(nixPatch dogeboxd.NixPatch, partitionN
 func (nm nixManager) RebuildBoot(log dogeboxd.SubLogger) error {
 	cmdArgs := []string{"_dbxroot", "nix", "rb"}
 
-	if nm.config.DevMode {
-		cmdArgs = append(cmdArgs, "--dev")
-	}
-
 	md := exec.Command("sudo", cmdArgs...)
 	log.LogCmd(md)
 	err := md.Run()
@@ -328,10 +324,6 @@ func (nm nixManager) RebuildBoot(log dogeboxd.SubLogger) error {
 
 func (nm nixManager) Rebuild(log dogeboxd.SubLogger) error {
 	cmdArgs := []string{"_dbxroot", "nix", "rs"}
-
-	if nm.config.DevMode {
-		cmdArgs = append(cmdArgs, "--dev")
-	}
 
 	cmd := exec.Command("sudo", cmdArgs...)
 	log.LogCmd(cmd)

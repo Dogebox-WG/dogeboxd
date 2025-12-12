@@ -133,6 +133,13 @@ func (t SystemUpdater) Run(started, stopped chan bool, stop chan context.Context
 						}
 						t.done <- j
 
+					case dogeboxd.SaveCustomNix:
+						err := t.SaveCustomNix(a.Content, j.Logger.Step("save custom nix"))
+						if err != nil {
+							j.Err = "Failed to save custom configuration"
+						}
+						t.done <- j
+
 					case dogeboxd.AddBinaryCache:
 						err := t.AddBinaryCache(a, j.Logger.Step("Add binary cache"))
 						if err != nil {
@@ -144,6 +151,17 @@ func (t SystemUpdater) Run(started, stopped chan bool, stop chan context.Context
 						err := t.removeBinaryCache(a)
 						if err != nil {
 							j.Err = "Failed to remove binary cache"
+						}
+						t.done <- j
+
+					case dogeboxd.SystemUpdate:
+						logger := j.Logger.Step("system update")
+						logger.Progress(5).Logf("Starting system update to %s", a.Version)
+						if err := DoSystemUpdate(a.Package, a.Version); err != nil {
+							logger.Errf("System update failed: %v", err)
+							j.Err = err.Error()
+						} else {
+							logger.Progress(100).Logf("System update to %s completed", a.Version)
 						}
 						t.done <- j
 
@@ -172,7 +190,7 @@ func (t SystemUpdater) GetUpdateChannel() chan dogeboxd.Job {
 func (t SystemUpdater) markPupBroken(s dogeboxd.PupState, reason string, upstreamError error) error {
 	_, err := t.pupManager.UpdatePup(s.ID, dogeboxd.SetPupBrokenReason(reason), dogeboxd.SetPupInstallation(dogeboxd.STATE_BROKEN))
 	if err != nil {
-		log.Printf("Failed to even mark pup as broken after issue: %w", err)
+		log.Printf("Failed to even mark pup as broken after issue: %v", err)
 		return err
 	}
 
@@ -191,7 +209,7 @@ func (t SystemUpdater) installPup(pupSelection dogeboxd.InstallPup, j dogeboxd.J
 	nixPatch := t.nix.NewPatch(log)
 
 	if _, err := t.pupManager.UpdatePup(s.ID, dogeboxd.SetPupInstallation(dogeboxd.STATE_INSTALLING)); err != nil {
-		log.Errf("Failed to update pup installation state: %w", err)
+		log.Errf("Failed to update pup installation state: %v", err)
 		return t.markPupBroken(s, dogeboxd.BROKEN_REASON_STATE_UPDATE_FAILED, err)
 	}
 
@@ -201,7 +219,7 @@ func (t SystemUpdater) installPup(pupSelection dogeboxd.InstallPup, j dogeboxd.J
 	log.Logf("Downloading pup to %s", pupPath)
 	err := t.sources.DownloadPup(pupPath, pupSelection.SourceId, pupSelection.PupName, pupSelection.PupVersion)
 	if err != nil {
-		log.Errf("Failed to download pup: %w", err)
+		log.Errf("Failed to download pup: %v", err)
 		return t.markPupBroken(s, dogeboxd.BROKEN_REASON_DOWNLOAD_FAILED, err)
 	}
 
@@ -209,7 +227,7 @@ func (t SystemUpdater) installPup(pupSelection dogeboxd.InstallPup, j dogeboxd.J
 	// Read pupPath s.Manifest.Container.Build.NixFile and hash it with sha256
 	nixFile, err := os.ReadFile(filepath.Join(pupPath, s.Manifest.Container.Build.NixFile))
 	if err != nil {
-		log.Errf("Failed to read specified nix file: %w", err)
+		log.Errf("Failed to read specified nix file: %v", err)
 		return t.markPupBroken(s, dogeboxd.BROKEN_REASON_NIX_FILE_MISSING, err)
 	}
 	nixFileSha256 := sha256.Sum256(nixFile)
@@ -229,7 +247,8 @@ func (t SystemUpdater) installPup(pupSelection dogeboxd.InstallPup, j dogeboxd.J
 	log.LogCmd(cmd)
 	err = cmd.Run()
 	if err != nil {
-		log.Errf("Failed to create pup storage: %v. Command output: %s", err)
+		// TODO : Do we need command output here?
+		log.Errf("Failed to create pup storage: %v", err)
 		return t.markPupBroken(s, dogeboxd.BROKEN_REASON_STORAGE_CREATION_FAILED, err)
 	}
 
@@ -243,7 +262,8 @@ func (t SystemUpdater) installPup(pupSelection dogeboxd.InstallPup, j dogeboxd.J
 	log.LogCmd(cmd)
 	err = cmd.Run()
 	if err != nil {
-		log.Errf("Failed to create delegate key in storage: %v. Command output: %s", err)
+		// TODO : Do we need command output here?
+		log.Errf("Failed to create delegate key in storage: %v", err)
 		return t.markPupBroken(s, dogeboxd.BROKEN_REASON_DELEGATE_KEY_WRITE_FAILED, err)
 	}
 
@@ -251,14 +271,22 @@ func (t SystemUpdater) installPup(pupSelection dogeboxd.InstallPup, j dogeboxd.J
 	log.LogCmd(cmd)
 	err = cmd.Run()
 	if err != nil {
-		log.Errf("Failed to create extended delegate key in storage: %v. Command output: %s", err)
+		// TODO : Do we need command output here?
+		log.Errf("Failed to create extended delegate key in storage: %v", err)
 		return t.markPupBroken(s, dogeboxd.BROKEN_REASON_DELEGATE_KEY_WRITE_FAILED, err)
+	}
+
+	// Write initial config to secure storage (includes defaults from manifest)
+	// This ensures config.env exists before the container starts
+	if err := dogeboxd.WritePupConfigToStorage(t.config.DataDir, s.ID, s.Config, log); err != nil {
+		log.Errf("Failed to write initial config to storage: %v", err)
+		return t.markPupBroken(s, dogeboxd.BROKEN_REASON_STORAGE_CREATION_FAILED, err)
 	}
 
 	// Now that we're mostly installed, enable it.
 	newState, err := t.pupManager.UpdatePup(s.ID, dogeboxd.PupEnabled(true))
 	if err != nil {
-		log.Errf("Failed to update pup enabled state: %w", err)
+		log.Errf("Failed to update pup enabled state: %v", err)
 		return t.markPupBroken(s, dogeboxd.BROKEN_REASON_ENABLE_FAILED, err)
 	}
 
@@ -271,12 +299,12 @@ func (t SystemUpdater) installPup(pupSelection dogeboxd.InstallPup, j dogeboxd.J
 	// the frontend will get a much longer "Installing.." state, as opposed
 	// to a much longer "Starting.." state, which might confuse the user.
 	if err := nixPatch.Apply(); err != nil {
-		log.Errf("Failed to apply nix patch: %w", err)
+		log.Errf("Failed to apply nix patch: %v", err)
 		return t.markPupBroken(s, dogeboxd.BROKEN_REASON_NIX_APPLY_FAILED, err)
 	}
 
 	if _, err := t.pupManager.UpdatePup(s.ID, dogeboxd.SetPupInstallation(dogeboxd.STATE_READY)); err != nil {
-		log.Errf("Failed to update pup installation state: %w", err)
+		log.Errf("Failed to update pup installation state: %v", err)
 		return t.markPupBroken(s, dogeboxd.BROKEN_REASON_STATE_UPDATE_FAILED, err)
 	}
 
@@ -292,7 +320,7 @@ func (t SystemUpdater) uninstallPup(j dogeboxd.Job) error {
 	log.Logf("Uninstalling pup %s (%s)", s.Manifest.Meta.Name, s.ID)
 
 	if _, err := t.pupManager.UpdatePup(s.ID, dogeboxd.SetPupInstallation(dogeboxd.STATE_UNINSTALLING)); err != nil {
-		log.Errf("Failed to update pup uninstalling state: %w", err)
+		log.Errf("Failed to update pup uninstalling state: %v", err)
 		return t.markPupBroken(s, dogeboxd.BROKEN_REASON_STATE_UPDATE_FAILED, err)
 	}
 
@@ -300,12 +328,12 @@ func (t SystemUpdater) uninstallPup(j dogeboxd.Job) error {
 	t.nix.UpdateIncludesFile(nixPatch, t.pupManager)
 
 	if err := nixPatch.Apply(); err != nil {
-		log.Errf("Failed to apply nix patch: %w", err)
+		log.Errf("Failed to apply nix patch: %v", err)
 		return t.markPupBroken(s, dogeboxd.BROKEN_REASON_NIX_APPLY_FAILED, err)
 	}
 
 	if _, err := t.pupManager.UpdatePup(s.ID, dogeboxd.SetPupInstallation(dogeboxd.STATE_UNINSTALLED)); err != nil {
-		log.Errf("Failed to update pup installation state: %w", err)
+		log.Errf("Failed to update pup installation state: %v", err)
 		return t.markPupBroken(s, dogeboxd.BROKEN_REASON_STATE_UPDATE_FAILED, err)
 	}
 
@@ -318,11 +346,11 @@ func (t SystemUpdater) purgePup(j dogeboxd.Job) error {
 	// Check if we're in a purgable state before we do anything.
 	if s.Installation != dogeboxd.STATE_UNINSTALLED {
 		log.Errf("Cannot purge pup %s in state %s", s.ID, s.Installation)
-		return fmt.Errorf("Cannot purge pup %s in state %s", s.ID, s.Installation)
+		return fmt.Errorf("cannot purge pup %s in state %s", s.ID, s.Installation)
 	}
 
 	if _, err := t.pupManager.UpdatePup(s.ID, dogeboxd.SetPupInstallation(dogeboxd.STATE_PURGING)); err != nil {
-		log.Errf("Failed to update pup purging state: %w", err)
+		log.Errf("Failed to update pup purging state: %v", err)
 		return t.markPupBroken(s, dogeboxd.BROKEN_REASON_STATE_UPDATE_FAILED, err)
 	}
 
@@ -352,7 +380,7 @@ func (t SystemUpdater) purgePup(j dogeboxd.Job) error {
 	}
 
 	if err := t.pupManager.PurgePup(s.ID); err != nil {
-		log.Errf("Failed to purge pup %s: %w", s.ID, err)
+		log.Errf("Failed to purge pup %s: %v", s.ID, err)
 		// Keep going if we fail.
 	}
 
@@ -366,7 +394,7 @@ func (t SystemUpdater) enablePup(j dogeboxd.Job) error {
 
 	newState, err := t.pupManager.UpdatePup(s.ID, dogeboxd.PupEnabled(true))
 	if err != nil {
-		log.Errf("Failed to update pup enabled state: %w", err)
+		log.Errf("Failed to update pup enabled state: %v", err)
 		return err
 	}
 	log.Log("set pup state to enabled")
@@ -377,7 +405,7 @@ func (t SystemUpdater) enablePup(j dogeboxd.Job) error {
 	t.nix.WritePupFile(nixPatch, newState, dbxState)
 
 	if err := nixPatch.Apply(); err != nil {
-		log.Errf("Failed to apply nix patch: %w", err)
+		log.Errf("Failed to apply nix patch: %v", err)
 		return err
 	}
 
@@ -398,7 +426,7 @@ func (t SystemUpdater) disablePup(j dogeboxd.Job) error {
 	log.LogCmd(cmd)
 
 	if err := cmd.Run(); err != nil {
-		log.Errf("Error executing _dbxroot pup stop:", err)
+		log.Errf("Error executing _dbxroot pup stop: %v", err)
 		return err
 	}
 
@@ -408,7 +436,7 @@ func (t SystemUpdater) disablePup(j dogeboxd.Job) error {
 	t.nix.WritePupFile(nixPatch, newState, dbxState)
 
 	if err := nixPatch.Apply(); err != nil {
-		log.Errf("Failed to apply nix patch: %w", err)
+		log.Errf("Failed to apply nix patch: %v", err)
 		return err
 	}
 

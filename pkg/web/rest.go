@@ -88,8 +88,12 @@ func RESTAPI(
 		"GET /system/ssh/keys":                a.listSSHKeys,
 		"PUT /system/ssh/key":                 a.addSSHKey,
 		"DELETE /system/ssh/key/{id}":         a.removeSSHKey,
+		"GET /system/custom-nix":              a.getCustomNix,
+		"PUT /system/custom-nix":              a.saveCustomNix,
+		"POST /system/custom-nix/validate":    a.validateCustomNix,
 		"POST /system/import-blockchain-data": a.importBlockchainData,
 		"/ws/state/":                          a.getUpdateSocket,
+		"/ws/jobs":                            a.getJobsSocket,
 	}
 
 	// Normal routes are used when we are not in recovery mode.
@@ -107,7 +111,8 @@ func RESTAPI(
 		"PUT /source":                         a.createSource,
 		"GET /sources/store":                  a.getStoreList,
 		"DELETE /source/{id}":                 a.deleteSource,
-		"/ws/log/{PupID}":                     a.getLogSocket,
+		"/ws/log/pup/{PupID}":                 a.getPupLogSocket,
+		"/ws/log/job/{JobID}":                 a.getJobLogSocket,
 		"POST /system/welcome-complete":       a.setWelcomeComplete,
 		"POST /system/install-pup-collection": a.installPupCollection,
 		"GET /missing-deps/{PupID}":           a.getMissingDeps,
@@ -115,6 +120,17 @@ func RESTAPI(
 		"GET /system/binary-caches":        a.getBinaryCaches,
 		"PUT /system/binary-cache":         a.addBinaryCache,
 		"DELETE /system/binary-cache/{id}": a.removeBinaryCache,
+
+		"GET /system/updates": a.checkForUpdates,
+		"POST /system/update": a.commenceUpdate,
+
+		"GET /jobs":                  a.getJobs,
+		"GET /jobs/active":           a.getActiveJobs,
+		"GET /jobs/recent":           a.getRecentJobs,
+		"GET /jobs/stats":            a.getJobStats,
+		"GET /jobs/{jobID}":          a.getJob,
+		"POST /jobs/clear-completed": a.clearCompletedJobs,
+		"POST /jobs/clear-all":       a.clearAllJobs,
 	}
 
 	// We always want to load recovery routes.

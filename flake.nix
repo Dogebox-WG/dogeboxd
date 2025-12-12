@@ -13,7 +13,7 @@
       let
         pkgs = import nixpkgs { inherit system; };
         isLinux = builtins.match ".*-linux$" system != null;
-        dogeboxdVendorHash = "sha256-MM9791hcxhcSwLTm0fy81WOxPfM9bXaiTxrBsieN3uA=";
+        dogeboxdVendorHash = "sha256-zuDrtV/vZ3cvTTwkRg01qK81232TKSVACSi/NnNHYyg=";
       in {
         devShells.default = if isLinux then
           pkgs.mkShell {

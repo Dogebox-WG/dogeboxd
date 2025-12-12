@@ -20,6 +20,7 @@ type SystemUpdater interface {
 	EnableSSH(l SubLogger) error
 	ListSSHKeys() ([]DogeboxStateSSHKey, error)
 	AddBinaryCache(j AddBinaryCache, l SubLogger) error
+	ValidateNix(content string) error
 }
 
 // monitors systemd services and returns stats
@@ -34,11 +35,11 @@ type SystemMonitor interface {
 // for a given systemd service, close channel
 // when done
 type JournalReader interface {
-	GetJournalChan(string) (context.CancelFunc, chan string, error)
+	GetJournalChannel(string) (context.CancelFunc, chan string, error)
 }
 
 type LogTailer interface {
-	GetChan(string) (context.CancelFunc, chan string, error)
+	GetChannel(string) (context.CancelFunc, chan string, error)
 }
 
 // SystemMonitor issues these for monitored PUPs
