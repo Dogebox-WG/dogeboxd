@@ -21,6 +21,28 @@ import (
 	"golang.org/x/mod/semver"
 )
 
+func parseGitHubOwnerRepo(remote string) (string, bool) {
+	// https://github.com/<owner>/<repo>.git
+	if strings.HasPrefix(remote, "https://") || strings.HasPrefix(remote, "http://") {
+		location := strings.TrimSuffix(remote, ".git")
+		parts := strings.Split(location, "github.com/")
+		if len(parts) == 2 && parts[1] != "" {
+			return parts[1], true
+		}
+	}
+
+	// git@github.com:<owner>/<repo>.git
+	if strings.HasPrefix(remote, "git@github.com:") {
+		location := strings.TrimPrefix(remote, "git@github.com:")
+		location = strings.TrimSuffix(location, ".git")
+		if location != "" {
+			return location, true
+		}
+	}
+
+	return "", false
+}
+
 var _ dogeboxd.ManifestSource = &ManifestSourceGit{}
 
 type ManifestSourceGit struct {
@@ -202,9 +224,12 @@ func (r ManifestSourceGit) getSourceDetailsFromWorktree(worktree *git.Worktree) 
 }
 
 type GitPupEntry struct {
-	Manifest   dogeboxd.PupManifest
-	SubPath    string
-	LogoBase64 string
+	Manifest     dogeboxd.PupManifest
+	SubPath      string
+	LogoBase64   string
+	ReleaseNotes string
+	ReleaseDate  *time.Time
+	ReleaseURL   string
 }
 
 func (r ManifestSourceGit) ensureTagValidAndGetPups(tag string) ([]GitPupEntry, error) {
@@ -322,6 +347,8 @@ func (r *ManifestSourceGit) List(ignoreCache bool) (dogeboxd.ManifestSourceList,
 		return dogeboxd.ManifestSourceList{}, err
 	}
 
+	ownerRepo, isGitHub := parseGitHubOwnerRepo(r.config.Location)
+
 	type TagResult struct {
 		version string
 		entries []GitPupEntry
@@ -338,7 +365,11 @@ func (r *ManifestSourceGit) List(ignoreCache bool) (dogeboxd.ManifestSourceList,
 			tagCount++
 			go func(ref, version string) {
 				entries, err := r.ensureTagValidAndGetPups(ref)
-				resultChan <- TagResult{version: version, entries: entries, err: err}
+				resultChan <- TagResult{
+					version: version,
+					entries: entries,
+					err:     err,
+				}
 			}(tagRef, tagName)
 		}
 
@@ -358,6 +389,10 @@ func (r *ManifestSourceGit) List(ignoreCache bool) (dogeboxd.ManifestSourceList,
 		}
 
 		for _, entry := range result.entries {
+			releaseURL := ""
+			if isGitHub && ownerRepo != "" {
+				releaseURL = fmt.Sprintf("https://github.com/%s/releases/tag/%s", ownerRepo, result.version)
+			}
 			validPups = append(validPups, dogeboxd.ManifestSourcePup{
 				Name: entry.Manifest.Meta.Name,
 				Location: map[string]string{
@@ -367,6 +402,7 @@ func (r *ManifestSourceGit) List(ignoreCache bool) (dogeboxd.ManifestSourceList,
 				Version:    entry.Manifest.Meta.Version,
 				Manifest:   entry.Manifest,
 				LogoBase64: entry.LogoBase64,
+				ReleaseURL: releaseURL,
 			})
 		}
 	}

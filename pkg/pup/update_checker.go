@@ -4,6 +4,7 @@ import (
 	"encoding/json"
 	"fmt"
 	"log"
+	"net/http"
 	"os"
 	"path/filepath"
 	"strings"
@@ -13,6 +14,112 @@ import (
 	"github.com/Masterminds/semver/v3"
 	dogeboxd "github.com/dogeorg/dogeboxd/pkg"
 )
+
+type githubReleaseResponse struct {
+	Body        string `json:"body"`
+	HTMLURL     string `json:"html_url"`
+	PublishedAt string `json:"published_at"`
+	CreatedAt   string `json:"created_at"`
+}
+
+type githubReleaseMemoEntry struct {
+	found bool
+	body  string
+	url   string
+	date  *time.Time
+}
+
+func parseGitHubOwnerRepo(remote string) (string, bool) {
+	// https://github.com/<owner>/<repo>.git
+	if strings.HasPrefix(remote, "https://") || strings.HasPrefix(remote, "http://") {
+		location := strings.TrimSuffix(remote, ".git")
+		parts := strings.Split(location, "github.com/")
+		if len(parts) == 2 && parts[1] != "" {
+			return parts[1], true
+		}
+	}
+
+	// git@github.com:<owner>/<repo>.git
+	if strings.HasPrefix(remote, "git@github.com:") {
+		location := strings.TrimPrefix(remote, "git@github.com:")
+		location = strings.TrimSuffix(location, ".git")
+		if location != "" {
+			return location, true
+		}
+	}
+
+	return "", false
+}
+
+func githubTagCandidates(tag string) []string {
+	tag = strings.TrimSpace(tag)
+	if tag == "" {
+		return nil
+	}
+	if strings.HasPrefix(tag, "v") {
+		alt := strings.TrimPrefix(tag, "v")
+		if alt != "" && alt != tag {
+			return []string{tag, alt}
+		}
+		return []string{tag}
+	}
+	return []string{tag, "v" + tag}
+}
+
+func fetchGitHubReleaseByTag(client *http.Client, ownerRepo, tagName, token string) (githubReleaseMemoEntry, error) {
+	// GET https://api.github.com/repos/<owner>/<repo>/releases/tags/<tag>
+	apiURL := fmt.Sprintf("https://api.github.com/repos/%s/releases/tags/%s", ownerRepo, tagName)
+	req, err := http.NewRequest("GET", apiURL, nil)
+	if err != nil {
+		return githubReleaseMemoEntry{}, err
+	}
+	req.Header.Set("Accept", "application/vnd.github+json")
+	req.Header.Set("User-Agent", "dogeboxd")
+	if token != "" {
+		req.Header.Set("Authorization", "Bearer "+token)
+	}
+
+	resp, err := client.Do(req)
+	if err != nil {
+		return githubReleaseMemoEntry{}, err
+	}
+	defer resp.Body.Close()
+
+	if resp.StatusCode == http.StatusNotFound {
+		return githubReleaseMemoEntry{found: false}, nil
+	}
+	if resp.StatusCode < 200 || resp.StatusCode >= 300 {
+		// Keep it lightweight: don't read the whole body for logs unless needed by caller.
+		return githubReleaseMemoEntry{}, fmt.Errorf("github release api returned %s", resp.Status)
+	}
+
+	var out githubReleaseResponse
+	if err := json.NewDecoder(resp.Body).Decode(&out); err != nil {
+		return githubReleaseMemoEntry{}, err
+	}
+
+	body := strings.TrimSpace(out.Body)
+	url := strings.TrimSpace(out.HTMLURL)
+
+	var releasedAt *time.Time
+	if out.PublishedAt != "" {
+		if t, err := time.Parse(time.RFC3339, out.PublishedAt); err == nil {
+			releasedAt = &t
+		}
+	}
+	if releasedAt == nil && out.CreatedAt != "" {
+		if t, err := time.Parse(time.RFC3339, out.CreatedAt); err == nil {
+			releasedAt = &t
+		}
+	}
+
+	return githubReleaseMemoEntry{
+		found: body != "",
+		body:  body,
+		url:   url,
+		date:  releasedAt,
+	}, nil
+}
 
 const (
 	cacheFileName = "pup-update-cache.json"
@@ -215,8 +322,7 @@ func ParseVersionLenient(versionStr string) (*semver.Version, error) {
 	return nil, fmt.Errorf("unable to parse version: %s", versionStr)
 }
 
-// CheckForUpdates checks if a specific pup has updates available
-func (uc *UpdateChecker) CheckForUpdates(pupID string) (dogeboxd.PupUpdateInfo, error) {
+func (uc *UpdateChecker) checkForUpdatesWithMemo(pupID string, memo map[string]githubReleaseMemoEntry) (dogeboxd.PupUpdateInfo, error) {
 	pup, _, err := uc.pupManager.GetPup(pupID)
 	if err != nil {
 		return dogeboxd.PupUpdateInfo{}, fmt.Errorf("failed to get pup: %w", err)
@@ -255,6 +361,7 @@ func (uc *UpdateChecker) CheckForUpdates(pupID string) (dogeboxd.PupUpdateInfo, 
 
 	var availableVersions []dogeboxd.PupVersion
 	var latestVersion *semver.Version
+	tagHintByVersion := map[string]string{}
 
 	// Find all versions of this specific pup from the source
 	for _, sourcePup := range sourceList.Pups {
@@ -271,17 +378,125 @@ func (uc *UpdateChecker) CheckForUpdates(pupID string) (dogeboxd.PupUpdateInfo, 
 
 		// Only include versions newer than current
 		if ver.GreaterThan(currentVer) {
+			if sourcePup.Location != nil {
+				if t, ok := sourcePup.Location["tag"]; ok && strings.TrimSpace(t) != "" {
+					tagHintByVersion[sourcePup.Version] = strings.TrimSpace(t)
+				}
+			}
 			availableVersions = append(availableVersions, dogeboxd.PupVersion{
 				Version:      sourcePup.Version,
-				ReleaseNotes: "",          // Manifests don't have release notes
-				ReleaseDate:  time.Time{}, // No release date in manifests
-				ReleaseURL:   "",
+				ReleaseNotes: sourcePup.ReleaseNotes,
+				ReleaseDate:  sourcePup.ReleaseDate,
+				ReleaseURL:   sourcePup.ReleaseURL,
 			})
 
 			// Track latest version
 			if latestVersion == nil || ver.GreaterThan(latestVersion) {
 				latestVersion = ver
 			}
+		}
+	}
+
+	// Preserve any cached release notes/date/url already stored for this pup/version.
+	uc.cacheMutex.RLock()
+	prev, ok := uc.updateCache[pupID]
+	uc.cacheMutex.RUnlock()
+	if ok && len(prev.AvailableVersions) > 0 && len(availableVersions) > 0 {
+		prevByVersion := map[string]dogeboxd.PupVersion{}
+		for _, v := range prev.AvailableVersions {
+			if strings.TrimSpace(v.Version) != "" {
+				prevByVersion[v.Version] = v
+			}
+		}
+		for i := range availableVersions {
+			if pv, exists := prevByVersion[availableVersions[i].Version]; exists {
+				if strings.TrimSpace(availableVersions[i].ReleaseNotes) == "" && strings.TrimSpace(pv.ReleaseNotes) != "" {
+					availableVersions[i].ReleaseNotes = pv.ReleaseNotes
+				}
+				if availableVersions[i].ReleaseDate == nil && pv.ReleaseDate != nil {
+					availableVersions[i].ReleaseDate = pv.ReleaseDate
+				}
+				if strings.TrimSpace(availableVersions[i].ReleaseURL) == "" && strings.TrimSpace(pv.ReleaseURL) != "" {
+					availableVersions[i].ReleaseURL = pv.ReleaseURL
+				}
+			}
+		}
+	}
+
+	// Fetch GitHub release notes for all newer versions (only if missing).
+	ownerRepo, isGitHub := parseGitHubOwnerRepo(pup.Source.Location)
+	if isGitHub && ownerRepo != "" && len(availableVersions) > 0 {
+		client := &http.Client{Timeout: 4 * time.Second}
+		token := strings.TrimSpace(os.Getenv("GITHUB_TOKEN"))
+		rateLimited := false
+
+		for i := range availableVersions {
+			if strings.TrimSpace(availableVersions[i].ReleaseNotes) != "" {
+				continue
+			}
+			if rateLimited {
+				break
+			}
+
+			tagHint := strings.TrimSpace(tagHintByVersion[availableVersions[i].Version])
+			baseTag := tagHint
+			if baseTag == "" {
+				baseTag = availableVersions[i].Version
+			}
+
+			// Ensure we have a sensible fallback release URL even if API doesn't return html_url
+			if availableVersions[i].ReleaseURL == "" {
+				fallbackTag := baseTag
+				if fallbackTag == "" {
+					fallbackTag = availableVersions[i].Version
+				}
+				availableVersions[i].ReleaseURL = fmt.Sprintf("https://github.com/%s/releases/tag/%s", ownerRepo, fallbackTag)
+			}
+
+			var loaded bool
+			for _, tag := range githubTagCandidates(baseTag) {
+				key := ownerRepo + "|" + tag
+				if entry, ok := memo[key]; ok {
+					if entry.found {
+						availableVersions[i].ReleaseNotes = entry.body
+						if availableVersions[i].ReleaseDate == nil && entry.date != nil {
+							availableVersions[i].ReleaseDate = entry.date
+						}
+						if entry.url != "" {
+							availableVersions[i].ReleaseURL = entry.url
+						}
+						loaded = true
+					}
+					break // whether found or not, don't refetch this tag
+				}
+
+				entry, err := fetchGitHubReleaseByTag(client, ownerRepo, tag, token)
+				if err != nil {
+					// Keep logs minimal: only real errors
+					if strings.Contains(err.Error(), "403") || strings.Contains(err.Error(), "429") {
+						log.Printf("GitHub release fetch rate-limited/forbidden for %s: %v", ownerRepo, err)
+						rateLimited = true
+					} else {
+						log.Printf("GitHub release fetch failed for %s (tag %s): %v", ownerRepo, tag, err)
+					}
+					memo[key] = githubReleaseMemoEntry{found: false}
+					break
+				}
+				memo[key] = entry
+				if entry.found {
+					availableVersions[i].ReleaseNotes = entry.body
+					if availableVersions[i].ReleaseDate == nil && entry.date != nil {
+						availableVersions[i].ReleaseDate = entry.date
+					}
+					if entry.url != "" {
+						availableVersions[i].ReleaseURL = entry.url
+					}
+					loaded = true
+					break
+				}
+			}
+
+			_ = loaded // intentionally unused; kept for readability if we tune behavior later
 		}
 	}
 
@@ -316,6 +531,11 @@ func (uc *UpdateChecker) CheckForUpdates(pupID string) (dogeboxd.PupUpdateInfo, 
 	return updateInfo, nil
 }
 
+// CheckForUpdates checks if a specific pup has updates available
+func (uc *UpdateChecker) CheckForUpdates(pupID string) (dogeboxd.PupUpdateInfo, error) {
+	return uc.checkForUpdatesWithMemo(pupID, map[string]githubReleaseMemoEntry{})
+}
+
 // CheckAllPupUpdates checks for updates on all installed pups
 func (uc *UpdateChecker) CheckAllPupUpdates() map[string]dogeboxd.PupUpdateInfo {
 	return uc.checkAllPupUpdatesInternal(false)
@@ -326,10 +546,11 @@ func (uc *UpdateChecker) CheckAllPupUpdates() map[string]dogeboxd.PupUpdateInfo 
 func (uc *UpdateChecker) checkAllPupUpdatesInternal(isPeriodic bool) map[string]dogeboxd.PupUpdateInfo {
 	allUpdates := make(map[string]dogeboxd.PupUpdateInfo)
 	stateMap := uc.pupManager.GetStateMap()
+	memo := map[string]githubReleaseMemoEntry{}
 
 	updatesAvailable := 0
 	for pupID, pupState := range stateMap {
-		updateInfo, err := uc.CheckForUpdates(pupID)
+		updateInfo, err := uc.checkForUpdatesWithMemo(pupID, memo)
 		if err != nil {
 			log.Printf("Error checking %s: %v", pupState.Manifest.Meta.Name, err)
 			// Continue checking other pups

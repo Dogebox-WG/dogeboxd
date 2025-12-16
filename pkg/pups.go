@@ -354,6 +354,13 @@ func SetPupManifest(manifest PupManifest) func(*PupState, *[]Pupdate) {
 func PupEnabled(b bool) func(*PupState, *[]Pupdate) {
 	return func(p *PupState, pu *[]Pupdate) {
 		p.Enabled = b
+		// Send a pupdate so frontend is notified of enabled state changes
+		// (important for upgrade operations where pup is re-enabled after upgrade)
+		*pu = append(*pu, Pupdate{
+			ID:    p.ID,
+			Event: PUP_CHANGED_INSTALLATION,
+			State: *p,
+		})
 	}
 }
 
@@ -405,11 +412,11 @@ type PupUpdateInfo struct {
 // PupVersion represents a version available for update
 type PupVersion struct {
 	Version          string                `json:"version"`
-	ReleaseNotes     string                `json:"releaseNotes"` // From GitHub release body
-	ReleaseDate      time.Time             `json:"releaseDate"`
-	ReleaseURL       string                `json:"releaseUrl"` // GitHub release URL
-	BreakingChanges  []string              `json:"breakingChanges"`
-	InterfaceChanges []PupInterfaceVersion `json:"interfaceChanges"`
+	ReleaseNotes     string                `json:"releaseNotes,omitempty"`
+	ReleaseDate      *time.Time            `json:"releaseDate,omitempty"`
+	ReleaseURL       string                `json:"releaseUrl,omitempty"`
+	BreakingChanges  []string              `json:"breakingChanges,omitempty"`
+	InterfaceChanges []PupInterfaceVersion `json:"interfaceChanges,omitempty"`
 }
 
 // PupInterfaceVersion tracks changes to provided interfaces
@@ -445,6 +452,8 @@ type PupVersionSnapshot struct {
 type CheckPupUpdates struct {
 	PupID string // Empty string = check all pups
 }
+
+func (CheckPupUpdates) ActionName() string { return "check-updates" }
 
 // PupUpdatesCheckedEvent is emitted when a pup update check completes
 type PupUpdatesCheckedEvent struct {

@@ -715,7 +715,7 @@ func TestDisplayNameUnknownAction(t *testing.T) {
 	job := Job{
 		ID:    "test-job-unknown",
 		Start: time.Now(),
-		A:     "unknown-action-type", // This will trigger the default case
+		A:     UnknownAction{Type: "unknown-action-type"},
 	}
 	record, err := jm.CreateJobRecord(job)
 	require.NoError(t, err)

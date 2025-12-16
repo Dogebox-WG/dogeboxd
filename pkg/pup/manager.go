@@ -137,15 +137,7 @@ func (t PupManager) Run(started, stopped chan bool, stop chan context.Context) e
 
 						// Calculate our status
 						p := t.state[id]
-						if v.Running && p.Enabled {
-							s.Status = dogeboxd.STATE_RUNNING
-						} else if v.Running && !p.Enabled {
-							s.Status = dogeboxd.STATE_STOPPING
-						} else if !v.Running && p.Enabled {
-							s.Status = dogeboxd.STATE_STARTING
-						} else {
-							s.Status = dogeboxd.STATE_STOPPED
-						}
+						s.Status = derivePupStatusFromProc(*p, v)
 						t.healthCheckPupState(p)
 					}
 					t.sendStats()
@@ -164,15 +156,7 @@ func (t PupManager) Run(started, stopped chan bool, stop chan context.Context) e
 						}
 						// Calculate our status
 						p := t.state[id]
-						if v.Running && p.Enabled {
-							s.Status = dogeboxd.STATE_RUNNING
-						} else if v.Running && !p.Enabled {
-							s.Status = dogeboxd.STATE_STOPPING
-						} else if !v.Running && p.Enabled {
-							s.Status = dogeboxd.STATE_STARTING
-						} else {
-							s.Status = dogeboxd.STATE_STOPPED
-						}
+						s.Status = derivePupStatusFromProc(*p, v)
 
 						t.healthCheckPupState(p)
 					}
@@ -186,6 +170,39 @@ func (t PupManager) Run(started, stopped chan bool, stop chan context.Context) e
 		stopped <- true
 	}()
 	return nil
+}
+
+func derivePupStatusFromProc(p dogeboxd.PupState, v dogeboxd.ProcStatus) string {
+	// Prefer systemd’s view when available, because MainPID can be 0 during transitions.
+	switch v.ActiveState {
+	case "activating":
+		// If we're supposed to be enabled, we're starting; otherwise it's likely stabilizing after a stop.
+		if p.Enabled {
+			return dogeboxd.STATE_STARTING
+		}
+		return dogeboxd.STATE_STOPPING
+	case "deactivating":
+		return dogeboxd.STATE_STOPPING
+	case "active":
+		// If systemd says active but the user disabled the pup, show stopping.
+		if !p.Enabled {
+			return dogeboxd.STATE_STOPPING
+		}
+		// If enabled and systemd active, treat as running even if MainPID isn't resolvable.
+		return dogeboxd.STATE_RUNNING
+	}
+
+	// Fallback to process presence + desired enabled state.
+	if v.Running && p.Enabled {
+		return dogeboxd.STATE_RUNNING
+	}
+	if v.Running && !p.Enabled {
+		return dogeboxd.STATE_STOPPING
+	}
+	if !v.Running && p.Enabled {
+		return dogeboxd.STATE_STARTING
+	}
+	return dogeboxd.STATE_STOPPED
 }
 
 func (t *PupManager) SetSourceManager(sourceManager dogeboxd.SourceManager) {

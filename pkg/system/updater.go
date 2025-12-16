@@ -355,7 +355,11 @@ func (t SystemUpdater) uninstallPup(j dogeboxd.Job) error {
 
 	log.Logf("Uninstalling pup %s (%s)", s.Manifest.Meta.Name, s.ID)
 
-	if _, err := t.pupManager.UpdatePup(s.ID, dogeboxd.SetPupInstallation(dogeboxd.STATE_UNINSTALLING)); err != nil {
+	if _, err := t.pupManager.UpdatePup(
+		s.ID,
+		dogeboxd.SetPupInstallation(dogeboxd.STATE_UNINSTALLING),
+		dogeboxd.PupEnabled(false),
+	); err != nil {
 		log.Errf("Failed to update pup uninstalling state: %v", err)
 		return t.markPupBroken(s, dogeboxd.BROKEN_REASON_STATE_UPDATE_FAILED, err)
 	}
@@ -385,7 +389,11 @@ func (t SystemUpdater) purgePup(j dogeboxd.Job) error {
 		return fmt.Errorf("cannot purge pup %s in state %s", s.ID, s.Installation)
 	}
 
-	if _, err := t.pupManager.UpdatePup(s.ID, dogeboxd.SetPupInstallation(dogeboxd.STATE_PURGING)); err != nil {
+	if _, err := t.pupManager.UpdatePup(
+		s.ID,
+		dogeboxd.SetPupInstallation(dogeboxd.STATE_PURGING),
+		dogeboxd.PupEnabled(false),
+	); err != nil {
 		log.Errf("Failed to update pup purging state: %v", err)
 		return t.markPupBroken(s, dogeboxd.BROKEN_REASON_STATE_UPDATE_FAILED, err)
 	}
@@ -426,14 +434,13 @@ func (t SystemUpdater) purgePup(j dogeboxd.Job) error {
 func (t SystemUpdater) enablePup(j dogeboxd.Job) error {
 	s := *j.State
 	log := j.Logger.Step("enable")
-	log.Logf("Enabling pup %s (%s)", s.Manifest.Meta.Name, s.ID)
 
+	// Enabled flag should already be set by dispatcher, but verify/set for idempotency
 	newState, err := t.pupManager.UpdatePup(s.ID, dogeboxd.PupEnabled(true))
 	if err != nil {
 		log.Errf("Failed to update pup enabled state: %v", err)
 		return err
 	}
-	log.Log("set pup state to enabled")
 
 	dbxState := t.sm.Get().Dogebox
 
@@ -451,8 +458,8 @@ func (t SystemUpdater) enablePup(j dogeboxd.Job) error {
 func (t SystemUpdater) disablePup(j dogeboxd.Job) error {
 	s := *j.State
 	log := j.Logger.Step("disable")
-	log.Logf("Disabling pup %s (%s)", s.Manifest.Meta.Name, s.ID)
 
+	// Enabled flag should already be set to false by dispatcher, but verify/set for idempotency
 	newState, err := t.pupManager.UpdatePup(s.ID, dogeboxd.PupEnabled(false))
 	if err != nil {
 		return err

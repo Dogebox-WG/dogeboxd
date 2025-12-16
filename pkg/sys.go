@@ -48,10 +48,15 @@ type LogTailer interface {
 
 // SystemMonitor issues these for monitored PUPs
 type ProcStatus struct {
-	CPUPercent float64
-	MEMPercent float64
-	MEMMb      float64
-	Running    bool
+	CPUPercent float64 `json:"cpuPercent"`
+	MEMPercent float64 `json:"memPercent"`
+	MEMMb      float64 `json:"memMb"`
+	Running    bool    `json:"running"`
+
+	// ActiveState/SubState come from systemd and help disambiguate transient states
+	// like activating/deactivating even when MainPID is not yet (or no longer) present.
+	ActiveState string `json:"activeState,omitempty"`
+	SubState    string `json:"subState,omitempty"`
 }
 
 type DogeboxStateInitialSetup struct {
@@ -207,11 +212,14 @@ type SourceManager interface {
 }
 
 type ManifestSourcePup struct {
-	Name       string
-	Location   map[string]string
-	Version    string
-	Manifest   PupManifest
-	LogoBase64 string
+	Name         string
+	Location     map[string]string
+	Version      string
+	Manifest     PupManifest
+	LogoBase64   string
+	ReleaseNotes string
+	ReleaseDate  *time.Time
+	ReleaseURL   string
 }
 
 type ManifestSourceList struct {

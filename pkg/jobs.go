@@ -3,6 +3,7 @@ package dogeboxd
 import (
 	"encoding/json"
 	"fmt"
+	"reflect"
 	"sync"
 	"time"
 )
@@ -29,7 +30,7 @@ type JobRecord struct {
 	Status         JobStatus  `json:"status"`
 	SummaryMessage string     `json:"summaryMessage"`
 	ErrorMessage   string     `json:"errorMessage"`
-	PupID          string     `json:"pupID,omitempty"` // Associated pup if applicable
+	PupID          string     `json:"pupID"` // Associated pup if applicable
 }
 
 // JobManager handles job persistence and state management
@@ -61,6 +62,9 @@ func (jm *JobManager) CreateJobRecord(j Job) (*JobRecord, error) {
 	displayName := jm.getDisplayName(j)
 	action := jm.getActionName(j)
 
+	// Extract pupID from Action (j.State is not yet set when CreateJobRecord is called)
+	pupID := jm.getPupIDFromAction(j)
+
 	record := &JobRecord{
 		ID:             j.ID,
 		Started:        j.Start,
@@ -71,6 +75,7 @@ func (jm *JobManager) CreateJobRecord(j Job) (*JobRecord, error) {
 		Status:         JobStatusQueued,
 		SummaryMessage: "Job queued",
 		ErrorMessage:   "",
+		PupID:          pupID,
 	}
 
 	if j.State != nil {
@@ -86,6 +91,29 @@ func (jm *JobManager) CreateJobRecord(j Job) (*JobRecord, error) {
 	jm.activeJobs[j.ID] = record
 
 	return record, nil
+}
+
+// UpdateJobPupID updates the pupID of a job record (used for install jobs where pupID isn't known at creation)
+func (jm *JobManager) UpdateJobPupID(jobID string, pupID string) error {
+	jm.jobsMutex.Lock()
+	defer jm.jobsMutex.Unlock()
+
+	record, ok := jm.activeJobs[jobID]
+	if !ok {
+		// Try to load from store
+		recordValue, err := jm.store.Get(jobID)
+		if err != nil {
+			return fmt.Errorf("job not found: %s", jobID)
+		}
+		record = &recordValue
+		jm.activeJobs[jobID] = record
+	}
+
+	// Update the pupID
+	record.PupID = pupID
+
+	// Persist to database
+	return jm.store.Set(record.ID, *record)
 }
 
 // UpdateJobProgress updates job progress from ActionProgress
@@ -113,6 +141,11 @@ func (jm *JobManager) UpdateJobProgress(ap ActionProgress) error {
 	// Update status - move to in_progress as soon as job starts sending updates
 	if record.Status == JobStatusQueued {
 		record.Status = JobStatusInProgress
+	}
+
+	// Update pupID if it was empty (e.g., install jobs) and we now have a PupID
+	if record.PupID == "" && ap.PupID != "" {
+		record.PupID = ap.PupID
 	}
 
 	// Update summary message
@@ -409,36 +442,26 @@ func (jm *JobManager) getDisplayName(j Job) string {
 
 // getActionName returns the action type identifier for the job
 func (jm *JobManager) getActionName(j Job) string {
-	switch j.A.(type) {
-	case InstallPup:
-		return "install"
-	case InstallPups:
-		return "install"
-	case UninstallPup:
-		return "uninstall"
-	case PurgePup:
-		return "purge"
-	case EnablePup:
-		return "enable"
-	case DisablePup:
-		return "disable"
-	case UpgradePup:
-		return "upgrade"
-	case RollbackPupUpgrade:
-		return "rollback"
-	case CheckPupUpdates:
-		return "check-updates"
-	case UpdatePupConfig:
-		return "config"
-	case UpdatePupProviders:
-		return "providers"
-	case ImportBlockchainData:
-		return "import-blockchain"
-	case SystemUpdate:
-		return "system-update"
-	default:
-		return "system"
+	return j.A.ActionName()
+}
+
+// getPupIDFromAction extracts the pupID from various Action types
+func (jm *JobManager) getPupIDFromAction(j Job) string {
+	// Special case: InstallPup doesn't have a pupID yet
+	if _, ok := j.A.(InstallPup); ok {
+		return ""
 	}
+
+	// Use reflection to extract PupID field if it exists
+	v := reflect.ValueOf(j.A)
+	if v.Kind() == reflect.Struct {
+		pupIDField := v.FieldByName("PupID")
+		if pupIDField.IsValid() && pupIDField.Kind() == reflect.String {
+			return pupIDField.String()
+		}
+	}
+
+	return ""
 }
 
 // SyncWithActiveJobs ensures all jobs in the queue are tracked
