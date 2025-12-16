@@ -34,6 +34,7 @@ type BootstrapFlags struct {
 }
 
 type BootstrapResponse struct {
+	TS         int64                        `json:"ts"`
 	Version    *version.DBXVersionInfo      `json:"version"`
 	DevMode    bool                         `json:"devMode"`
 	Assets     map[string]dogeboxd.PupAsset `json:"assets"`
@@ -47,6 +48,7 @@ func (t api) getRawBS() BootstrapResponse {
 	dbxState := t.sm.Get().Dogebox
 
 	return BootstrapResponse{
+		TS:      time.Now().UnixMilli(),
 		Version: version.GetDBXRelease(),
 		DevMode: t.config.DevMode,
 		Assets:  t.pups.GetAssetsMap(),

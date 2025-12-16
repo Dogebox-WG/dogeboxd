@@ -6,7 +6,7 @@ import (
 	"sort"
 	"strings"
 
-	"github.com/Masterminds/semver"
+	"github.com/Masterminds/semver/v3"
 	dogeboxd "github.com/dogeorg/dogeboxd/pkg"
 )
 

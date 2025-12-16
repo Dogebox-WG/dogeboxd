@@ -46,6 +46,8 @@ import (
 	"os/exec"
 	"sync"
 	"time"
+
+	"sync/atomic"
 )
 
 type syncQueue struct {
@@ -56,21 +58,27 @@ type syncQueue struct {
 }
 
 type Dogeboxd struct {
-	Pups           PupManager
-	SystemUpdater  SystemUpdater
-	SystemMonitor  SystemMonitor
-	JournalReader  JournalReader
-	NetworkManager NetworkManager
-	sm             StateManager
-	sources        SourceManager
-	nix            NixManager
-	logtailer      LogTailer
-	queue          *syncQueue
-	jobs           chan Job
-	Changes        chan Change
-	JobManager     *JobManager
-	config         *ServerConfig
+	Pups             PupManager
+	SystemUpdater    SystemUpdater
+	SystemMonitor    SystemMonitor
+	JournalReader    JournalReader
+	NetworkManager   NetworkManager
+	PupUpdateChecker PupUpdateChecker
+	sm               StateManager
+	sources          SourceManager
+	nix              NixManager
+	logtailer        LogTailer
+	queue            *syncQueue
+	jobs             chan Job
+	Changes          chan Change
+	JobManager       *JobManager
+	config           *ServerConfig
 }
+
+// Global sequence counter for websocket Changes.
+// We use a process-wide counter (rather than a Dogeboxd field) so that sequence ordering
+// remains stable even when Dogeboxd methods use value receivers (copies).
+var globalChangeSeq uint64
 
 func NewDogeboxd(
 	stateManager StateManager,
@@ -82,7 +90,7 @@ func NewDogeboxd(
 	sourceManager SourceManager,
 	nixManager NixManager,
 	logtailer LogTailer,
-	jobManager *JobManager,
+	pupUpdateChecker PupUpdateChecker,
 	config *ServerConfig,
 ) Dogeboxd {
 	q := syncQueue{
@@ -91,20 +99,20 @@ func NewDogeboxd(
 		jobInProgress: sync.Mutex{},
 	}
 	s := Dogeboxd{
-		Pups:           pups,
-		SystemUpdater:  updater,
-		SystemMonitor:  monitor,
-		JournalReader:  journal,
-		NetworkManager: networkManager,
-		sm:             stateManager,
-		sources:        sourceManager,
-		nix:            nixManager,
-		logtailer:      logtailer,
-		queue:          &q,
-		jobs:           make(chan Job, 256),
-		Changes:        make(chan Change, 256),
-		JobManager:     jobManager,
-		config:         config,
+		Pups:             pups,
+		SystemUpdater:    updater,
+		SystemMonitor:    monitor,
+		JournalReader:    journal,
+		NetworkManager:   networkManager,
+		PupUpdateChecker: pupUpdateChecker,
+		sm:               stateManager,
+		sources:          sourceManager,
+		nix:              nixManager,
+		logtailer:        logtailer,
+		queue:            &q,
+		jobs:             make(chan Job, 256),
+		Changes:          make(chan Change, 256),
+		config:           config,
 	}
 
 	return s
@@ -122,8 +130,18 @@ func (t *Dogeboxd) SetJobManager(jm *JobManager) {
 // handles messages from subsystems ie: SystemUpdater,
 // SystemMonitor etc.
 func (t Dogeboxd) Run(started, stopped chan bool, stop chan context.Context) error {
+	// Start periodic pup update checking in the background
+	updateCheckerStop := make(chan bool)
+	t.PupUpdateChecker.StartPeriodicCheck(updateCheckerStop)
+
 	go func() {
 		go func() {
+			// Create channels once outside the loop
+			pupdateChannel := t.Pups.GetUpdateChannel()
+			statsChannel := t.Pups.GetStatsChannel()
+			eventChannel := t.PupUpdateChecker.GetEventChannel()
+			updaterChannel := t.SystemUpdater.GetUpdateChannel()
+
 		mainloop:
 			for {
 			dance:
@@ -131,6 +149,8 @@ func (t Dogeboxd) Run(started, stopped chan bool, stop chan context.Context) err
 
 				// Handle shutdown
 				case <-stop:
+					// Stop the update checker
+					updateCheckerStop <- true
 					break mainloop
 
 				// Hand incoming jobs to the Job Dispatcher
@@ -151,21 +171,34 @@ func (t Dogeboxd) Run(started, stopped chan bool, stop chan context.Context) err
 					t.jobDispatcher(j)
 
 				// Handle pupdates from PupManager
-				case p, ok := <-t.Pups.GetUpdateChannel():
+				case p, ok := <-pupdateChannel:
 					if !ok {
 						break dance
 					}
-					t.sendChange(Change{"internal", "", "pup", p.State})
+					// Don't broadcast a purged pup as a normal pup state update, otherwise clients may resurrect it in their local model.
+					if p.Event == PUP_PURGED {
+						t.sendChange(Change{ID: "internal", Type: "pup_purged", Update: map[string]string{"pupId": p.State.ID}})
+					} else {
+						t.sendChange(Change{ID: "internal", Type: "pup", Update: p.State})
+					}
 
 				// Handle stats from PupManager
-				case stats, ok := <-t.Pups.GetStatsChannel():
+				case stats, ok := <-statsChannel:
 					if !ok {
 						break dance
 					}
-					t.sendChange(Change{"internal", "", "stats", stats})
+					t.sendChange(Change{ID: "internal", Type: "stats", Update: stats})
+
+				// Handle pup update check events
+				case event, ok := <-eventChannel:
+					if !ok {
+						break dance
+					}
+					// Send event to frontend so it can refresh its cache
+					t.sendChange(Change{ID: "internal", Type: "pup-updates-checked", Update: event})
 
 				// Handle completed jobs from SystemUpdater
-				case j, ok := <-t.SystemUpdater.GetUpdateChannel():
+				case j, ok := <-updaterChannel:
 					if !ok {
 						break dance
 					}
@@ -179,16 +212,34 @@ func (t Dogeboxd) Run(started, stopped chan bool, stop chan context.Context) err
 					switch j.A.(type) {
 					case InstallPup:
 						t.Pups.FastPollPup(j.State.ID)
+						// Check for updates at the new version (will overwrite stale cache entry)
+						if j.State != nil {
+							go t.PupUpdateChecker.CheckForUpdates(j.State.ID)
+						}
 					case EnablePup:
 						t.Pups.FastPollPup(j.State.ID)
 					case DisablePup:
 						t.Pups.FastPollPup(j.State.ID)
 					case UpdatePupProviders:
 						t.Pups.FastPollPup(j.State.ID)
+					case UpgradePup:
+						t.Pups.FastPollPup(j.State.ID)
+						// Check for updates at the new version (will overwrite stale cache entry)
+						if j.Err == "" && j.State != nil {
+							go t.PupUpdateChecker.CheckForUpdates(j.State.ID)
+						}
+					case RollbackPupUpgrade:
+						t.Pups.FastPollPup(j.State.ID)
+						// Check for updates at the rolled-back version (will overwrite stale cache entry)
+						if j.Err == "" && j.State != nil {
+							go t.PupUpdateChecker.CheckForUpdates(j.State.ID)
+						}
 					case UninstallPup:
 						t.Pups.FastPollPup(j.State.ID)
+						t.PupUpdateChecker.ClearCacheEntry(j.State.ID)
 					case PurgePup:
 						t.Pups.FastPollPup(j.State.ID)
+						t.PupUpdateChecker.ClearCacheEntry(j.State.ID)
 					}
 
 					// TODO: explain why we I this
@@ -303,8 +354,20 @@ func (t Dogeboxd) jobDispatcher(j Job) {
 	case PurgePup:
 		t.sendSystemJobWithPupDetails(j, a.PupID)
 	case EnablePup:
+		// Flip Enabled=true immediately (before job executes) so frontend refreshes mid-job show intended state
+		if _, err := t.Pups.UpdatePup(a.PupID, PupEnabled(true)); err != nil {
+			j.Err = fmt.Sprintf("Failed to set enabled=true: %v", err)
+			t.sendFinishedJob("action", j)
+			return
+		}
 		t.sendSystemJobWithPupDetails(j, a.PupID)
 	case DisablePup:
+		// Flip Enabled=false immediately (before job executes) so frontend refreshes mid-job show intended state
+		if _, err := t.Pups.UpdatePup(a.PupID, PupEnabled(false)); err != nil {
+			j.Err = fmt.Sprintf("Failed to set enabled=false: %v", err)
+			t.sendFinishedJob("action", j)
+			return
+		}
 		t.sendSystemJobWithPupDetails(j, a.PupID)
 
 	// Dogebox actions
@@ -316,6 +379,16 @@ func (t Dogeboxd) jobDispatcher(j Job) {
 
 	case UpdatePupHooks:
 		t.updatePupHooks(j, a)
+
+	// Pup Update actions
+	case CheckPupUpdates:
+		t.checkPupUpdates(j, a)
+
+	case UpgradePup:
+		t.sendSystemJobWithPupDetails(j, a.PupID)
+
+	case RollbackPupUpgrade:
+		t.sendSystemJobWithPupDetails(j, a.PupID)
 
 	case ImportBlockchainData:
 		t.enqueue(j)
@@ -383,13 +456,6 @@ func (t *Dogeboxd) createPupFromManifest(j Job, pupName, pupVersion, sourceId st
 
 	// send the job off to the SystemUpdater to install
 	t.sendSystemJobWithPupDetails(j, pupID)
-}
-
-// Handle batch installation of multiple pups
-func (t *Dogeboxd) installPups(j Job, pups InstallPups) {
-	for _, pup := range pups {
-		t.createPupFromManifest(j, pup.PupName, pup.PupVersion, pup.SourceId, pup.Options)
-	}
 }
 
 // Handle an UpdatePupConfig action
@@ -505,8 +571,94 @@ func (t *Dogeboxd) updatePupHooks(j Job, u UpdatePupHooks) {
 	t.sendFinishedJob("action", j)
 }
 
+// Handle a CheckPupUpdates action
+func (t *Dogeboxd) checkPupUpdates(j Job, c CheckPupUpdates) {
+	log := j.Logger.Step("check-pup-updates")
+
+	// Handle errors and send result (deferred to avoid duplication)
+	defer func() { t.sendFinishedJob("action", j) }()
+
+	if c.PupID == "" {
+		// Check all pups
+		log.Logf("Starting update check for all installed pups")
+		allPups := t.Pups.GetStateMap()
+		pupCount := len(allPups)
+		log.Logf("Found %d installed pups to check", pupCount)
+
+		if pupCount == 0 {
+			log.Logf("No pups installed to check")
+			j.Success = map[string]interface{}{
+				"message":      "No pups installed",
+				"pupsChecked":  0,
+				"updatesFound": 0,
+				"updateInfo":   map[string]interface{}{},
+			}
+			return
+		}
+
+		results := t.PupUpdateChecker.CheckAllPupUpdates()
+
+		// Check if any pups were successfully checked
+		if len(results) == 0 {
+			log.Errf("Failed to check any of %d installed pup(s)", pupCount)
+			j.Err = fmt.Sprintf("Failed to check any of %d installed pup(s)", pupCount)
+			return
+		}
+
+		updatesFound := 0
+		for _, info := range results {
+			if info.UpdateAvailable {
+				updatesFound++
+			}
+		}
+
+		failedCount := pupCount - len(results)
+		if failedCount > 0 {
+			log.Logf("Update check complete: %d pup(s) with updates available out of %d checked (%d failed)",
+				updatesFound, len(results), failedCount)
+		} else {
+			log.Logf("Update check complete: %d pup(s) with updates available out of %d checked",
+				updatesFound, len(results))
+		}
+
+		j.Success = map[string]interface{}{
+			"message":      "Update check completed",
+			"pupsChecked":  len(results),
+			"pupsFailed":   failedCount,
+			"updatesFound": updatesFound,
+			"updateInfo":   results,
+		}
+	} else {
+		// Check specific pup
+		log.Logf("Starting update check for pup: %s", c.PupID)
+
+		info, err := t.PupUpdateChecker.CheckForUpdates(c.PupID)
+		if err != nil {
+			log.Errf("Failed to check updates for pup %s: %v", c.PupID, err)
+			j.Err = fmt.Sprintf("Update check failed: %v", err)
+			return
+		}
+
+		if info.UpdateAvailable {
+			log.Logf("Update available for %s: %s → %s", c.PupID, info.CurrentVersion, info.LatestVersion)
+		} else {
+			log.Logf("No updates available for %s (current: %s)", c.PupID, info.CurrentVersion)
+		}
+
+		j.Success = map[string]interface{}{
+			"message":    "Update check completed",
+			"pupId":      c.PupID,
+			"updateInfo": info,
+		}
+	}
+}
+
 // send changes without blocking if the channel is full
 func (t Dogeboxd) sendChange(c Change) {
+	// Attach ordering metadata for client-side staleness protection.
+	c.Seq = atomic.AddUint64(&globalChangeSeq, 1)
+	c.TS = time.Now().UnixMilli()
+
 	timer := time.After(200 * time.Millisecond)
 	select {
 	case t.Changes <- c:
@@ -524,7 +676,9 @@ func (t Dogeboxd) sendFinishedJob(changeType string, j Job) {
 	// Update job record as completed/failed for immediate jobs (those that don't go through SystemUpdater)
 	// This ensures jobs like UpdatePupProviders get properly marked as completed
 	// Only call CompleteJob if the job is still active (not already completed by SystemUpdater path)
+	jobWasActive := false
 	if t.JobManager != nil && t.shouldTrackJob(j) && t.JobManager.IsJobActive(j.ID) {
+		jobWasActive = true
 		err := t.JobManager.CompleteJob(j.ID, j.Err)
 		if err == nil {
 			jobRecord, getErr := t.JobManager.GetJob(j.ID)
@@ -534,7 +688,12 @@ func (t Dogeboxd) sendFinishedJob(changeType string, j Job) {
 		}
 	}
 
-	t.sendChange(Change{ID: j.ID, Error: j.Err, Type: changeType, Update: j.Success})
+	// Only send "action" event for jobs that were NOT already completed by JobManager
+	// Jobs completed by SystemUpdater (like upgrade) already send job:completed events
+	// and don't need a redundant "action" event
+	if t.JobManager == nil || !t.shouldTrackJob(j) || jobWasActive {
+		t.sendChange(Change{ID: j.ID, Error: j.Err, Type: changeType, Update: j.Success})
+	}
 }
 
 // shouldTrackJob determines if a job should create a visible job record
@@ -579,6 +738,12 @@ func (t Dogeboxd) sendSystemJobWithPupDetails(j Job, PupID string) {
 
 	j.State = &p
 	j.Logger.PupID = PupID
+
+	// Update the job record with the pupID (important for install jobs where pupID wasn't known at creation)
+	if err := t.JobManager.UpdateJobPupID(j.ID, PupID); err != nil {
+		// Log but don't fail - this is a non-critical update
+		fmt.Printf("Warning: failed to update job record pupID: %v\n", err)
+	}
 
 	// Send job to the system updater for handling
 	t.enqueue(j)

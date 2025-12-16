@@ -8,6 +8,13 @@ import (
 	_ "github.com/mattn/go-sqlite3"
 )
 
+// UnknownAction is a test-only action type for testing unknown action handling
+type UnknownAction struct {
+	Type string
+}
+
+func (UnknownAction) ActionName() string { return "unknown" }
+
 // setupTestJobManager creates a JobManager with a test database
 func setupTestJobManager() (*JobManager, error) {
 	// Create a temporary database file for testing

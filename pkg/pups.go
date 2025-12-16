@@ -6,11 +6,13 @@ import (
 	"encoding/json"
 	"errors"
 	"fmt"
+	"time"
 )
 
 // Pup states
 const (
 	STATE_INSTALLING   string = "installing"
+	STATE_UPGRADING    string = "upgrading"
 	STATE_READY        string = "ready"
 	STATE_UNREADY      string = "unready"
 	STATE_UNINSTALLING string = "uninstalling"
@@ -85,6 +87,9 @@ type PupState struct {
 
 	IsDevModeEnabled bool     `json:"isDevModeEnabled"`
 	DevModeServices  []string `json:"devModeServices"`
+
+	// Update management
+	SkippedVersion string `json:"skippedVersion,omitempty"` // Version up to which updates are skipped
 }
 
 // Represents a Web UI exposed port from the manifest
@@ -256,11 +261,24 @@ type PupManager interface {
 	FastPollPup(pupId string)
 
 	GetPupSpecificEnvironmentVariablesForContainer(pupID string) map[string]string
-}
 
-/*****************************************************************************/
-/*                Varadic Update Funcs for PupManager.UpdatePup:             */
-/*****************************************************************************/
+	// StopPup stops a running pup by disabling it and triggering a rebuild
+	StopPup(pupID string, nixManager NixManager, logger SubLogger) error
+
+	// StartPup starts a stopped pup by enabling it and triggering a rebuild
+	StartPup(pupID string, nixManager NixManager, logger SubLogger) error
+
+	// Snapshot management
+	CreateSnapshot(pupState PupState) error
+	GetSnapshot(pupID string) (*PupVersionSnapshot, error)
+	HasSnapshot(pupID string) bool
+	DeleteSnapshot(pupID string) error
+	ListSnapshots() ([]string, error)
+	CleanOldSnapshots(maxAge time.Duration) (int, error)
+
+	// ClearCacheEntry removes a specific pup from the update cache
+	ClearCacheEntry(pupID string)
+}
 
 func SetPupInstallation(state string) func(*PupState, *[]Pupdate) {
 	return func(p *PupState, pu *[]Pupdate) {
@@ -313,9 +331,36 @@ func SetPupProviders(newProviders map[string]string) func(*PupState, *[]Pupdate)
 	}
 }
 
+func SetPupVersion(version string) func(*PupState, *[]Pupdate) {
+	return func(p *PupState, pu *[]Pupdate) {
+		p.Version = version
+	}
+}
+
+func SetPupSkippedVersion(version string) func(*PupState, *[]Pupdate) {
+	return func(p *PupState, pu *[]Pupdate) {
+		p.SkippedVersion = version
+	}
+}
+
+func SetPupManifest(manifest PupManifest) func(*PupState, *[]Pupdate) {
+	return func(p *PupState, pu *[]Pupdate) {
+		p.Manifest = manifest
+		// Recalculate if config needs values based on new manifest
+		p.NeedsConf = ManifestConfigNeedsValues(p.Manifest.Config, p.Config)
+	}
+}
+
 func PupEnabled(b bool) func(*PupState, *[]Pupdate) {
 	return func(p *PupState, pu *[]Pupdate) {
 		p.Enabled = b
+		// Send a pupdate so frontend is notified of enabled state changes
+		// (important for upgrade operations where pup is re-enabled after upgrade)
+		*pu = append(*pu, Pupdate{
+			ID:    p.ID,
+			Event: PUP_CHANGED_INSTALLATION,
+			State: *p,
+		})
 	}
 }
 
@@ -346,4 +391,101 @@ func newID(l int) (string, error) {
 		return ID, err
 	}
 	return fmt.Sprintf("%x", b), nil
+}
+
+// ===========================================
+// =============== Pup Updates ===============
+// ===========================================
+
+/* Pup update types
+ */
+// PupUpdateInfo tracks available updates for a pup
+type PupUpdateInfo struct {
+	PupID             string       `json:"pupId"`
+	CurrentVersion    string       `json:"currentVersion"`
+	LatestVersion     string       `json:"latestVersion"`
+	AvailableVersions []PupVersion `json:"availableVersions"`
+	UpdateAvailable   bool         `json:"updateAvailable"`
+	LastChecked       time.Time    `json:"lastChecked"`
+}
+
+// PupVersion represents a version available for update
+type PupVersion struct {
+	Version          string                `json:"version"`
+	ReleaseNotes     string                `json:"releaseNotes,omitempty"`
+	ReleaseDate      *time.Time            `json:"releaseDate,omitempty"`
+	ReleaseURL       string                `json:"releaseUrl,omitempty"`
+	BreakingChanges  []string              `json:"breakingChanges,omitempty"`
+	InterfaceChanges []PupInterfaceVersion `json:"interfaceChanges,omitempty"`
+}
+
+// PupInterfaceVersion tracks changes to provided interfaces
+type PupInterfaceVersion struct {
+	InterfaceName string   `json:"interfaceName"`
+	OldVersion    string   `json:"oldVersion"`
+	NewVersion    string   `json:"newVersion"`
+	ChangeType    string   `json:"changeType"`   // "major", "minor", "patch"
+	AffectedPups  []string `json:"affectedPups"` // PupIDs that depend on this interface
+}
+
+// PupUpdatePreviousVersion tracks update history for rollback
+type PupUpdatePreviousVersion struct {
+	PupID           string              `json:"pupId"`
+	PreviousVersion *PupVersionSnapshot `json:"previousVersion"` // Only keep last version
+}
+
+// PupVersionSnapshot stores data needed for rollback
+// Note: User data in storage directory is NOT snapshotted - only state/config
+type PupVersionSnapshot struct {
+	Version        string            `json:"version"`
+	Manifest       PupManifest       `json:"manifest"`
+	Config         map[string]string `json:"config"`
+	Providers      map[string]string `json:"providers"`
+	Enabled        bool              `json:"enabled"`
+	SnapshotDate   time.Time         `json:"snapshotDate"`
+	SourceID       string            `json:"sourceId"`
+	SourceLocation string            `json:"sourceLocation"` // For re-downloading
+}
+
+/* Pup update actions
+ */
+type CheckPupUpdates struct {
+	PupID string // Empty string = check all pups
+}
+
+func (CheckPupUpdates) ActionName() string { return "check-updates" }
+
+// PupUpdatesCheckedEvent is emitted when a pup update check completes
+type PupUpdatesCheckedEvent struct {
+	PupsChecked      int  `json:"pupsChecked"`
+	UpdatesAvailable int  `json:"updatesAvailable"`
+	IsPeriodicCheck  bool `json:"isPeriodicCheck"`
+}
+
+/* The PupUpdateChecker is used to check for pup updates
+ */
+type PupUpdateChecker interface {
+	// CheckForUpdates checks for updates for a specific pup
+	CheckForUpdates(pupID string) (PupUpdateInfo, error)
+
+	// CheckAllPupUpdates checks for updates for all installed pups
+	CheckAllPupUpdates() map[string]PupUpdateInfo
+
+	// GetCachedUpdateInfo retrieves update information from the cache
+	GetCachedUpdateInfo(pupID string) (PupUpdateInfo, bool)
+
+	// GetAllCachedUpdates retrieves all update information from the cache
+	GetAllCachedUpdates() map[string]PupUpdateInfo
+
+	// ClearCacheEntry removes a specific pup from the update cache
+	ClearCacheEntry(pupID string)
+
+	// StartPeriodicCheck starts a background goroutine that checks for updates periodically
+	StartPeriodicCheck(stop chan bool)
+
+	// GetEventChannel returns the channel for update check completion events
+	GetEventChannel() <-chan PupUpdatesCheckedEvent
+
+	// DetectInterfaceChanges compares interfaces between two manifests and returns changes
+	DetectInterfaceChanges(oldManifest, newManifest PupManifest) []PupInterfaceVersion
 }

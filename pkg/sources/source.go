@@ -131,40 +131,65 @@ func (sourceManager *sourceManager) GetSource(id string) (dogeboxd.ManifestSourc
 	return nil, fmt.Errorf("no source found with id %s", id)
 }
 
-func (sourceManager *sourceManager) DownloadPup(path, sourceId, pupName, pupVersion string) error {
+// DownloadPup downloads a pup and returns the manifest
+func (sourceManager *sourceManager) DownloadPup(path, sourceId, pupName, pupVersion string) (dogeboxd.PupManifest, error) {
 	r, err := sourceManager.GetSource(sourceId)
 	if err != nil {
-		return err
+		return dogeboxd.PupManifest{}, err
 	}
 
 	sourcePup, err := sourceManager.GetSourcePup(sourceId, pupName, pupVersion)
 	if err != nil {
-		return err
+		return dogeboxd.PupManifest{}, err
 	}
 
-	log.Printf("got source pup: %+v", sourcePup)
+	// Log sourcePup without the massive base64 logo
+	logoInfo := "(none)"
+	if len(sourcePup.LogoBase64) > 0 {
+		logoInfo = fmt.Sprintf("(%d bytes)", len(sourcePup.LogoBase64))
+	}
+	log.Printf("got source pup: Name=%s, Version=%s, Logo=%s",
+		sourcePup.Name, sourcePup.Version, logoInfo)
+
+	// Clean up existing directory to avoid file merge issues during upgrades
+	if _, err := os.Stat(path); err == nil {
+		log.Printf("Cleaning existing pup directory before download: %s", path)
+		if err := os.RemoveAll(path); err != nil {
+			return dogeboxd.PupManifest{}, fmt.Errorf("failed to clean existing pup directory: %w", err)
+		}
+	}
+
+	// Ensure parent directory exists
+	if err := os.MkdirAll(filepath.Dir(path), 0755); err != nil {
+		return dogeboxd.PupManifest{}, fmt.Errorf("failed to create parent directory: %w", err)
+	}
 
 	if err := r.Download(path, sourcePup.Location); err != nil {
-		return err
+		return dogeboxd.PupManifest{}, err
 	}
 
+	// Validate the manifest
 	manifestPath := filepath.Join(path, "manifest.json")
 	manifestData, err := os.ReadFile(manifestPath)
 	if err != nil {
-		return fmt.Errorf("failed to read manifest file: %w", err)
+		return dogeboxd.PupManifest{}, fmt.Errorf("failed to read manifest file: %w", err)
 	}
 
 	var manifest dogeboxd.PupManifest
 	err = json.Unmarshal(manifestData, &manifest)
 	if err != nil {
-		return fmt.Errorf("failed to parse manifest file: %w", err)
+		return dogeboxd.PupManifest{}, fmt.Errorf("failed to parse manifest file: %w", err)
 	}
 
 	if err := manifest.Validate(); err != nil {
-		return fmt.Errorf("manifest validation failed: %w", err)
+		return dogeboxd.PupManifest{}, fmt.Errorf("manifest validation failed: %w", err)
 	}
 
-	return sourceManager.validatePupFiles(path)
+	if err := sourceManager.validatePupFiles(path); err != nil {
+		return dogeboxd.PupManifest{}, err
+	}
+
+	return manifest, nil
 }
 
 func (sourceManager *sourceManager) validatePupFiles(path string) error {

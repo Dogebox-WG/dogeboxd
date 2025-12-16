@@ -62,7 +62,12 @@ func (t server) Start() {
 	//
 
 	for k, p := range pups.GetStateMap() {
-		fmt.Printf("pups %s:\n %+v\n", k, p)
+		logoInfo := "(none)"
+		if len(p.LogoBase64) > 0 {
+			logoInfo = fmt.Sprintf("(%d bytes)", len(p.LogoBase64))
+		}
+		fmt.Printf("pup %s: Name=%s, Version=%s, Installation=%s, Logo=%s\n",
+			k, p.Manifest.Meta.Name, p.Version, p.Installation, logoInfo)
 	}
 
 	// Check if we have pending reflector data to submit.
@@ -73,14 +78,15 @@ func (t server) Start() {
 	/* ----------------------------------------------------------------------- */
 	// Set up Dogeboxd, the beating heart of the beast
 
-	dbx := dogeboxd.NewDogeboxd(t.sm, pups, systemUpdater, systemMonitor, journalReader, networkManager, sourceManager, nixManager, logtailer, nil, &t.config)
+	// Create Dogeboxd instance
+	dbx := dogeboxd.NewDogeboxd(t.sm, pups, systemUpdater, systemMonitor, journalReader, networkManager, sourceManager, nixManager, logtailer, pups, &t.config)
 
 	// Create JobManager
 	jobManager := dogeboxd.NewJobManager(t.store, &dbx)
 	dbx.SetJobManager(jobManager)
 
 	// Clean up any orphaned jobs from previous runs (stuck in queued/in_progress)
-	// Jobs older than 30 minute are considered orphaned on startup
+	// Jobs older than 30 minutes are considered orphaned on startup
 	if cleared, err := jobManager.ClearOrphanedJobs(30 * time.Minute); err == nil && cleared > 0 {
 		log.Printf("Cleaned up %d orphaned jobs from previous run", cleared)
 	}
