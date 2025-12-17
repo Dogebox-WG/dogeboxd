@@ -20,8 +20,7 @@ type SystemUpdater interface {
 	EnableSSH(l SubLogger) error
 	ListSSHKeys() ([]DogeboxStateSSHKey, error)
 	AddBinaryCache(j AddBinaryCache, l SubLogger) error
-	TimezoneUpdate(dbxState DogeboxState, log SubLogger) error
-	KeymapUpdate(dbxState DogeboxState, log SubLogger) error
+	UpdateSystemConfig(dbxState DogeboxState, log SubLogger) error
 }
 
 // monitors systemd services and returns stats

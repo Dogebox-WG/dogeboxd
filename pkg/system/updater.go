@@ -552,3 +552,18 @@ func (t SystemUpdater) removeBinaryCache(j dogeboxd.RemoveBinaryCache) error {
 
 	return t.sm.SetDogebox(dbxState)
 }
+
+func (t SystemUpdater) UpdateSystemConfig(dbxState dogeboxd.DogeboxState, log dogeboxd.SubLogger) error {
+	patch := t.nix.NewPatch(log)
+	t.nix.UpdateFirewallRules(patch, dbxState)
+	log.Logf("HELLO WORLD")
+	values := utils.GetNixSystemTemplateValues(dbxState)
+	t.nix.UpdateSystem(patch, values)
+
+	if err := patch.Apply(); err != nil {
+		log.Errf("Failed to commit system state: %v", err)
+		return err
+	}
+
+	return nil
+}
