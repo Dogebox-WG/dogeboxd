@@ -556,7 +556,7 @@ func (t SystemUpdater) removeBinaryCache(j dogeboxd.RemoveBinaryCache) error {
 func (t SystemUpdater) UpdateSystemConfig(dbxState dogeboxd.DogeboxState, log dogeboxd.SubLogger) error {
 	patch := t.nix.NewPatch(log)
 	t.nix.UpdateFirewallRules(patch, dbxState)
-	log.Logf("HELLO WORLD")
+
 	values := utils.GetNixSystemTemplateValues(dbxState)
 	t.nix.UpdateSystem(patch, values)
 
