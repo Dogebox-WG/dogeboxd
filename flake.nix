@@ -1,6 +1,6 @@
 {
   inputs = {
-    nixpkgs.url     = "github:NixOS/nixpkgs/nixos-25.05";
+    nixpkgs.url     = "github:NixOS/nixpkgs/nixos-25.11";
     flake-utils.url = "github:numtide/flake-utils";
 
     dpanel-src = {
@@ -21,7 +21,7 @@
             buildInputs = [
               pkgs.gnumake
               pkgs.systemd.dev
-              pkgs.go_1_23
+              pkgs.go_1_25
               pkgs.parted
               pkgs.util-linux
               pkgs.e2fsprogs
@@ -59,7 +59,7 @@
               cp -r ${dpanel-src}/. $out/dpanel/
             '';
 
-            nativeBuildInputs = [ pkgs.go_1_23 ];
+            nativeBuildInputs = [ pkgs.go_1_25 ];
             buildInputs       = [ pkgs.systemd.dev ];
 
             meta = with pkgs.lib; {
