@@ -5,7 +5,10 @@ import (
 	"fmt"
 	"log"
 	"net/http"
+	"os"
+	"path"
 	"path/filepath"
+	"strings"
 
 	"github.com/dogeorg/dogeboxd/pkg/conductor"
 	"github.com/rs/cors"
@@ -24,27 +27,48 @@ func serveSPA(directory string, mainIndex string) http.HandlerFunc {
 		w.Header().Set("Pragma", "no-cache")
 		w.Header().Set("Expires", "0")
 
+		// Block TypeScript files from being served directly
+		if strings.HasSuffix(r.URL.Path, ".ts") || strings.HasSuffix(r.URL.Path, ".tsx") {
+			w.Header().Set("Content-Type", "text/plain; charset=utf-8")
+			w.WriteHeader(http.StatusUnsupportedMediaType)
+			_, _ = w.Write([]byte("TypeScript files cannot be served as browser modules. Build dpanel (vite build) and serve the dist/ directory, or run the Vite dev server.\n"))
+			return
+		}
+
 		if r.URL.Path == "/" {
 			http.ServeFile(w, r, mainIndexPath)
 			return
 		}
 
-		filePath := filepath.Join(directory, r.URL.Path)
+		// Turn URL path into a safe relative path for joining with directory.
+		relPath := strings.TrimPrefix(path.Clean(r.URL.Path), "/")
+		if relPath == "" || relPath == "." || strings.HasPrefix(relPath, "..") {
+			http.Error(w, "invalid path", http.StatusBadRequest)
+			return
+		}
 
-		files, err := filepath.Glob(filePath)
-		if err != nil {
-			log.Println("Error searching for UI file:", err)
+		// In Vite builds, "publicDir" files are copied to dist root; try both dist/static/... and dist/... for /static/* requests.
+		candidates := []string{relPath}
+		if strings.HasPrefix(relPath, "static/") {
+			candidates = append(candidates, strings.TrimPrefix(relPath, "static/"))
+		}
+
+		var filePath string
+		for _, p := range candidates {
+			fp := filepath.Join(directory, p)
+			info, err := os.Stat(fp)
+			if err == nil && !info.IsDir() {
+				filePath = fp
+				break
+			}
+		}
+
+		if filePath == "" {
+			// Can't find the requested file (or it’s a directory), serve SPA shell.
 			http.ServeFile(w, r, mainIndexPath)
 			return
 		}
 
-		// Can't find the requested file, serve index.
-		if len(files) == 0 {
-			http.ServeFile(w, r, mainIndexPath)
-			return
-		}
-
-		// Otherwise, serve the requested file
 		http.ServeFile(w, r, filePath)
 	}
 }
