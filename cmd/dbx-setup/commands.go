@@ -49,19 +49,98 @@ func checkBootstrapCmd() tea.Cmd {
 // fetchKeyboardLayoutsCmd fetches available keyboard layouts
 func fetchKeyboardLayoutsCmd() tea.Cmd {
 	return func() tea.Msg {
-		// For now, return a static list of common layouts
-		// In production, this would fetch from the API
-		layouts := []keyboardLayout{
-			{Code: "us", Name: "US", Description: "US English"},
-			{Code: "uk", Name: "UK", Description: "UK English"},
-			{Code: "de", Name: "German", Description: "German (QWERTZ)"},
-			{Code: "fr", Name: "French", Description: "French (AZERTY)"},
-			{Code: "es", Name: "Spanish", Description: "Spanish"},
-			{Code: "it", Name: "Italian", Description: "Italian"},
-			{Code: "jp", Name: "Japanese", Description: "Japanese"},
-			{Code: "dvorak", Name: "Dvorak", Description: "Dvorak"},
+		/*
+			// For now, return a static list of common layouts
+			// In production, this would fetch from the API
+			layouts := []keyboardLayout{
+				{Code: "us", Name: "US", Description: "US English"},
+				{Code: "uk", Name: "UK", Description: "UK English"},
+				{Code: "de", Name: "German", Description: "German (QWERTZ)"},
+				{Code: "fr", Name: "French", Description: "French (AZERTY)"},
+				{Code: "es", Name: "Spanish", Description: "Spanish"},
+				{Code: "it", Name: "Italian", Description: "Italian"},
+				{Code: "jp", Name: "Japanese", Description: "Japanese"},
+				{Code: "dvorak", Name: "Dvorak", Description: "Dvorak"},
+			}
+			return keyboardLayoutsMsg{layouts: layouts}
+		*/
+		client := getSocketClient()
+
+		req, err := http.NewRequest(http.MethodGet, "http://dogeboxd/system/keymaps", nil)
+		if err != nil {
+			return keyboardLayoutsMsg{err: err}
 		}
-		return keyboardLayoutsMsg{layouts: layouts}
+
+		resp, err := client.Do(req)
+		if err != nil {
+			return keyboardLayoutsMsg{err: err}
+		}
+		defer resp.Body.Close()
+
+		if resp.StatusCode != http.StatusOK {
+			body, _ := io.ReadAll(resp.Body)
+			return keyboardLayoutsMsg{err: fmt.Errorf("failed to fetch keyboard layouts: %s", body)}
+		}
+
+		var apiKeyboardLayouts []keyboardLayout
+		if err := json.NewDecoder(resp.Body).Decode(&apiKeyboardLayouts); err != nil {
+			return keyboardLayoutsMsg{err: err}
+		}
+
+		// Ensure results are sorted for a consistent UI experience
+		sort.Slice(apiKeyboardLayouts, func(i, j int) bool {
+			return apiKeyboardLayouts[i].Name < apiKeyboardLayouts[j].Name
+		})
+
+		return keyboardLayoutsMsg{layouts: apiKeyboardLayouts}
+	}
+}
+
+// fetchTimezonesCmd fetches available timezones
+func fetchTimezonesCmd() tea.Cmd {
+	return func() tea.Msg {
+		timezones := []timezone{
+			{Code: "utc", Name: "UTC", Description: "UTC"},
+			{Code: "europe/london", Name: "Europe/London", Description: "Europe/London"},
+			{Code: "australia/sydney", Name: "Australia/Sydney", Description: "Australia/Sydney"},
+			{Code: "australia/melbourne", Name: "Australia/Melbourne", Description: "Australia/Melbourne"},
+			{Code: "australia/brisbane", Name: "Australia/Brisbane", Description: "Australia/Brisbane"},
+			{Code: "australia/adelaide", Name: "Australia/Adelaide", Description: "Australia/Adelaide"},
+			{Code: "australia/perth", Name: "Australia/Perth", Description: "Australia/Perth"},
+			{Code: "asia/tokyo", Name: "Asia/Tokyo", Description: "Asia/Tokyo"},
+		}
+		return timezonesMsg{timezones: timezones}
+		/*
+			client := getSocketClient()
+
+			req, err := http.NewRequest(http.MethodGet, "http://dogeboxd/system/timezones", nil)
+			if err != nil {
+				return timezonesMsg{err: err}
+			}
+
+			resp, err := client.Do(req)
+			if err != nil {
+				return timezonesMsg{err: err}
+			}
+			defer resp.Body.Close()
+
+			if resp.StatusCode != http.StatusOK {
+				body, _ := io.ReadAll(resp.Body)
+				return timezonesMsg{err: fmt.Errorf("failed to fetch timezones: %s", body)}
+			}
+
+			var apiTimezones []timezone
+			if err := json.NewDecoder(resp.Body).Decode(&apiTimezones); err != nil {
+				return timezonesMsg{err: err}
+			}
+
+			// Ensure results are sorted for a consistent UI experience
+			sort.Slice(apiTimezones, func(i, j int) bool {
+				return apiTimezones[i].Name < apiTimezones[j].Name
+			})
+
+			return timezonesMsg{timezones: apiTimezones}
+		*/
 	}
 }
 
@@ -262,7 +341,33 @@ func finalizeSetupCmd(m setupModel) tea.Cmd {
 		sendProgress(1) // Keyboard layout complete
 		time.Sleep(500 * time.Millisecond)
 
-		// Step 3: Set storage device (if selected)
+		// Step 3: Set timezone (if selected)
+		/*
+			if m.timezone != "" {
+				payload := map[string]string{"timezone": m.timezone}
+				body, _ := json.Marshal(payload)
+
+				req, err := http.NewRequest(http.MethodPost, "http://dogeboxd/system/timezone", bytes.NewReader(body))
+				if err != nil {
+					return setupCompleteMsg{err: fmt.Errorf("failed to create timezone request: %w", err)}
+				}
+				req.Header.Set("Content-Type", "application/json")
+
+				resp, err := client.Do(req)
+				if err != nil {
+					return setupCompleteMsg{err: fmt.Errorf("failed to set timezone: %w", err)}
+				}
+				resp.Body.Close()
+
+				if resp.StatusCode != http.StatusOK {
+					return setupCompleteMsg{err: fmt.Errorf("failed to set timezone: status %d", resp.StatusCode)}
+				}
+			}
+		*/
+		sendProgress(2) // Timezone complete
+		time.Sleep(500 * time.Millisecond)
+
+		// Step 4: Set storage device (if selected)
 		if m.storageDevice != "" {
 			payload := map[string]string{"storageDevice": m.storageDevice}
 			body, _ := json.Marshal(payload)
@@ -284,18 +389,18 @@ func finalizeSetupCmd(m setupModel) tea.Cmd {
 			}
 		}
 
-		sendProgress(2) // Storage device complete
+		sendProgress(3) // Storage device complete
 		time.Sleep(500 * time.Millisecond)
 
-		// Step 4: Binary caches (handled in bootstrap call)
-		sendProgress(3) // Binary caches complete
+		// Step 5: Binary caches (handled in bootstrap call)
+		sendProgress(4) // Binary caches complete
 		time.Sleep(500 * time.Millisecond)
 
-		// Step 5: User account (already created with key generation)
-		sendProgress(4) // User account complete
+		// Step 6: User account (already created with key generation)
+		sendProgress(5) // User account complete
 		time.Sleep(500 * time.Millisecond)
 
-		// Step 6: Set network (if selected)
+		// Step 7: Set network (if selected)
 		if m.networkType != "" {
 			var networkPayload interface{}
 
@@ -333,10 +438,10 @@ func finalizeSetupCmd(m setupModel) tea.Cmd {
 			}
 		}
 
-		sendProgress(5) // Network configuration complete
+		sendProgress(6) // Network configuration complete
 		time.Sleep(500 * time.Millisecond)
 
-		// Step 7: Final bootstrap with binary cache settings
+		// Step 8: Final bootstrap with binary cache settings
 		bootstrapPayload := map[string]interface{}{
 			"reflectorToken":              "", // Empty for now
 			"reflectorHost":               "", // Empty for now
@@ -361,7 +466,7 @@ func finalizeSetupCmd(m setupModel) tea.Cmd {
 			defer resp.Body.Close()
 		}
 
-		sendProgress(6) // Bootstrap complete
+		sendProgress(7) // Bootstrap complete
 		time.Sleep(500 * time.Millisecond)
 
 		return setupCompleteMsg{err: nil}

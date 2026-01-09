@@ -57,6 +57,8 @@ func (m setupModel) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 			return m.handleDeviceNameInput(msg)
 		case stepKeyboardLayout:
 			return m.handleKeyboardLayoutInput(msg)
+		case stepTimezone:
+			return m.handleTimezoneInput(msg)
 		case stepStorageDevice:
 			return m.handleStorageDeviceInput(msg)
 		case stepBinaryCache:
@@ -89,6 +91,7 @@ func (m setupModel) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		} else {
 			// System needs configuration
 			m.currentStep = stepReady
+			// TODO : check here
 			// Fetch keyboard layouts in preparation
 			return m, fetchKeyboardLayoutsCmd()
 		}
@@ -102,6 +105,18 @@ func (m setupModel) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 			// Set default to first option
 			if len(m.keyboardLayouts) > 0 {
 				m.keyboardLayout = m.keyboardLayouts[0].Code
+			}
+		}
+		return m, nil
+
+	case timezonesMsg:
+		if msg.err != nil {
+			m.err = msg.err
+		} else {
+			m.timezones = msg.timezones
+			// Set default to first option
+			if len(m.timezones) > 0 {
+				m.timezone = m.timezones[0].Code
 			}
 		}
 		return m, nil
@@ -204,6 +219,8 @@ func (m setupModel) View() string {
 		content = m.renderDeviceNameStep()
 	case stepKeyboardLayout:
 		content = m.renderKeyboardLayoutStep()
+	case stepTimezone:
+		content = m.renderTimezoneStep()
 	case stepStorageDevice:
 		content = m.renderStorageDeviceStep()
 	case stepBinaryCache:
@@ -261,10 +278,10 @@ func (m setupModel) handleDeviceNameInput(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 func (m setupModel) handleKeyboardLayoutInput(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 	switch msg.String() {
 	case "enter":
-		m.currentStep = stepStorageDevice
+		m.currentStep = stepTimezone
 		m.err = nil
-		// Fetch storage devices when moving to that step
-		return m, fetchStorageDevicesCmd()
+		// Fetch timezones when moving to that step
+		return m, fetchTimezonesCmd()
 	case "up", "k":
 		if len(m.keyboardLayouts) > 0 {
 			for i, layout := range m.keyboardLayouts {
@@ -285,6 +302,40 @@ func (m setupModel) handleKeyboardLayoutInput(msg tea.KeyMsg) (tea.Model, tea.Cm
 		}
 	case "left", "esc":
 		m.currentStep = stepDeviceName
+	}
+	return m, nil
+}
+
+func (m setupModel) handleTimezoneInput(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
+	switch msg.String() {
+	case "enter":
+		if m.timezone != "" {
+			m.currentStep = stepStorageDevice
+			m.err = nil
+			// Fetch storage devices when moving to that step
+			return m, fetchStorageDevicesCmd()
+		}
+		m.err = fmt.Errorf("please select a timezone")
+	case "up", "k":
+		if len(m.timezones) > 0 {
+			for i, tz := range m.timezones {
+				if tz.Code == m.timezone && i > 0 {
+					m.timezone = m.timezones[i-1].Code
+					break
+				}
+			}
+		}
+	case "down", "j":
+		if len(m.timezones) > 0 {
+			for i, tz := range m.timezones {
+				if tz.Code == m.timezone && i < len(m.timezones)-1 {
+					m.timezone = m.timezones[i+1].Code
+					break
+				}
+			}
+		}
+	case "left", "esc":
+		m.currentStep = stepKeyboardLayout
 	}
 	return m, nil
 }
@@ -317,7 +368,7 @@ func (m setupModel) handleStorageDeviceInput(msg tea.KeyMsg) (tea.Model, tea.Cmd
 			}
 		}
 	case "left", "esc":
-		m.currentStep = stepKeyboardLayout
+		m.currentStep = stepTimezone
 	}
 	return m, nil
 }
@@ -468,7 +519,7 @@ func (m setupModel) handleNetworkInput(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 				// Ethernet or open WiFi - proceed to finalization
 				m.currentStep = stepFinalizing
 				m.isProcessing = true
-				m.setupStepsComplete = make([]bool, 7) // 7 steps in finalization
+				m.setupStepsComplete = make([]bool, 8) // 8 steps in finalization
 				m.err = nil
 				return m, tea.Batch(
 					finalizeSetupCmd(m),
@@ -490,7 +541,7 @@ func (m setupModel) handleNetworkInput(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 		m.networkType = ""
 		m.currentStep = stepFinalizing
 		m.isProcessing = true
-		m.setupStepsComplete = make([]bool, 7) // 7 steps in finalization
+		m.setupStepsComplete = make([]bool, 8) // 8 steps in finalization
 		return m, tea.Batch(
 			finalizeSetupCmd(m),
 			tea.Tick(100*time.Millisecond, func(t time.Time) tea.Msg { return tickMsg(t) }),
@@ -508,7 +559,7 @@ func (m setupModel) handleNetworkPasswordInput(msg tea.KeyMsg) (tea.Model, tea.C
 			// Proceed to finalization with password
 			m.currentStep = stepFinalizing
 			m.isProcessing = true
-			m.setupStepsComplete = make([]bool, 7) // 7 steps in finalization
+			m.setupStepsComplete = make([]bool, 8) // 8 steps in finalization
 			m.err = nil
 			return m, tea.Batch(
 				finalizeSetupCmd(m),
