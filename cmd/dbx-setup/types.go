@@ -13,6 +13,7 @@ const (
 	stepAlreadyConfigured
 	stepDeviceName
 	stepKeyboardLayout
+	stepTimezone
 	stepStorageDevice
 	stepBinaryCache
 	stepPassword
@@ -31,6 +32,7 @@ type setupModel struct {
 	// Configuration data
 	deviceName         string
 	keyboardLayout     string
+	timezone           string
 	storageDevice      string
 	binaryCacheOS      bool
 	binaryCachePups    bool
@@ -48,6 +50,7 @@ type setupModel struct {
 
 	// Available options
 	keyboardLayouts   []keyboardLayout
+	timezones         []timezone
 	storageDevices    []storageDevice
 	availableNetworks []networkInfo
 
@@ -66,9 +69,16 @@ type setupModel struct {
 
 // keyboardLayout represents a keyboard layout option
 type keyboardLayout struct {
-	Code        string `json:"code"`
-	Name        string `json:"name"`
-	Description string `json:"description"`
+	Code        string `json:"id"`
+	Name        string `json:"label"`
+	Description string `json:"description,omitempty"`
+}
+
+// timezone represents a timezone option
+type timezone struct {
+	Code        string `json:"id"`
+	Name        string `json:"label"`
+	Description string `json:"description,omitempty"`
 }
 
 // storageDevice represents a storage device option
@@ -101,6 +111,10 @@ type bootstrapCheckMsg struct {
 type keyboardLayoutsMsg struct {
 	layouts []keyboardLayout
 	err     error
+}
+type timezonesMsg struct {
+	timezones []timezone
+	err       error
 }
 type storageDevicesMsg struct {
 	devices []storageDevice

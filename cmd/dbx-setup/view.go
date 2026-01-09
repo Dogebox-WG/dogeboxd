@@ -77,6 +77,7 @@ func (m setupModel) renderReadyStep() string {
 			"You'll need to:\n\n" +
 			"  • Choose a device name\n" +
 			"  • Select your keyboard layout\n" +
+			"  • Select your timezone\n" +
 			"  • Configure storage\n" +
 			"  • Create a password\n" +
 			"  • Save your recovery seed phrase\n" +
@@ -165,6 +166,35 @@ func (m setupModel) renderKeyboardLayoutStep() string {
 	for _, layout := range m.keyboardLayouts {
 		line := fmt.Sprintf("  %s - %s", layout.Code, layout.Name)
 		if layout.Code == m.keyboardLayout {
+			line = selectedStyle.Render("▸ " + line[2:])
+		} else {
+			line = normalStyle.Render(line)
+		}
+		options = append(options, line)
+	}
+
+	help := helpStyle.Render("↑/↓: Navigate • Enter: Continue • Esc: Back • Ctrl+C: Quit")
+
+	content := lipgloss.JoinVertical(lipgloss.Left,
+		title,
+		subtitle,
+		"",
+		strings.Join(options, "\n"),
+		"",
+		help,
+	)
+
+	return " " + strings.ReplaceAll(content, "\n", "\n ")
+}
+
+func (m setupModel) renderTimezoneStep() string {
+	title := titleStyle.Render("Timezone")
+	subtitle := subtitleStyle.Render("Select your timezone")
+
+	var options []string
+	for _, timezone := range m.timezones {
+		line := fmt.Sprintf("  %s - %s", timezone.Code, timezone.Name)
+		if timezone.Code == m.timezone {
 			line = selectedStyle.Render("▸ " + line[2:])
 		} else {
 			line = normalStyle.Render(line)
@@ -528,6 +558,7 @@ func (m setupModel) renderFinalizingStep() string {
 	steps := []string{
 		"Setting device name",
 		"Configuring keyboard layout",
+		"Setting timezone",
 		"Preparing storage device",
 		"Setting up binary caches",
 		"Creating user account",
@@ -593,12 +624,14 @@ func (m setupModel) renderCompleteStep() string {
 	summary := normalStyle.Render(fmt.Sprintf(
 		"Device Name: %s\n"+
 			"Keyboard Layout: %s\n"+
+			"Timezone: %s\n"+
 			"Storage Device: %s\n"+
 			"System Binary Cache: %s\n"+
 			"Pups Binary Cache: %s\n"+
 			"Network: %s",
 		m.deviceName,
 		m.keyboardLayout,
+		m.timezone,
 		m.storageDevice,
 		map[bool]string{true: "Enabled", false: "Disabled"}[m.binaryCacheOS],
 		map[bool]string{true: "Enabled", false: "Disabled"}[m.binaryCachePups],
