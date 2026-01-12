@@ -4,7 +4,7 @@
   networking.hostName = lib.mkForce "{{ .SYSTEM_HOSTNAME }}";
   networking.networkmanager.enable = lib.mkDefault false;
 
-  console.keyMap = "{{ .KEYMAP }}";
+  console.keyMap = lib.mkForce "{{ .KEYMAP }}";
 
   time.timeZone = lib.mkForce "{{ .TIMEZONE }}";
 

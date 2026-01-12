@@ -343,6 +343,12 @@ func (t Dogeboxd) jobDispatcher(j Job) {
 	case SystemUpdate:
 		t.enqueue(j)
 
+	case UpdateTimezone:
+		t.enqueue(j)
+
+	case UpdateKeymap:
+		t.enqueue(j)
+
 	// Pup router actions
 	case UpdateMetrics:
 		t.Pups.UpdateMetrics(a)

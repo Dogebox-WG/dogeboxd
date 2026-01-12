@@ -298,8 +298,9 @@ func (t api) setKeyMap(w http.ResponseWriter, r *http.Request) {
 
 	// TODO : should rebuild actually be here?
 	if dbxState.InitialState.HasFullyConfigured {
-		log := dogeboxd.NewConsoleSubLogger("internal", "settings")
-		t.dbx.SystemUpdater.UpdateSystemConfig(dbxState, log)
+		id := t.dbx.AddAction(dogeboxd.UpdateKeymap{Keymap: requestBody.KeyMap})
+		sendResponse(w, map[string]any{"status": "OK", "id": id})
+		return
 	}
 
 	sendResponse(w, map[string]any{"status": "OK"})
@@ -358,8 +359,9 @@ func (t api) setTimezone(w http.ResponseWriter, r *http.Request) {
 
 	// TODO : should rebuild actually be here?
 	if dbxState.InitialState.HasFullyConfigured {
-		log := dogeboxd.NewConsoleSubLogger("internal", "settings")
-		t.dbx.SystemUpdater.UpdateSystemConfig(dbxState, log)
+		id := t.dbx.AddAction(dogeboxd.UpdateTimezone{Timezone: requestBody.Timezone})
+		sendResponse(w, map[string]any{"status": "OK", "id": id})
+		return
 	}
 
 	sendResponse(w, map[string]any{"status": "OK"})
