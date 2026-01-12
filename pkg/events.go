@@ -126,6 +126,10 @@ type RemoveSSHKey struct {
 	ID string
 }
 
+type SaveCustomNix struct {
+	Content string `json:"content"`
+}
+
 // Import blockchain data to the system (not tied to a specific pup)
 type ImportBlockchainData struct{}
 
