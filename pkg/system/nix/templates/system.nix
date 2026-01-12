@@ -6,7 +6,7 @@
 
   console.keyMap = "{{ .KEYMAP }}";
 
-  time.timeZone = "{{ .TIMEZONE }}";
+  time.timeZone = lib.mkForce "{{ .TIMEZONE }}";
 
   services.openssh.settings = {
     AllowUsers = [ "shibe" ];
