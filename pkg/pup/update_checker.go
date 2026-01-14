@@ -29,7 +29,7 @@ type githubReleaseMemoEntry struct {
 	date  *time.Time
 }
 
-func parseGitHubOwnerRepo(remote string) (string, bool) {
+func ParseGitHubOwnerRepo(remote string) (string, bool) {
 	// https://github.com/<owner>/<repo>.git
 	if strings.HasPrefix(remote, "https://") || strings.HasPrefix(remote, "http://") {
 		location := strings.TrimSuffix(remote, ".git")
@@ -424,8 +424,8 @@ func (uc *UpdateChecker) checkForUpdatesWithMemo(pupID string, memo map[string]g
 	}
 
 	// Fetch GitHub release notes for all newer versions (only if missing).
-	ownerRepo, isGitHub := parseGitHubOwnerRepo(pup.Source.Location)
-	if isGitHub && ownerRepo != "" && len(availableVersions) > 0 {
+	ownerRepo, isGitHub := ParseGitHubOwnerRepo(pup.Source.Location)
+	if isGitHub && len(availableVersions) > 0 {
 		client := &http.Client{Timeout: 4 * time.Second}
 		token := strings.TrimSpace(os.Getenv("GITHUB_TOKEN"))
 		rateLimited := false
@@ -453,7 +453,6 @@ func (uc *UpdateChecker) checkForUpdatesWithMemo(pupID string, memo map[string]g
 				availableVersions[i].ReleaseURL = fmt.Sprintf("https://github.com/%s/releases/tag/%s", ownerRepo, fallbackTag)
 			}
 
-			var loaded bool
 			for _, tag := range githubTagCandidates(baseTag) {
 				key := ownerRepo + "|" + tag
 				if entry, ok := memo[key]; ok {
@@ -465,7 +464,6 @@ func (uc *UpdateChecker) checkForUpdatesWithMemo(pupID string, memo map[string]g
 						if entry.url != "" {
 							availableVersions[i].ReleaseURL = entry.url
 						}
-						loaded = true
 					}
 					break // whether found or not, don't refetch this tag
 				}
@@ -491,12 +489,9 @@ func (uc *UpdateChecker) checkForUpdatesWithMemo(pupID string, memo map[string]g
 					if entry.url != "" {
 						availableVersions[i].ReleaseURL = entry.url
 					}
-					loaded = true
 					break
 				}
 			}
-
-			_ = loaded // intentionally unused; kept for readability if we tune behavior later
 		}
 	}
 

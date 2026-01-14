@@ -12,6 +12,7 @@ import (
 	"time"
 
 	dogeboxd "github.com/dogeorg/dogeboxd/pkg"
+	"github.com/dogeorg/dogeboxd/pkg/pup"
 	"github.com/dogeorg/dogeboxd/pkg/utils"
 	"github.com/go-git/go-billy/v5/memfs"
 	"github.com/go-git/go-git/v5"
@@ -20,28 +21,6 @@ import (
 	"github.com/go-git/go-git/v5/storage/memory"
 	"golang.org/x/mod/semver"
 )
-
-func parseGitHubOwnerRepo(remote string) (string, bool) {
-	// https://github.com/<owner>/<repo>.git
-	if strings.HasPrefix(remote, "https://") || strings.HasPrefix(remote, "http://") {
-		location := strings.TrimSuffix(remote, ".git")
-		parts := strings.Split(location, "github.com/")
-		if len(parts) == 2 && parts[1] != "" {
-			return parts[1], true
-		}
-	}
-
-	// git@github.com:<owner>/<repo>.git
-	if strings.HasPrefix(remote, "git@github.com:") {
-		location := strings.TrimPrefix(remote, "git@github.com:")
-		location = strings.TrimSuffix(location, ".git")
-		if location != "" {
-			return location, true
-		}
-	}
-
-	return "", false
-}
 
 var _ dogeboxd.ManifestSource = &ManifestSourceGit{}
 
@@ -347,8 +326,6 @@ func (r *ManifestSourceGit) List(ignoreCache bool) (dogeboxd.ManifestSourceList,
 		return dogeboxd.ManifestSourceList{}, err
 	}
 
-	ownerRepo, isGitHub := parseGitHubOwnerRepo(r.config.Location)
-
 	type TagResult struct {
 		version string
 		entries []GitPupEntry
@@ -381,6 +358,8 @@ func (r *ManifestSourceGit) List(ignoreCache bool) (dogeboxd.ManifestSourceList,
 
 	validPups := []dogeboxd.ManifestSourcePup{}
 
+	ownerRepo, isGitHub := pup.ParseGitHubOwnerRepo(r.config.Location)
+
 	for i := 0; i < tagCount; i++ {
 		result := <-resultChan
 		if result.err != nil {
@@ -390,7 +369,7 @@ func (r *ManifestSourceGit) List(ignoreCache bool) (dogeboxd.ManifestSourceList,
 
 		for _, entry := range result.entries {
 			releaseURL := ""
-			if isGitHub && ownerRepo != "" {
+			if isGitHub {
 				releaseURL = fmt.Sprintf("https://github.com/%s/releases/tag/%s", ownerRepo, result.version)
 			}
 			validPups = append(validPups, dogeboxd.ManifestSourcePup{
