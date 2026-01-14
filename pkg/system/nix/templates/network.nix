@@ -1,6 +1,8 @@
 { config, pkgs, ... }:
 
 {
+  services.create_ap.enable = false; # Disable create_ap in case it was enabled by the T6 Installer.
+
   networking = {
     {{if .USE_ETHERNET}}
     interfaces = {

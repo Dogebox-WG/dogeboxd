@@ -39,18 +39,11 @@ func (t PupManager) CanPupStart(pupId string) (bool, error) {
 
 func (t PupManager) GetPupHealthState(pup *dogeboxd.PupState) dogeboxd.PupHealthStateReport {
 	// are our required config fields set?
-	configSet := true
-loop:
-	for _, section := range pup.Manifest.Config.Sections {
-		for _, field := range section.Fields {
-			if field.Required {
-				_, ok := pup.Config[field.Name]
-				if !ok {
-					configSet = false
-					break loop
-				}
-			}
-		}
+	configSet := !dogeboxd.ManifestConfigNeedsValues(pup.Manifest.Config, pup.Config)
+
+	// if showOnInstall is true and config hasn't been saved yet, config is not set
+	if pup.Manifest.Config.ShowOnInstall && !pup.ConfigSaved {
+		configSet = false
 	}
 
 	// are our deps met?

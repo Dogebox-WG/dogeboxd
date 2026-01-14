@@ -133,6 +133,13 @@ func (t SystemUpdater) Run(started, stopped chan bool, stop chan context.Context
 						}
 						t.done <- j
 
+					case dogeboxd.SaveCustomNix:
+						err := t.SaveCustomNix(a.Content, j.Logger.Step("save custom nix"))
+						if err != nil {
+							j.Err = "Failed to save custom configuration"
+						}
+						t.done <- j
+
 					case dogeboxd.AddBinaryCache:
 						err := t.AddBinaryCache(a, j.Logger.Step("Add binary cache"))
 						if err != nil {
@@ -155,6 +162,20 @@ func (t SystemUpdater) Run(started, stopped chan bool, stop chan context.Context
 							j.Err = err.Error()
 						} else {
 							logger.Progress(100).Logf("System update to %s completed", a.Version)
+						}
+						t.done <- j
+
+					case dogeboxd.UpdateTimezone:
+						err := t.updateTimezone(a, j.Logger.Step("update timezone"))
+						if err != nil {
+							j.Err = "Failed to update timezone"
+						}
+						t.done <- j
+
+					case dogeboxd.UpdateKeymap:
+						err := t.updateKeymap(a, j.Logger.Step("update keymap"))
+						if err != nil {
+							j.Err = "Failed to update keyboard layout"
 						}
 						t.done <- j
 
@@ -267,6 +288,13 @@ func (t SystemUpdater) installPup(pupSelection dogeboxd.InstallPup, j dogeboxd.J
 		// TODO : Do we need command output here?
 		log.Errf("Failed to create extended delegate key in storage: %v", err)
 		return t.markPupBroken(s, dogeboxd.BROKEN_REASON_DELEGATE_KEY_WRITE_FAILED, err)
+	}
+
+	// Write initial config to secure storage (includes defaults from manifest)
+	// This ensures config.env exists before the container starts
+	if err := dogeboxd.WritePupConfigToStorage(t.config.DataDir, s.ID, s.Config, log); err != nil {
+		log.Errf("Failed to write initial config to storage: %v", err)
+		return t.markPupBroken(s, dogeboxd.BROKEN_REASON_STORAGE_CREATION_FAILED, err)
 	}
 
 	// Now that we're mostly installed, enable it.
@@ -565,5 +593,61 @@ func (t SystemUpdater) UpdateSystemConfig(dbxState dogeboxd.DogeboxState, log do
 		return err
 	}
 
+	return nil
+}
+
+func (t SystemUpdater) updateTimezone(a dogeboxd.UpdateTimezone, log dogeboxd.SubLogger) error {
+	log.Logf("Updating timezone to %s", a.Timezone)
+
+	dbxState := t.sm.Get().Dogebox
+	dbxState.Timezone = a.Timezone
+
+	if err := t.sm.SetDogebox(dbxState); err != nil {
+		log.Errf("Failed to save timezone state: %v", err)
+		return err
+	}
+
+	log.Progress(20).Log("Applying system configuration...")
+
+	patch := t.nix.NewPatch(log)
+	t.nix.UpdateFirewallRules(patch, dbxState)
+
+	values := utils.GetNixSystemTemplateValues(dbxState)
+	t.nix.UpdateSystem(patch, values)
+
+	if err := patch.Apply(); err != nil {
+		log.Errf("Failed to apply nix patch: %v", err)
+		return err
+	}
+
+	log.Progress(100).Logf("Timezone updated to %s", a.Timezone)
+	return nil
+}
+
+func (t SystemUpdater) updateKeymap(a dogeboxd.UpdateKeymap, log dogeboxd.SubLogger) error {
+	log.Logf("Updating keyboard layout to %s", a.Keymap)
+
+	dbxState := t.sm.Get().Dogebox
+	dbxState.KeyMap = a.Keymap
+
+	if err := t.sm.SetDogebox(dbxState); err != nil {
+		log.Errf("Failed to save keymap state: %v", err)
+		return err
+	}
+
+	log.Progress(20).Log("Applying system configuration...")
+
+	patch := t.nix.NewPatch(log)
+	t.nix.UpdateFirewallRules(patch, dbxState)
+
+	values := utils.GetNixSystemTemplateValues(dbxState)
+	t.nix.UpdateSystem(patch, values)
+
+	if err := patch.Apply(); err != nil {
+		log.Errf("Failed to apply nix patch: %v", err)
+		return err
+	}
+
+	log.Progress(100).Logf("Keyboard layout updated to %s", a.Keymap)
 	return nil
 }

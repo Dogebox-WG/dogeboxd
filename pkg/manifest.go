@@ -64,6 +64,52 @@ func (m *PupManifest) Validate() error {
 		}
 	}
 
+	// Validate configuration schema
+	validFieldTypes := map[string]struct{}{
+		"text":     {},
+		"password": {},
+		"number":   {},
+		"toggle":   {},
+		"email":    {},
+		"textarea": {},
+		"select":   {},
+		"checkbox": {},
+		"radio":    {},
+		"date":     {},
+		"range":    {},
+		"color":    {},
+	}
+
+	seenFieldNames := map[string]struct{}{}
+	for _, section := range m.Config.Sections {
+		if section.Name == "" {
+			return fmt.Errorf("config section name is required")
+		}
+		for _, field := range section.Fields {
+			if field.Name == "" {
+				return fmt.Errorf("config field name is required in section %s", section.Name)
+			}
+			if field.Label == "" {
+				return fmt.Errorf("config field %s in section %s must have a label", field.Name, section.Name)
+			}
+			if _, ok := validFieldTypes[field.Type]; !ok {
+				return fmt.Errorf("config field %s in section %s has invalid type %s", field.Name, section.Name, field.Type)
+			}
+			if _, exists := seenFieldNames[field.Name]; exists {
+				return fmt.Errorf("duplicate config field name: %s", field.Name)
+			}
+			seenFieldNames[field.Name] = struct{}{}
+			if field.Type == "number" {
+				if field.Step != nil && *field.Step <= 0 {
+					return fmt.Errorf("config field %s step must be greater than zero", field.Name)
+				}
+				if field.Min != nil && field.Max != nil && *field.Min > *field.Max {
+					return fmt.Errorf("config field %s min cannot be greater than max", field.Name)
+				}
+			}
+		}
+	}
+
 	return nil
 }
 
@@ -185,25 +231,27 @@ type PupManifestDependencySource struct {
  * for templates (Args, ENV, ConfigFiles), we only care about Name
  */
 type PupManifestConfigFields struct {
-	Sections []struct {
-		Name  string `json:"name"`
-		Label string `json:"label"`
-		// TODO: we probably need a list of valid field types
-		// Fields []map[string]interface{} `json:"fields"`
-		Fields []struct {
-			Label    string `json:"label"`
-			Name     string `json:"name"`
-			Type     string `json:"type"`
-			Required bool   `json:"required"`
-			Options  []struct {
-				Label string `json:"label"`
-				Value string `json:"value"`
-			} `json:"options,omitempty"`
-			Min  int `json:"min,omitempty"`
-			Max  int `json:"max,omitempty"`
-			Step int `json:"step,omitempty"`
-		} `json:"fields"`
-	} `json:"sections"`
+	ShowOnInstall bool                       `json:"showOnInstall"`
+	Sections      []PupManifestConfigSection `json:"sections"`
+}
+
+type PupManifestConfigSection struct {
+	Name   string                   `json:"name"`
+	Label  string                   `json:"label"`
+	Fields []PupManifestConfigField `json:"fields"`
+}
+
+type PupManifestConfigField struct {
+	Label       string   `json:"label"`
+	Name        string   `json:"name"`
+	Type        string   `json:"type"`
+	Required    bool     `json:"required"`
+	Placeholder string   `json:"placeholder,omitempty"`
+	Help        string   `json:"help,omitempty"`
+	Default     any      `json:"default,omitempty"`
+	Min         *float64 `json:"min,omitempty"`
+	Max         *float64 `json:"max,omitempty"`
+	Step        *float64 `json:"step,omitempty"`
 }
 
 type PupManifestMetric struct {

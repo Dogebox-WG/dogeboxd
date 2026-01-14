@@ -4,9 +4,9 @@
   networking.hostName = lib.mkForce "{{ .SYSTEM_HOSTNAME }}";
   networking.networkmanager.enable = lib.mkDefault false;
 
-  console.keyMap = "{{ .KEYMAP }}";
+  console.keyMap = lib.mkForce "{{ .KEYMAP }}";
 
-  time.timeZone = "{{ .TIMEZONE }}";
+  time.timeZone = lib.mkForce "{{ .TIMEZONE }}";
 
   services.openssh.settings = {
     AllowUsers = [ "shibe" ];
