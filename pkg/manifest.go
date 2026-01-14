@@ -1,6 +1,11 @@
 package dogeboxd
 
-import "fmt"
+import (
+	"encoding/json"
+	"fmt"
+	"os"
+	"path/filepath"
+)
 
 /* PupManifest represents a Nix installed process
  * running inside the Dogebox Runtime Environment.
@@ -111,6 +116,26 @@ func (m *PupManifest) Validate() error {
 	}
 
 	return nil
+}
+
+// LoadManifestFromPath loads a PupManifest from a pup directory
+func LoadManifestFromPath(pupPath string) (PupManifest, error) {
+	manifestPath := filepath.Join(pupPath, "manifest.json")
+	data, err := os.ReadFile(manifestPath)
+	if err != nil {
+		return PupManifest{}, fmt.Errorf("failed to read manifest.json: %w", err)
+	}
+
+	var manifest PupManifest
+	if err := json.Unmarshal(data, &manifest); err != nil {
+		return PupManifest{}, fmt.Errorf("failed to parse manifest.json: %w", err)
+	}
+
+	if err := manifest.Validate(); err != nil {
+		return PupManifest{}, fmt.Errorf("manifest validation failed: %w", err)
+	}
+
+	return manifest, nil
 }
 
 /* PupManifestMeta holds meta information about this pup
