@@ -106,6 +106,8 @@ func (m model) View() string {
 	switch m.view {
 	case viewConnectionError:
 		return m.renderConnectionErrorView()
+	case viewSetupRequired:
+		return m.renderSetupRequiredView()
 	case viewPupDetail:
 		return m.renderPupDetailView()
 	case viewCreatePup:
@@ -673,6 +675,55 @@ func (m model) renderConnectionErrorView() string {
 	}
 
 	body := title + "\n\n" + errorMsg + details
+
+	help := statusBarStyle.Width(m.width - 1).Render("r: retry   q: quit   ctrl+c: quit")
+
+	// Calculate padding
+	bodyLines := strings.Count(body, "\n") + 1
+	totalLines := bannerLines + 2 + bodyLines + 1
+	padding := ""
+	if totalLines < m.height {
+		padding = strings.Repeat("\n"+leftIndent, m.height-totalLines)
+	}
+
+	return indentLines(banner) + "\n\n" + indentLines(body) + padding + "\n" + indentLines(help)
+}
+
+// renderSetupRequiredView shows the setup required screen
+func (m model) renderSetupRequiredView() string {
+	banner, bannerLines := buildBannerWithVersion()
+
+	// Create a prominent warning style
+	warningStyle := lipgloss.NewStyle().
+		Bold(true).
+		Foreground(lipgloss.Color("196")). // Bright red
+		// Background(lipgloss.Color("52")).  // Dark red background
+		Padding(1, 3)
+
+	titleStyle := lipgloss.NewStyle().
+		Bold(true).
+		Foreground(lipgloss.Color("220")) // Yellow/orange
+
+	instructionStyle := lipgloss.NewStyle().
+		Foreground(lipgloss.Color("255")).
+		Bold(true)
+
+	// Build the message
+	warning := warningStyle.Render("⚠️  SETUP REQUIRED  ⚠️")
+
+	title := titleStyle.Render("Initial Configuration Not Complete")
+
+	message := "The Dogebox system has not been configured yet.\n\n" +
+		"You must complete the initial setup before using dbx-dev."
+
+	instruction := instructionStyle.Render("Please run:") + "\n\n" +
+		lipgloss.NewStyle().
+			Foreground(lipgloss.Color("82")). // Green
+			Background(lipgloss.Color("234")).
+			Padding(0, 2).
+			Render("dbx setup")
+
+	body := warning + "\n\n" + title + "\n\n" + message + "\n\n" + instruction
 
 	help := statusBarStyle.Width(m.width - 1).Render("r: retry   q: quit   ctrl+c: quit")
 
