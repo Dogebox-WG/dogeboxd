@@ -95,6 +95,7 @@ type DogeboxState struct {
 	StorageDevice string
 	Flags         DogeboxFlags
 	BinaryCaches  []DogeboxStateBinaryCache
+	SidebarPups   []string `json:"sidebarPups"` // Pup IDs pinned to dpanel sidebar
 }
 
 type NetworkState struct {
@@ -419,3 +420,4 @@ const (
 	BootstrapInstallationStateNotInstalled BootstrapInstallationState = "notInstalled"
 	BootstrapInstallationStateConfigured   BootstrapInstallationState = "configured"
 )
+

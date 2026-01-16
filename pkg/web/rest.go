@@ -117,6 +117,11 @@ func RESTAPI(
 		"POST /system/install-pup-collection": a.installPupCollection,
 		"GET /missing-deps/{PupID}":           a.getMissingDeps,
 
+		// Sidebar preferences
+		"GET /system/sidebar-preferences":             a.getSidebarPreferences,
+		"POST /system/sidebar-preferences/pups/add":   a.addSidebarPup,
+		"POST /system/sidebar-preferences/pups/remove": a.removeSidebarPup,
+
 		"GET /system/binary-caches":        a.getBinaryCaches,
 		"PUT /system/binary-cache":         a.addBinaryCache,
 		"DELETE /system/binary-cache/{id}": a.removeBinaryCache,
