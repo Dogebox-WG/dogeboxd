@@ -8,6 +8,7 @@ import (
 	"strings"
 	"time"
 
+	"github.com/charmbracelet/bubbles/viewport"
 	tea "github.com/charmbracelet/bubbletea"
 )
 
@@ -29,6 +30,24 @@ func (m setupModel) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 	case tea.WindowSizeMsg:
 		m.width = msg.Width
 		m.height = msg.Height
+
+		// Leave room for headers/help; clamp to sensible minimums
+		listHeight := msg.Height - 8
+		if listHeight < 3 {
+			listHeight = 3
+		}
+		listWidth := msg.Width - 4
+		if listWidth < 20 {
+			listWidth = 20
+		}
+
+		m.keyboardVP.Width = listWidth
+		m.keyboardVP.Height = listHeight
+		m.timezoneVP.Width = listWidth
+		m.timezoneVP.Height = listHeight
+
+		m.refreshKeyboardViewport()
+		m.refreshTimezoneViewport()
 		return m, nil
 
 	case tea.KeyMsg:
@@ -106,6 +125,7 @@ func (m setupModel) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 			if len(m.keyboardLayouts) > 0 {
 				m.keyboardLayout = m.keyboardLayouts[0].Code
 			}
+			m.refreshKeyboardViewport()
 		}
 		return m, nil
 
@@ -118,6 +138,7 @@ func (m setupModel) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 			if len(m.timezones) > 0 {
 				m.timezone = m.timezones[0].Code
 			}
+			m.refreshTimezoneViewport()
 		}
 		return m, nil
 
@@ -276,6 +297,8 @@ func (m setupModel) handleDeviceNameInput(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 }
 
 func (m setupModel) handleKeyboardLayoutInput(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
+	updated := false
+
 	switch msg.String() {
 	case "enter":
 		m.currentStep = stepTimezone
@@ -287,6 +310,7 @@ func (m setupModel) handleKeyboardLayoutInput(msg tea.KeyMsg) (tea.Model, tea.Cm
 			for i, layout := range m.keyboardLayouts {
 				if layout.Code == m.keyboardLayout && i > 0 {
 					m.keyboardLayout = m.keyboardLayouts[i-1].Code
+					updated = true
 					break
 				}
 			}
@@ -296,6 +320,7 @@ func (m setupModel) handleKeyboardLayoutInput(msg tea.KeyMsg) (tea.Model, tea.Cm
 			for i, layout := range m.keyboardLayouts {
 				if layout.Code == m.keyboardLayout && i < len(m.keyboardLayouts)-1 {
 					m.keyboardLayout = m.keyboardLayouts[i+1].Code
+					updated = true
 					break
 				}
 			}
@@ -303,10 +328,17 @@ func (m setupModel) handleKeyboardLayoutInput(msg tea.KeyMsg) (tea.Model, tea.Cm
 	case "left", "esc":
 		m.currentStep = stepDeviceName
 	}
+
+	if updated {
+		m.refreshKeyboardViewport()
+	}
+
 	return m, nil
 }
 
 func (m setupModel) handleTimezoneInput(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
+	updated := false
+
 	switch msg.String() {
 	case "enter":
 		if m.timezone != "" {
@@ -321,6 +353,7 @@ func (m setupModel) handleTimezoneInput(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 			for i, tz := range m.timezones {
 				if tz.Code == m.timezone && i > 0 {
 					m.timezone = m.timezones[i-1].Code
+					updated = true
 					break
 				}
 			}
@@ -330,6 +363,7 @@ func (m setupModel) handleTimezoneInput(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 			for i, tz := range m.timezones {
 				if tz.Code == m.timezone && i < len(m.timezones)-1 {
 					m.timezone = m.timezones[i+1].Code
+					updated = true
 					break
 				}
 			}
@@ -337,6 +371,11 @@ func (m setupModel) handleTimezoneInput(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 	case "left", "esc":
 		m.currentStep = stepKeyboardLayout
 	}
+
+	if updated {
+		m.refreshTimezoneViewport()
+	}
+
 	return m, nil
 }
 
@@ -581,4 +620,126 @@ func (m setupModel) handleNetworkPasswordInput(msg tea.KeyMsg) (tea.Model, tea.C
 		}
 	}
 	return m, nil
+}
+
+// refreshKeyboardViewport rebuilds the keyboard list view and keeps the
+// selected layout in view.
+func (m *setupModel) refreshKeyboardViewport() {
+	m.keyboardVP.SetContent(m.keyboardOptionsContent())
+	m.ensureKeyboardSelectionVisible()
+}
+
+// refreshTimezoneViewport rebuilds the timezone list view and keeps the
+// selected timezone in view.
+func (m *setupModel) refreshTimezoneViewport() {
+	m.timezoneVP.SetContent(m.timezoneOptionsContent())
+	m.ensureTimezoneSelectionVisible()
+}
+
+// ensureKeyboardSelectionVisible clamps the keyboard viewport offset so the
+// current selection stays on-screen.
+func (m *setupModel) ensureKeyboardSelectionVisible() {
+	selectedIdx := 0
+	for i, layout := range m.keyboardLayouts {
+		if layout.Code == m.keyboardLayout {
+			selectedIdx = i
+			break
+		}
+	}
+	m.adjustViewportOffset(&m.keyboardVP, selectedIdx, len(m.keyboardLayouts))
+}
+
+// ensureTimezoneSelectionVisible clamps the timezone viewport offset so the
+// current selection stays on-screen.
+func (m *setupModel) ensureTimezoneSelectionVisible() {
+	selectedIdx := 0
+	for i, tz := range m.timezones {
+		if tz.Code == m.timezone {
+			selectedIdx = i
+			break
+		}
+	}
+	m.adjustViewportOffset(&m.timezoneVP, selectedIdx, len(m.timezones))
+}
+
+// adjustViewportOffset scrolls the viewport so the selected index is visible.
+func (m *setupModel) adjustViewportOffset(vp *viewport.Model, selected, total int) {
+	if vp.Height <= 0 || total == 0 {
+		vp.SetYOffset(0)
+		return
+	}
+
+	if selected < 0 {
+		selected = 0
+	}
+	if selected >= total {
+		selected = total - 1
+	}
+
+	maxYOffset := total - vp.Height
+	if maxYOffset < 0 {
+		maxYOffset = 0
+	}
+
+	// Scroll up if selection moved above current view
+	if selected < vp.YOffset {
+		vp.SetYOffset(selected)
+		return
+	}
+
+	// Scroll down if selection moved below current view
+	if selected >= vp.YOffset+vp.Height {
+		vp.SetYOffset(minInt(selected-vp.Height+1, maxYOffset))
+		return
+	}
+
+	// Clamp if window shrunk
+	if vp.YOffset > maxYOffset {
+		vp.SetYOffset(maxYOffset)
+	}
+}
+
+// keyboardOptionsContent builds the content string for the keyboard viewport.
+func (m setupModel) keyboardOptionsContent() string {
+	if len(m.keyboardLayouts) == 0 {
+		return normalStyle.Render("  No keyboard layouts found")
+	}
+
+	var options []string
+	for _, layout := range m.keyboardLayouts {
+		line := fmt.Sprintf("  %s - %s", layout.Code, layout.Name)
+		if layout.Code == m.keyboardLayout {
+			line = selectedStyle.Render("▸ " + line[2:])
+		} else {
+			line = normalStyle.Render(line)
+		}
+		options = append(options, line)
+	}
+	return strings.Join(options, "\n")
+}
+
+// timezoneOptionsContent builds the content string for the timezone viewport.
+func (m setupModel) timezoneOptionsContent() string {
+	if len(m.timezones) == 0 {
+		return normalStyle.Render("  No timezones found")
+	}
+
+	var options []string
+	for _, tz := range m.timezones {
+		line := fmt.Sprintf("  %s - %s", tz.Code, tz.Name)
+		if tz.Code == m.timezone {
+			line = selectedStyle.Render("▸ " + line[2:])
+		} else {
+			line = normalStyle.Render(line)
+		}
+		options = append(options, line)
+	}
+	return strings.Join(options, "\n")
+}
+
+func minInt(a, b int) int {
+	if a < b {
+		return a
+	}
+	return b
 }

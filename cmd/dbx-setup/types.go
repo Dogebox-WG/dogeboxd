@@ -2,6 +2,8 @@ package dbxsetup
 
 import (
 	"time"
+
+	"github.com/charmbracelet/bubbles/viewport"
 )
 
 // setupStep represents the current step in the setup process
@@ -61,6 +63,8 @@ type setupModel struct {
 	isProcessing       bool
 	showPassword       bool
 	setupStepsComplete []bool // Track which setup steps are complete
+	keyboardVP         viewport.Model
+	timezoneVP         viewport.Model
 
 	// Connection
 	socketPath string
