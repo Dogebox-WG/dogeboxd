@@ -1,6 +1,7 @@
 package dbxsetup
 
 import (
+	"github.com/charmbracelet/bubbles/viewport"
 	tea "github.com/charmbracelet/bubbletea"
 )
 
@@ -24,5 +25,7 @@ func NewModel() tea.Model {
 		currentStep:     stepCheckingStatus,
 		binaryCacheOS:   true, // Default to using OS binary cache
 		binaryCachePups: true, // Default to using Pups binary cache
+		keyboardVP:      viewport.New(0, 0),
+		timezoneVP:      viewport.New(0, 0),
 	}
 }

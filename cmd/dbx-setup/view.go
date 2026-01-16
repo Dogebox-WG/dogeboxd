@@ -162,15 +162,9 @@ func (m setupModel) renderKeyboardLayoutStep() string {
 	title := titleStyle.Render("Keyboard Layout")
 	subtitle := subtitleStyle.Render("Select your keyboard layout")
 
-	var options []string
-	for _, layout := range m.keyboardLayouts {
-		line := fmt.Sprintf("  %s - %s", layout.Code, layout.Name)
-		if layout.Code == m.keyboardLayout {
-			line = selectedStyle.Render("▸ " + line[2:])
-		} else {
-			line = normalStyle.Render(line)
-		}
-		options = append(options, line)
+	body := m.keyboardVP.View()
+	if body == "" {
+		body = normalStyle.Render("  No keyboard layouts found")
 	}
 
 	help := helpStyle.Render("↑/↓: Navigate • Enter: Continue • Esc: Back • Ctrl+C: Quit")
@@ -179,7 +173,7 @@ func (m setupModel) renderKeyboardLayoutStep() string {
 		title,
 		subtitle,
 		"",
-		strings.Join(options, "\n"),
+		body,
 		"",
 		help,
 	)
@@ -191,15 +185,9 @@ func (m setupModel) renderTimezoneStep() string {
 	title := titleStyle.Render("Timezone")
 	subtitle := subtitleStyle.Render("Select your timezone")
 
-	var options []string
-	for _, timezone := range m.timezones {
-		line := fmt.Sprintf("  %s - %s", timezone.Code, timezone.Name)
-		if timezone.Code == m.timezone {
-			line = selectedStyle.Render("▸ " + line[2:])
-		} else {
-			line = normalStyle.Render(line)
-		}
-		options = append(options, line)
+	body := m.timezoneVP.View()
+	if body == "" {
+		body = normalStyle.Render("  No timezones found")
 	}
 
 	help := helpStyle.Render("↑/↓: Navigate • Enter: Continue • Esc: Back • Ctrl+C: Quit")
@@ -208,7 +196,7 @@ func (m setupModel) renderTimezoneStep() string {
 		title,
 		subtitle,
 		"",
-		strings.Join(options, "\n"),
+		body,
 		"",
 		help,
 	)
