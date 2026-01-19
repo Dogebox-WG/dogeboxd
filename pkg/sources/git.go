@@ -12,6 +12,7 @@ import (
 	"time"
 
 	dogeboxd "github.com/dogeorg/dogeboxd/pkg"
+	"github.com/dogeorg/dogeboxd/pkg/pup"
 	"github.com/dogeorg/dogeboxd/pkg/utils"
 	"github.com/go-git/go-billy/v5/memfs"
 	"github.com/go-git/go-git/v5"
@@ -202,9 +203,12 @@ func (r ManifestSourceGit) getSourceDetailsFromWorktree(worktree *git.Worktree) 
 }
 
 type GitPupEntry struct {
-	Manifest   dogeboxd.PupManifest
-	SubPath    string
-	LogoBase64 string
+	Manifest     dogeboxd.PupManifest
+	SubPath      string
+	LogoBase64   string
+	ReleaseNotes string
+	ReleaseDate  *time.Time
+	ReleaseURL   string
 }
 
 func (r ManifestSourceGit) ensureTagValidAndGetPups(tag string) ([]GitPupEntry, error) {
@@ -338,7 +342,11 @@ func (r *ManifestSourceGit) List(ignoreCache bool) (dogeboxd.ManifestSourceList,
 			tagCount++
 			go func(ref, version string) {
 				entries, err := r.ensureTagValidAndGetPups(ref)
-				resultChan <- TagResult{version: version, entries: entries, err: err}
+				resultChan <- TagResult{
+					version: version,
+					entries: entries,
+					err:     err,
+				}
 			}(tagRef, tagName)
 		}
 
@@ -350,6 +358,8 @@ func (r *ManifestSourceGit) List(ignoreCache bool) (dogeboxd.ManifestSourceList,
 
 	validPups := []dogeboxd.ManifestSourcePup{}
 
+	ownerRepo, isGitHub := pup.ParseGitHubOwnerRepo(r.config.Location)
+
 	for i := 0; i < tagCount; i++ {
 		result := <-resultChan
 		if result.err != nil {
@@ -358,6 +368,10 @@ func (r *ManifestSourceGit) List(ignoreCache bool) (dogeboxd.ManifestSourceList,
 		}
 
 		for _, entry := range result.entries {
+			releaseURL := ""
+			if isGitHub {
+				releaseURL = fmt.Sprintf("https://github.com/%s/releases/tag/%s", ownerRepo, result.version)
+			}
 			validPups = append(validPups, dogeboxd.ManifestSourcePup{
 				Name: entry.Manifest.Meta.Name,
 				Location: map[string]string{
@@ -367,6 +381,7 @@ func (r *ManifestSourceGit) List(ignoreCache bool) (dogeboxd.ManifestSourceList,
 				Version:    entry.Manifest.Meta.Version,
 				Manifest:   entry.Manifest,
 				LogoBase64: entry.LogoBase64,
+				ReleaseURL: releaseURL,
 			})
 		}
 	}
