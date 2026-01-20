@@ -15,11 +15,7 @@ let
 in
 {
   # Maybe don't need this here at the top-level, only inside the container block?
-  nixpkgs.overlays = lib.mkAfter (
-    [ pupOverlay ] ++ lib.optionals pupEnclave [
-      (import "/etc/nixos/nix/builders/nanopc-t6/optee/overlay.nix")
-    ]
-  );
+  nixpkgs.overlays = [ pupOverlay ];
 
   systemd.services."container-log-forwarder@pup-{{.PUP_ID}}" = {
     description = "Container Log Forwarder for pup-{{.PUP_ID}}";
@@ -96,21 +92,13 @@ in
       # we are now using flakes for everything.
       system.copySystemConfiguration = lib.mkForce false;
 
-      nixpkgs.overlays = lib.mkAfter (
-        [ pupOverlay ] ++ lib.optionals pupEnclave [
-           (import "/etc/nixos/nix/builders/nanopc-t6/optee/overlay.nix")
-        ]
-      );
+      nixpkgs.overlays = [ pupOverlay ];
 
       # Mark our root fs as readonly.
       fileSystems."/" = {
         device = "rootfs";
         options = [ "ro" ];
       };
-
-      imports = lib.optionals pupEnclave [
-        "/etc/nixos/nix/builders/nanopc-t6/optee/modules/tee-supplicant/default.nix"
-      ];
 
       networking = {
         useHostResolvConf = lib.mkForce false;

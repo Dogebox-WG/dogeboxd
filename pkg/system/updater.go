@@ -253,7 +253,7 @@ func (t SystemUpdater) verifyNixFileHash(pupPath string, manifest dogeboxd.PupMa
 	actualHash := fmt.Sprintf("%x", nixFileSha256)
 
 	if actualHash != manifest.Container.Build.NixFileSha256 {
-		logger.Errf("Nix file hash mismatch: expected %s, got %s", manifest.Container.Build.NixFileSha256, actualHash)
+		logger.Errf("Nix file hash mismatch! Manifest Hash: %s, Computed Hash: %s", manifest.Container.Build.NixFileSha256, actualHash)
 		if !isDevMode {
 			return fmt.Errorf("nix file hash mismatch")
 		}
