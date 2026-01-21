@@ -22,6 +22,10 @@ type SystemUpdater interface {
 	AddBinaryCache(j AddBinaryCache, l SubLogger) error
 	UpdateSystemConfig(dbxState DogeboxState, log SubLogger) error
 	ValidateNix(content string) error
+
+	// Snapshot management for pup rollbacks
+	HasSnapshot(pupID string) bool
+	GetSnapshot(pupID string) (*PupVersionSnapshot, error)
 }
 
 // monitors systemd services and returns stats
@@ -45,10 +49,15 @@ type LogTailer interface {
 
 // SystemMonitor issues these for monitored PUPs
 type ProcStatus struct {
-	CPUPercent float64
-	MEMPercent float64
-	MEMMb      float64
-	Running    bool
+	CPUPercent float64 `json:"cpuPercent"`
+	MEMPercent float64 `json:"memPercent"`
+	MEMMb      float64 `json:"memMb"`
+	Running    bool    `json:"running"`
+
+	// ActiveState/SubState come from systemd and help disambiguate transient states
+	// like activating/deactivating even when MainPID is not yet (or no longer) present.
+	ActiveState string `json:"activeState,omitempty"`
+	SubState    string `json:"subState,omitempty"`
 }
 
 type DogeboxStateInitialSetup struct {
@@ -200,16 +209,19 @@ type SourceManager interface {
 	GetSource(name string) (ManifestSource, error)
 	AddSource(location string) (ManifestSource, error)
 	RemoveSource(id string) error
-	DownloadPup(diskPath, sourceId, pupName, pupVersion string) error
+	DownloadPup(diskPath, sourceId, pupName, pupVersion string) (PupManifest, error)
 	GetAllSourceConfigurations() []ManifestSourceConfiguration
 }
 
 type ManifestSourcePup struct {
-	Name       string
-	Location   map[string]string
-	Version    string
-	Manifest   PupManifest
-	LogoBase64 string
+	Name         string
+	Location     map[string]string
+	Version      string
+	Manifest     PupManifest
+	LogoBase64   string
+	ReleaseNotes string
+	ReleaseDate  *time.Time
+	ReleaseURL   string
 }
 
 type ManifestSourceList struct {

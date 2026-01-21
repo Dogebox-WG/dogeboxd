@@ -168,11 +168,30 @@ func getStatus(serviceNames []string) (map[string]dogeboxd.ProcStatus, error) {
 
 	out := map[string]dogeboxd.ProcStatus{}
 	for _, service := range serviceNames {
-		pidProp, err := conn.GetServicePropertyContext(context.Background(), service, "MainPID")
-		if err != nil {
-			continue
+		ctx := context.Background()
+
+		// MainPID is best-effort; it can legitimately be 0 during transitions.
+		var pid uint32
+		if pidProp, err := conn.GetServicePropertyContext(ctx, service, "MainPID"); err == nil {
+			if v, ok := pidProp.Value.Value().(uint32); ok {
+				pid = v
+			}
 		}
-		pid := pidProp.Value.Value().(uint32)
+
+		activeState := ""
+		if p, err := conn.GetServicePropertyContext(ctx, service, "ActiveState"); err == nil {
+			if v, ok := p.Value.Value().(string); ok {
+				activeState = v
+			}
+		}
+
+		subState := ""
+		if p, err := conn.GetServicePropertyContext(ctx, service, "SubState"); err == nil {
+			if v, ok := p.Value.Value().(string); ok {
+				subState = v
+			}
+		}
+
 		cpu := float64(0)
 		mem := float64(0)
 		rssM := float64(0)
@@ -200,10 +219,12 @@ func getStatus(serviceNames []string) (map[string]dogeboxd.ProcStatus, error) {
 		}
 
 		out[service] = dogeboxd.ProcStatus{
-			CPUPercent: cpu,
-			MEMPercent: mem,
-			MEMMb:      rssM,
-			Running:    running,
+			CPUPercent:  cpu,
+			MEMPercent:  mem,
+			MEMMb:       rssM,
+			Running:     running,
+			ActiveState: activeState,
+			SubState:    subState,
 		}
 	}
 

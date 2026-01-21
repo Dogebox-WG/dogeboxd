@@ -1,7 +1,7 @@
-{ config, pkgs, ... }:
+{ config, pkgs, lib, ... }:
 
 {
-  services.create_ap.enable = false; # Disable create_ap in case it was enabled by the T6 Installer.
+  services.create_ap.enable = lib.mkForce false; # Disable create_ap in case it was enabled by the T6 Installer.
 
   networking = {
     {{if .USE_ETHERNET}}
@@ -12,7 +12,9 @@
     };
     {{else if .USE_WIRELESS}}
     wireless = {
-      enable = true;
+      iwd = {
+        enable = true;
+      };
       interfaces = [ "{{.INTERFACE}}" ];
       networks = {
         "{{.WIFI_SSID}}" = {
