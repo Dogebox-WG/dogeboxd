@@ -121,9 +121,15 @@ func (m setupModel) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 			m.err = msg.err
 		} else {
 			m.keyboardLayouts = msg.layouts
-			// Set default to first option
+			// Set default to 'us', else first option
 			if len(m.keyboardLayouts) > 0 {
 				m.keyboardLayout = m.keyboardLayouts[0].Code
+				for _, layout := range m.keyboardLayouts {
+					if strings.EqualFold(layout.Code, "us") {
+						m.keyboardLayout = layout.Code
+						break
+					}
+				}
 			}
 			m.refreshKeyboardViewport()
 		}
