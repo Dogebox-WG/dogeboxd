@@ -190,14 +190,19 @@ func (SaveCustomNix) ActionName() string { return "save-custom-nix" }
 // Import blockchain data to the system (not tied to a specific pup)
 type ImportBlockchainData struct{}
 
+func (ImportBlockchainData) ActionName() string { return "import-blockchain" }
+
 type UpdateTimezone struct {
 	Timezone string
 }
 
+func (UpdateTimezone) ActionName() string { return "update-timezone" }
+
 type UpdateKeymap struct {
 	Keymap string
 }
-func (ImportBlockchainData) ActionName() string { return "import-blockchain" }
+
+func (UpdateKeymap) ActionName() string { return "update-keymap" }
 
 type SystemUpdate struct {
 	Package string
