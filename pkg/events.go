@@ -192,6 +192,18 @@ type ImportBlockchainData struct{}
 
 func (ImportBlockchainData) ActionName() string { return "import-blockchain" }
 
+type UpdateTimezone struct {
+	Timezone string
+}
+
+func (UpdateTimezone) ActionName() string { return "update-timezone" }
+
+type UpdateKeymap struct {
+	Keymap string
+}
+
+func (UpdateKeymap) ActionName() string { return "update-keymap" }
+
 type SystemUpdate struct {
 	Package string
 	Version string

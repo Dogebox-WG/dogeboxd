@@ -179,6 +179,20 @@ func (t SystemUpdater) Run(started, stopped chan bool, stop chan context.Context
 						}
 						t.done <- j
 
+					case dogeboxd.UpdateTimezone:
+						err := t.updateTimezone(a, j.Logger.Step("update timezone"))
+						if err != nil {
+							j.Err = "Failed to update timezone"
+						}
+						t.done <- j
+
+					case dogeboxd.UpdateKeymap:
+						err := t.updateKeymap(a, j.Logger.Step("update keymap"))
+						if err != nil {
+							j.Err = "Failed to update keyboard layout"
+						}
+						t.done <- j
+
 					default:
 						fmt.Printf("Unknown action type: %v\n", a)
 					}
@@ -608,6 +622,77 @@ func (t SystemUpdater) removeBinaryCache(j dogeboxd.RemoveBinaryCache) error {
 	}
 
 	return t.sm.SetDogebox(dbxState)
+}
+
+func (t SystemUpdater) UpdateSystemConfig(dbxState dogeboxd.DogeboxState, log dogeboxd.SubLogger) error {
+	patch := t.nix.NewPatch(log)
+	t.nix.UpdateFirewallRules(patch, dbxState)
+
+	values := utils.GetNixSystemTemplateValues(dbxState)
+	t.nix.UpdateSystem(patch, values)
+
+	if err := patch.Apply(); err != nil {
+		log.Errf("Failed to commit system state: %v", err)
+		return err
+	}
+
+	return nil
+}
+
+func (t SystemUpdater) updateTimezone(a dogeboxd.UpdateTimezone, log dogeboxd.SubLogger) error {
+	log.Logf("Updating timezone to %s", a.Timezone)
+
+	dbxState := t.sm.Get().Dogebox
+	dbxState.Timezone = a.Timezone
+
+	if err := t.sm.SetDogebox(dbxState); err != nil {
+		log.Errf("Failed to save timezone state: %v", err)
+		return err
+	}
+
+	log.Progress(20).Log("Applying system configuration...")
+
+	patch := t.nix.NewPatch(log)
+	t.nix.UpdateFirewallRules(patch, dbxState)
+
+	values := utils.GetNixSystemTemplateValues(dbxState)
+	t.nix.UpdateSystem(patch, values)
+
+	if err := patch.Apply(); err != nil {
+		log.Errf("Failed to apply nix patch: %v", err)
+		return err
+	}
+
+	log.Progress(100).Logf("Timezone updated to %s", a.Timezone)
+	return nil
+}
+
+func (t SystemUpdater) updateKeymap(a dogeboxd.UpdateKeymap, log dogeboxd.SubLogger) error {
+	log.Logf("Updating keyboard layout to %s", a.Keymap)
+
+	dbxState := t.sm.Get().Dogebox
+	dbxState.KeyMap = a.Keymap
+
+	if err := t.sm.SetDogebox(dbxState); err != nil {
+		log.Errf("Failed to save keymap state: %v", err)
+		return err
+	}
+
+	log.Progress(20).Log("Applying system configuration...")
+
+	patch := t.nix.NewPatch(log)
+	t.nix.UpdateFirewallRules(patch, dbxState)
+
+	values := utils.GetNixSystemTemplateValues(dbxState)
+	t.nix.UpdateSystem(patch, values)
+
+	if err := patch.Apply(); err != nil {
+		log.Errf("Failed to apply nix patch: %v", err)
+		return err
+	}
+
+	log.Progress(100).Logf("Keyboard layout updated to %s", a.Keymap)
+  return nil
 }
 
 // getServiceStatus returns detailed status information about a systemd service
