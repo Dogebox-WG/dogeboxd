@@ -99,48 +99,48 @@ func fetchKeyboardLayoutsCmd() tea.Cmd {
 // fetchTimezonesCmd fetches available timezones
 func fetchTimezonesCmd() tea.Cmd {
 	return func() tea.Msg {
-		timezones := []timezone{
-			{Code: "utc", Name: "UTC", Description: "UTC"},
-			{Code: "europe/london", Name: "Europe/London", Description: "Europe/London"},
-			{Code: "australia/sydney", Name: "Australia/Sydney", Description: "Australia/Sydney"},
-			{Code: "australia/melbourne", Name: "Australia/Melbourne", Description: "Australia/Melbourne"},
-			{Code: "australia/brisbane", Name: "Australia/Brisbane", Description: "Australia/Brisbane"},
-			{Code: "australia/adelaide", Name: "Australia/Adelaide", Description: "Australia/Adelaide"},
-			{Code: "australia/perth", Name: "Australia/Perth", Description: "Australia/Perth"},
-			{Code: "asia/tokyo", Name: "Asia/Tokyo", Description: "Asia/Tokyo"},
-		}
-		return timezonesMsg{timezones: timezones}
 		/*
-			client := getSocketClient()
-
-			req, err := http.NewRequest(http.MethodGet, "http://dogeboxd/system/timezones", nil)
-			if err != nil {
-				return timezonesMsg{err: err}
+			timezones := []timezone{
+				{Code: "utc", Name: "UTC", Description: "UTC"},
+				{Code: "europe/london", Name: "Europe/London", Description: "Europe/London"},
+				{Code: "australia/sydney", Name: "Australia/Sydney", Description: "Australia/Sydney"},
+				{Code: "australia/melbourne", Name: "Australia/Melbourne", Description: "Australia/Melbourne"},
+				{Code: "australia/brisbane", Name: "Australia/Brisbane", Description: "Australia/Brisbane"},
+				{Code: "australia/adelaide", Name: "Australia/Adelaide", Description: "Australia/Adelaide"},
+				{Code: "australia/perth", Name: "Australia/Perth", Description: "Australia/Perth"},
+				{Code: "asia/tokyo", Name: "Asia/Tokyo", Description: "Asia/Tokyo"},
 			}
-
-			resp, err := client.Do(req)
-			if err != nil {
-				return timezonesMsg{err: err}
-			}
-			defer resp.Body.Close()
-
-			if resp.StatusCode != http.StatusOK {
-				body, _ := io.ReadAll(resp.Body)
-				return timezonesMsg{err: fmt.Errorf("failed to fetch timezones: %s", body)}
-			}
-
-			var apiTimezones []timezone
-			if err := json.NewDecoder(resp.Body).Decode(&apiTimezones); err != nil {
-				return timezonesMsg{err: err}
-			}
-
-			// Ensure results are sorted for a consistent UI experience
-			sort.Slice(apiTimezones, func(i, j int) bool {
-				return apiTimezones[i].Name < apiTimezones[j].Name
-			})
-
-			return timezonesMsg{timezones: apiTimezones}
+			return timezonesMsg{timezones: timezones}
 		*/
+		client := getSocketClient()
+
+		req, err := http.NewRequest(http.MethodGet, "http://dogeboxd/system/timezones", nil)
+		if err != nil {
+			return timezonesMsg{err: err}
+		}
+
+		resp, err := client.Do(req)
+		if err != nil {
+			return timezonesMsg{err: err}
+		}
+		defer resp.Body.Close()
+
+		if resp.StatusCode != http.StatusOK {
+			body, _ := io.ReadAll(resp.Body)
+			return timezonesMsg{err: fmt.Errorf("failed to fetch timezones: %s", body)}
+		}
+
+		var apiTimezones []timezone
+		if err := json.NewDecoder(resp.Body).Decode(&apiTimezones); err != nil {
+			return timezonesMsg{err: err}
+		}
+
+		// Ensure results are sorted for a consistent UI experience
+		sort.Slice(apiTimezones, func(i, j int) bool {
+			return apiTimezones[i].Name < apiTimezones[j].Name
+		})
+
+		return timezonesMsg{timezones: apiTimezones}
 	}
 }
 
