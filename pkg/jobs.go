@@ -400,6 +400,10 @@ func (jm *JobManager) getDisplayName(j Job) string {
 		return "System Update"
 	case UpdateMetrics:
 		return "Update Metrics"
+	case UpdateTimezone:
+		return "Update Timezone"
+	case UpdateKeymap:
+		return "Update Keyboard Layout"
 	case CheckPupUpdates:
 		if a.PupID != "" {
 			// Checking specific pup

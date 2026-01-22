@@ -151,6 +151,7 @@ func GetNixSystemTemplateValues(dbxState dogeboxd.DogeboxState) dogeboxd.NixSyst
 		SSH_ENABLED:       dbxState.SSH.Enabled,
 		SSH_KEYS:          dbxState.SSH.Keys,
 		KEYMAP:            dbxState.KeyMap,
+		TIMEZONE:          dbxState.Timezone,
 		BINARY_CACHE_SUBS: binaryCacheSubs,
 		BINARY_CACHE_KEYS: binaryCacheKeys,
 	}

@@ -20,6 +20,7 @@ type SystemUpdater interface {
 	EnableSSH(l SubLogger) error
 	ListSSHKeys() ([]DogeboxStateSSHKey, error)
 	AddBinaryCache(j AddBinaryCache, l SubLogger) error
+	UpdateSystemConfig(dbxState DogeboxState, log SubLogger) error
 	ValidateNix(content string) error
 
 	// Snapshot management for pup rollbacks
@@ -91,6 +92,7 @@ type DogeboxState struct {
 	InitialState  DogeboxStateInitialSetup
 	Hostname      string
 	KeyMap        string
+	Timezone      string
 	SSH           DogeboxStateSSHConfig
 	StorageDevice string
 	Flags         DogeboxFlags
@@ -318,6 +320,7 @@ type NixFirewallTemplateValues struct {
 type NixSystemTemplateValues struct {
 	SYSTEM_HOSTNAME   string
 	KEYMAP            string
+	TIMEZONE          string
 	SSH_ENABLED       bool
 	SSH_KEYS          []DogeboxStateSSHKey
 	BINARY_CACHE_SUBS []string
