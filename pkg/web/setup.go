@@ -33,19 +33,30 @@ type BootstrapFlags struct {
 	IsDeveloperMode            bool `json:"isDeveloperMode"`
 }
 
+type SidebarPreferencesResponse struct {
+	SidebarPups []string `json:"sidebarPups"`
+}
+
 type BootstrapResponse struct {
-	TS         int64                        `json:"ts"`
-	Version    *version.DBXVersionInfo      `json:"version"`
-	DevMode    bool                         `json:"devMode"`
-	Assets     map[string]dogeboxd.PupAsset `json:"assets"`
-	States     map[string]dogeboxd.PupState `json:"states"`
-	Stats      map[string]dogeboxd.PupStats `json:"stats"`
-	Flags      BootstrapFlags               `json:"flags"`
-	SetupFacts BootstrapFacts               `json:"setupFacts"`
+	TS                 int64                        `json:"ts"`
+	Version            *version.DBXVersionInfo      `json:"version"`
+	DevMode            bool                         `json:"devMode"`
+	Assets             map[string]dogeboxd.PupAsset `json:"assets"`
+	States             map[string]dogeboxd.PupState `json:"states"`
+	Stats              map[string]dogeboxd.PupStats `json:"stats"`
+	Flags              BootstrapFlags               `json:"flags"`
+	SetupFacts         BootstrapFacts               `json:"setupFacts"`
+	SidebarPreferences SidebarPreferencesResponse   `json:"sidebarPreferences"`
 }
 
 func (t api) getRawBS() BootstrapResponse {
 	dbxState := t.sm.Get().Dogebox
+
+	// Get sidebar pups from DogeboxState, ensuring non-nil slice for JSON
+	sidebarPups := dbxState.SidebarPups
+	if sidebarPups == nil {
+		sidebarPups = []string{}
+	}
 
 	return BootstrapResponse{
 		TS:      time.Now().UnixMilli(),
@@ -63,6 +74,7 @@ func (t api) getRawBS() BootstrapResponse {
 			HasConfiguredNetwork:             dbxState.InitialState.HasSetNetwork,
 			HasCompletedInitialConfiguration: dbxState.InitialState.HasFullyConfigured,
 		},
+		SidebarPreferences: SidebarPreferencesResponse{SidebarPups: sidebarPups},
 	}
 }
 
@@ -634,4 +646,120 @@ func (t api) initialBootstrap(w http.ResponseWriter, r *http.Request) {
 		time.Sleep(5 * time.Second)
 		t.lifecycle.Reboot()
 	}()
+}
+
+// getSidebarPreferences returns the list of pups pinned to the sidebar
+func (t api) getSidebarPreferences(w http.ResponseWriter, r *http.Request) {
+	dbxState := t.sm.Get().Dogebox
+	sidebarPups := dbxState.SidebarPups
+	if sidebarPups == nil {
+		sidebarPups = []string{}
+	}
+	sendResponse(w, SidebarPreferencesResponse{SidebarPups: sidebarPups})
+}
+
+// addSidebarPup adds a pup to the sidebar
+func (t api) addSidebarPup(w http.ResponseWriter, r *http.Request) {
+	body, err := io.ReadAll(r.Body)
+	if err != nil {
+		sendErrorResponse(w, http.StatusBadRequest, "Error reading request body")
+		return
+	}
+	defer r.Body.Close()
+
+	var payload struct {
+		PupID string `json:"pupId"`
+	}
+	err = json.Unmarshal(body, &payload)
+	if err != nil {
+		sendErrorResponse(w, http.StatusBadRequest, "Error unmarshalling JSON")
+		return
+	}
+
+	if payload.PupID == "" {
+		sendErrorResponse(w, http.StatusBadRequest, "pupId is required")
+		return
+	}
+
+	dbxState := t.sm.Get().Dogebox
+	sidebarPups := dbxState.SidebarPups
+	if sidebarPups == nil {
+		sidebarPups = []string{}
+	}
+
+	// Check if already exists
+	for _, id := range sidebarPups {
+		if id == payload.PupID {
+			sendResponse(w, map[string]string{"status": "OK", "message": "Already in sidebar"})
+			return
+		}
+	}
+
+	// Add to list and persist
+	dbxState.SidebarPups = append(sidebarPups, payload.PupID)
+	err = t.sm.SetDogebox(dbxState)
+	if err != nil {
+		sendErrorResponse(w, http.StatusInternalServerError, "Error saving preferences")
+		return
+	}
+
+	sendResponse(w, map[string]string{"status": "OK"})
+}
+
+// removeSidebarPup removes a pup from the sidebar
+func (t api) removeSidebarPup(w http.ResponseWriter, r *http.Request) {
+	body, err := io.ReadAll(r.Body)
+	if err != nil {
+		sendErrorResponse(w, http.StatusBadRequest, "Error reading request body")
+		return
+	}
+	defer r.Body.Close()
+
+	var payload struct {
+		PupID string `json:"pupId"`
+	}
+	err = json.Unmarshal(body, &payload)
+	if err != nil {
+		sendErrorResponse(w, http.StatusBadRequest, "Error unmarshalling JSON")
+		return
+	}
+
+	if payload.PupID == "" {
+		sendErrorResponse(w, http.StatusBadRequest, "pupId is required")
+		return
+	}
+
+	dbxState := t.sm.Get().Dogebox
+	sidebarPups := dbxState.SidebarPups
+	if sidebarPups == nil {
+		// Nothing to remove
+		sendResponse(w, map[string]string{"status": "OK", "message": "Not in sidebar"})
+		return
+	}
+
+	// Remove from list
+	filtered := []string{}
+	found := false
+	for _, id := range sidebarPups {
+		if id != payload.PupID {
+			filtered = append(filtered, id)
+		} else {
+			found = true
+		}
+	}
+
+	if !found {
+		sendResponse(w, map[string]string{"status": "OK", "message": "Not in sidebar"})
+		return
+	}
+
+	// Persist the updated list
+	dbxState.SidebarPups = filtered
+	err = t.sm.SetDogebox(dbxState)
+	if err != nil {
+		sendErrorResponse(w, http.StatusInternalServerError, "Error saving preferences")
+		return
+	}
+
+	sendResponse(w, map[string]string{"status": "OK"})
 }

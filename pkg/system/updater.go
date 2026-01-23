@@ -237,6 +237,25 @@ func (t SystemUpdater) markPupBroken(s dogeboxd.PupState, reason string, upstrea
 	return upstreamError
 }
 
+// cleanupSidebarPreferences removes a pup from sidebar preferences after uninstall/purge
+func (t SystemUpdater) cleanupSidebarPreferences(pupID string) {
+	dbxState := t.sm.Get().Dogebox
+	if dbxState.SidebarPups == nil {
+		return // Nothing to clean up
+	}
+
+	// Remove pupID from list
+	filtered := []string{}
+	for _, id := range dbxState.SidebarPups {
+		if id != pupID {
+			filtered = append(filtered, id)
+		}
+	}
+
+	dbxState.SidebarPups = filtered
+	t.sm.SetDogebox(dbxState)
+}
+
 // verifyNixFileHash verifies that the nix file matches the expected hash from the manifest
 func (t SystemUpdater) verifyNixFileHash(pupPath string, manifest dogeboxd.PupManifest, isDevMode bool, logger dogeboxd.SubLogger) error {
 	nixFile, err := os.ReadFile(filepath.Join(pupPath, manifest.Container.Build.NixFile))
@@ -391,6 +410,9 @@ func (t SystemUpdater) uninstallPup(j dogeboxd.Job) error {
 		return t.markPupBroken(s, dogeboxd.BROKEN_REASON_STATE_UPDATE_FAILED, err)
 	}
 
+	// Clean up sidebar preferences
+	t.cleanupSidebarPreferences(s.ID)
+
 	return nil
 }
 
@@ -441,6 +463,9 @@ func (t SystemUpdater) purgePup(j dogeboxd.Job) error {
 		log.Errf("Failed to purge pup %s: %v", s.ID, err)
 		// Keep going if we fail.
 	}
+
+	// Clean up sidebar preferences
+	t.cleanupSidebarPreferences(s.ID)
 
 	return nil
 }
