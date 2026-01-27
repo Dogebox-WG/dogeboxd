@@ -732,7 +732,13 @@ func (m setupModel) timezoneOptionsContent() string {
 
 	var options []string
 	for _, tz := range m.timezones {
-		line := fmt.Sprintf("  %s - %s", tz.Code, tz.Name)
+		city := tz.Name
+		if parts := strings.Split(tz.Name, "/"); len(parts) > 0 {
+			city = parts[len(parts)-1]
+		}
+		city = strings.ReplaceAll(city, "_", " ")
+
+		line := fmt.Sprintf("  %s - %s", city, tz.Name)
 		if tz.Code == m.timezone {
 			line = selectedStyle.Render("▸ " + line[2:])
 		} else {

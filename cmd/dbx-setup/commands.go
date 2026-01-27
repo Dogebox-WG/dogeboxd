@@ -7,6 +7,7 @@ import (
 	"io"
 	"net/http"
 	"sort"
+	"strings"
 	"time"
 
 	tea "github.com/charmbracelet/bubbletea"
@@ -137,7 +138,15 @@ func fetchTimezonesCmd() tea.Cmd {
 
 		// Ensure results are sorted for a consistent UI experience
 		sort.Slice(apiTimezones, func(i, j int) bool {
-			return apiTimezones[i].Name < apiTimezones[j].Name
+			city := func(name string) string {
+				parts := strings.Split(name, "/")
+				return strings.ToLower(parts[len(parts)-1])
+			}
+			ci, cj := city(apiTimezones[i].Name), city(apiTimezones[j].Name)
+			if ci == cj {
+				return apiTimezones[i].Name < apiTimezones[j].Name // stable fallback
+			}
+			return ci < cj
 		})
 
 		return timezonesMsg{timezones: apiTimezones}
