@@ -50,21 +50,6 @@ func checkBootstrapCmd() tea.Cmd {
 // fetchKeyboardLayoutsCmd fetches available keyboard layouts
 func fetchKeyboardLayoutsCmd() tea.Cmd {
 	return func() tea.Msg {
-		/*
-			// For now, return a static list of common layouts
-			// In production, this would fetch from the API
-			layouts := []keyboardLayout{
-				{Code: "us", Name: "US", Description: "US English"},
-				{Code: "uk", Name: "UK", Description: "UK English"},
-				{Code: "de", Name: "German", Description: "German (QWERTZ)"},
-				{Code: "fr", Name: "French", Description: "French (AZERTY)"},
-				{Code: "es", Name: "Spanish", Description: "Spanish"},
-				{Code: "it", Name: "Italian", Description: "Italian"},
-				{Code: "jp", Name: "Japanese", Description: "Japanese"},
-				{Code: "dvorak", Name: "Dvorak", Description: "Dvorak"},
-			}
-			return keyboardLayoutsMsg{layouts: layouts}
-		*/
 		client := getSocketClient()
 
 		req, err := http.NewRequest(http.MethodGet, "http://dogeboxd/system/keymaps", nil)
@@ -100,19 +85,6 @@ func fetchKeyboardLayoutsCmd() tea.Cmd {
 // fetchTimezonesCmd fetches available timezones
 func fetchTimezonesCmd() tea.Cmd {
 	return func() tea.Msg {
-		/*
-			timezones := []timezone{
-				{Code: "utc", Name: "UTC", Description: "UTC"},
-				{Code: "europe/london", Name: "Europe/London", Description: "Europe/London"},
-				{Code: "australia/sydney", Name: "Australia/Sydney", Description: "Australia/Sydney"},
-				{Code: "australia/melbourne", Name: "Australia/Melbourne", Description: "Australia/Melbourne"},
-				{Code: "australia/brisbane", Name: "Australia/Brisbane", Description: "Australia/Brisbane"},
-				{Code: "australia/adelaide", Name: "Australia/Adelaide", Description: "Australia/Adelaide"},
-				{Code: "australia/perth", Name: "Australia/Perth", Description: "Australia/Perth"},
-				{Code: "asia/tokyo", Name: "Asia/Tokyo", Description: "Asia/Tokyo"},
-			}
-			return timezonesMsg{timezones: timezones}
-		*/
 		client := getSocketClient()
 
 		req, err := http.NewRequest(http.MethodGet, "http://dogeboxd/system/timezones", nil)
@@ -346,33 +318,52 @@ func finalizeSetupCmd(m setupModel) tea.Cmd {
 		sendProgress(0) // Device name complete
 		time.Sleep(500 * time.Millisecond)
 
-		// Step 2: Keyboard layout (simulated - not actually set via API currently)
+		// Step 2: Keyboard layout
+		if m.keyboardLayout != "" {
+			payload := map[string]string{"keymap": m.keyboardLayout}
+			body, _ := json.Marshal(payload)
+
+			req, err := http.NewRequest(http.MethodPost, "http://dogeboxd/system/keymap", bytes.NewReader(body))
+			if err != nil {
+				return setupCompleteMsg{err: fmt.Errorf("failed to create keymap request: %w", err)}
+			}
+			req.Header.Set("Content-Type", "application/json")
+
+			resp, err := client.Do(req)
+			if err != nil {
+				return setupCompleteMsg{err: fmt.Errorf("failed to set keymap: %w", err)}
+			}
+			resp.Body.Close()
+
+			if resp.StatusCode != http.StatusOK {
+				return setupCompleteMsg{err: fmt.Errorf("failed to set keymap: status %d", resp.StatusCode)}
+			}
+		}
 		sendProgress(1) // Keyboard layout complete
 		time.Sleep(500 * time.Millisecond)
 
 		// Step 3: Set timezone (if selected)
-		/*
-			if m.timezone != "" {
-				payload := map[string]string{"timezone": m.timezone}
-				body, _ := json.Marshal(payload)
+		if m.timezone != "" {
+			payload := map[string]string{"timezone": m.timezone}
+			body, _ := json.Marshal(payload)
 
-				req, err := http.NewRequest(http.MethodPost, "http://dogeboxd/system/timezone", bytes.NewReader(body))
-				if err != nil {
-					return setupCompleteMsg{err: fmt.Errorf("failed to create timezone request: %w", err)}
-				}
-				req.Header.Set("Content-Type", "application/json")
-
-				resp, err := client.Do(req)
-				if err != nil {
-					return setupCompleteMsg{err: fmt.Errorf("failed to set timezone: %w", err)}
-				}
-				resp.Body.Close()
-
-				if resp.StatusCode != http.StatusOK {
-					return setupCompleteMsg{err: fmt.Errorf("failed to set timezone: status %d", resp.StatusCode)}
-				}
+			req, err := http.NewRequest(http.MethodPost, "http://dogeboxd/system/timezone", bytes.NewReader(body))
+			if err != nil {
+				return setupCompleteMsg{err: fmt.Errorf("failed to create timezone request: %w", err)}
 			}
-		*/
+			req.Header.Set("Content-Type", "application/json")
+
+			resp, err := client.Do(req)
+			if err != nil {
+				return setupCompleteMsg{err: fmt.Errorf("failed to set timezone: %w", err)}
+			}
+			resp.Body.Close()
+
+			if resp.StatusCode != http.StatusOK {
+				return setupCompleteMsg{err: fmt.Errorf("failed to set timezone: status %d", resp.StatusCode)}
+			}
+		}
+
 		sendProgress(2) // Timezone complete
 		time.Sleep(500 * time.Millisecond)
 
