@@ -2,6 +2,7 @@ package web
 
 import (
 	"fmt"
+	"time"
 
 	dogeboxd "github.com/dogeorg/dogeboxd/pkg"
 	"golang.org/x/net/websocket"
@@ -11,6 +12,12 @@ import (
 // Sends initial jobs list, then streams job:created, job:updated, job:completed, job:failed events
 func (t api) GetJobsHandler() *websocket.Server {
 	initialPayload := func() any {
+		if t.dbx.JobManager != nil {
+			_, _ = t.dbx.JobManager.ClearOrphanedJobsByAction(20*time.Minute, []string{
+				"backup-config",
+				"restore-config",
+			})
+		}
 		// Load all jobs from database as initial payload
 		jobs, err := t.dbx.JobManager.GetAllJobs()
 		if err != nil {

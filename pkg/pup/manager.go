@@ -387,6 +387,40 @@ func (t PupManager) GetAssetsMap() map[string]dogeboxd.PupAsset {
 	return out
 }
 
+// ReloadFromDisk clears in-memory state and reloads pups from storage.
+func (t *PupManager) ReloadFromDisk() error {
+	t.mu.Lock()
+	defer t.mu.Unlock()
+
+	t.state = map[string]*dogeboxd.PupState{}
+	t.stats = map[string]*dogeboxd.PupStats{}
+
+	if err := t.loadPups(); err != nil {
+		return err
+	}
+
+	t.recoverStuckPups()
+
+	ip := net.IP{10, 69, 0, 1}
+	for _, v := range t.state {
+		ip2 := net.ParseIP(v.IP).To4()
+		if ip2 == nil {
+			continue
+		}
+		for i := 0; i < 4; i++ {
+			if ip[i] < ip2[i] {
+				ip = ip2
+				break
+			} else if ip[i] > ip2[i] {
+				continue
+			}
+		}
+	}
+	t.lastIP = ip
+	t.updateMonitoredPups()
+	return nil
+}
+
 func (t PupManager) GetPup(id string) (dogeboxd.PupState, dogeboxd.PupStats, error) {
 	state, ok := t.state[id]
 	if ok {

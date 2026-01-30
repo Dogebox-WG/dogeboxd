@@ -317,6 +317,11 @@ func (nm nixManager) UpdateStorageOverlay(nixPatch dogeboxd.NixPatch, partitionN
 
 func (nm nixManager) RebuildBoot(log dogeboxd.SubLogger) error {
 	cmdArgs := []string{"_dbxroot", "nix", "rb"}
+	rebuildTarget, ok := nm.remoteRebuildTarget()
+	if ok {
+		log.Logf("Using remote rebuild target: %s", rebuildTarget)
+		cmdArgs = append([]string{"env", fmt.Sprintf("REMOTE_REBUILD_DOGEBOX_DIRECTORY=%s", rebuildTarget)}, cmdArgs...)
+	}
 
 	md := exec.Command("sudo", cmdArgs...)
 	log.LogCmd(md)
@@ -330,6 +335,11 @@ func (nm nixManager) RebuildBoot(log dogeboxd.SubLogger) error {
 
 func (nm nixManager) Rebuild(log dogeboxd.SubLogger) error {
 	cmdArgs := []string{"_dbxroot", "nix", "rs"}
+	rebuildTarget, ok := nm.remoteRebuildTarget()
+	if ok {
+		log.Logf("Using remote rebuild target: %s", rebuildTarget)
+		cmdArgs = append([]string{"env", fmt.Sprintf("REMOTE_REBUILD_DOGEBOX_DIRECTORY=%s", rebuildTarget)}, cmdArgs...)
+	}
 
 	cmd := exec.Command("sudo", cmdArgs...)
 	log.LogCmd(cmd)
@@ -340,6 +350,14 @@ func (nm nixManager) Rebuild(log dogeboxd.SubLogger) error {
 	}
 
 	return nil
+}
+
+func (nm nixManager) remoteRebuildTarget() (string, bool) {
+	if nm.config.NixDir == "" {
+		return "", false
+	}
+
+	return nm.config.NixDir, true
 }
 
 func (nm nixManager) NewPatch(log dogeboxd.SubLogger) dogeboxd.NixPatch {

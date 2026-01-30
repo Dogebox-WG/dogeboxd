@@ -25,19 +25,27 @@ func RESTAPI(
 	dkm dogeboxd.DKMManager,
 	ws WSRelay,
 ) conductor.Service {
+	sessionsMu.Lock()
 	sessions = []Session{}
+	sessionsMu.Unlock()
 
 	if config.DevMode {
 		log.Println("In development mode: Loading REST API sessions..")
 		file, err := os.Open(fmt.Sprintf("%s/dev-sessions.gob", config.DataDir))
 		if err == nil {
 			decoder := gob.NewDecoder(file)
-			err = decoder.Decode(&sessions)
+			var decoded []Session
+			err = decoder.Decode(&decoded)
 			if err != nil {
 				log.Printf("Failed to decode sessions from dev-sessions.gob: %v", err)
 			}
 			file.Close()
-			log.Printf("Loaded %d sessions from dev-sessions.gob", len(sessions))
+			if err == nil {
+				sessionsMu.Lock()
+				sessions = decoded
+				sessionsMu.Unlock()
+			}
+			log.Printf("Loaded %d sessions from dev-sessions.gob", len(decoded))
 		} else {
 			log.Printf("Failed to open dev-sessions.gob: %v", err)
 		}
@@ -140,8 +148,13 @@ func RESTAPI(
 		"GET /system/updates": a.checkForUpdates,
 		"POST /system/update": a.commenceUpdate,
 
-		"GET /system/stats":    a.getSystemStats,
-		"GET /system/services": a.getSystemServices,
+		"GET /system/stats":                   a.getSystemStats,
+		"GET /system/services":                a.getSystemServices,
+		"GET /system/removable-mounts":        a.getRemovableMounts,
+		"POST /system/backup":                 a.startBackup,
+		"GET /system/backup/status/{jobID}":   a.getBackupStatus,
+		"GET /system/backup/download/{jobID}": a.downloadBackup,
+		"POST /system/restore":                a.startRestore,
 
 		// Job management routes
 		"GET /jobs":                  a.getJobs,

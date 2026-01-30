@@ -408,6 +408,12 @@ type SystemDisk struct {
 	Children    []SystemDisk          `json:"children,omitempty"`
 }
 
+type RemovableMount struct {
+	Path   string `json:"path"`
+	Label  string `json:"label,omitempty"`
+	Device string `json:"device,omitempty"`
+}
+
 type BootstrapInstallationBootMedia string
 
 const (

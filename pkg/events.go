@@ -211,6 +211,20 @@ type SystemUpdate struct {
 
 func (SystemUpdate) ActionName() string { return "system-update" }
 
+type BackupConfig struct {
+	Target          BackupTarget
+	DestinationPath string
+}
+
+func (BackupConfig) ActionName() string { return "backup-config" }
+
+type RestoreConfig struct {
+	SourcePath   string
+	SessionToken string
+}
+
+func (RestoreConfig) ActionName() string { return "restore-config" }
+
 type AddBinaryCache struct {
 	Host string
 	Key  string

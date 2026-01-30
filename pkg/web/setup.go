@@ -2,6 +2,7 @@ package web
 
 import (
 	"encoding/json"
+	"fmt"
 	"io"
 	"log"
 	"net/http"
@@ -46,14 +47,42 @@ type BootstrapResponse struct {
 
 func (t api) getRawBS() BootstrapResponse {
 	dbxState := t.sm.Get().Dogebox
+	states := t.pups.GetStateMap()
+	stats := t.pups.GetStatsMap()
+	if len(states) > 0 {
+		serviceNames := make([]string, 0, len(states))
+		for id, state := range states {
+			if state.Installation != dogeboxd.STATE_READY {
+				continue
+			}
+			serviceNames = append(serviceNames, fmt.Sprintf("container@pup-%s.service", id))
+		}
+		if len(serviceNames) > 0 {
+			if statusMap, err := system.GetServiceStatusMap(serviceNames); err == nil {
+				for id, state := range states {
+					serviceName := fmt.Sprintf("container@pup-%s.service", id)
+					proc, ok := statusMap[serviceName]
+					if !ok {
+						continue
+					}
+					entry := stats[id]
+					if entry.ID == "" {
+						entry.ID = id
+					}
+					entry.Status = deriveBootstrapStatus(state, proc)
+					stats[id] = entry
+				}
+			}
+		}
+	}
 
 	return BootstrapResponse{
 		TS:      time.Now().UnixMilli(),
 		Version: version.GetDBXRelease(),
 		DevMode: t.config.DevMode,
 		Assets:  t.pups.GetAssetsMap(),
-		States:  t.pups.GetStateMap(),
-		Stats:   t.pups.GetStatsMap(),
+		States:  states,
+		Stats:   stats,
 		Flags: BootstrapFlags{
 			IsFirstTimeWelcomeComplete: dbxState.Flags.IsFirstTimeWelcomeComplete,
 			IsDeveloperMode:            dbxState.Flags.IsDeveloperMode,
@@ -64,6 +93,34 @@ func (t api) getRawBS() BootstrapResponse {
 			HasCompletedInitialConfiguration: dbxState.InitialState.HasFullyConfigured,
 		},
 	}
+}
+
+func deriveBootstrapStatus(state dogeboxd.PupState, proc dogeboxd.ProcStatus) string {
+	switch proc.ActiveState {
+	case "activating":
+		if state.Enabled {
+			return dogeboxd.STATE_STARTING
+		}
+		return dogeboxd.STATE_STOPPING
+	case "deactivating":
+		return dogeboxd.STATE_STOPPING
+	case "active":
+		if !state.Enabled {
+			return dogeboxd.STATE_STOPPING
+		}
+		return dogeboxd.STATE_RUNNING
+	}
+
+	if proc.Running && state.Enabled {
+		return dogeboxd.STATE_RUNNING
+	}
+	if proc.Running && !state.Enabled {
+		return dogeboxd.STATE_STOPPING
+	}
+	if !proc.Running && state.Enabled {
+		return dogeboxd.STATE_STARTING
+	}
+	return dogeboxd.STATE_STOPPED
 }
 
 type RecoveryFacts struct {

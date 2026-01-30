@@ -179,6 +179,20 @@ func (t SystemUpdater) Run(started, stopped chan bool, stop chan context.Context
 						}
 						t.done <- j
 
+					case dogeboxd.BackupConfig:
+						err := t.backupConfig(a, j)
+						if err != nil {
+							j.Err = "Failed to create backup"
+						}
+						t.done <- j
+
+					case dogeboxd.RestoreConfig:
+						err := t.restoreConfig(a, j)
+						if err != nil {
+							j.Err = "Failed to restore backup"
+						}
+						t.done <- j
+
 					case dogeboxd.UpdateTimezone:
 						err := t.updateTimezone(a, j.Logger.Step("update timezone"))
 						if err != nil {
@@ -692,7 +706,7 @@ func (t SystemUpdater) updateKeymap(a dogeboxd.UpdateKeymap, log dogeboxd.SubLog
 	}
 
 	log.Progress(100).Logf("Keyboard layout updated to %s", a.Keymap)
-  return nil
+	return nil
 }
 
 // getServiceStatus returns detailed status information about a systemd service

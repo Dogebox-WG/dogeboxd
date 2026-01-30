@@ -11,6 +11,7 @@ import (
 	"net/http"
 	"os"
 	"strings"
+	"sync"
 	"time"
 
 	dogeboxd "github.com/dogeorg/dogeboxd/pkg"
@@ -26,6 +27,7 @@ type Session struct {
 }
 
 var sessions []Session
+var sessionsMu sync.RWMutex
 
 func getBearerToken(r *http.Request) (bool, string) {
 	authHeader := r.Header.Get("authorization")
@@ -57,6 +59,9 @@ func getSession(r *http.Request, tokenExtractor func(r *http.Request) (bool, str
 		return Session{}, false
 	}
 
+	sessionsMu.Lock()
+	defer sessionsMu.Unlock()
+
 	for i, session := range sessions {
 		if session.Token == token {
 
@@ -74,13 +79,17 @@ func getSession(r *http.Request, tokenExtractor func(r *http.Request) (bool, str
 }
 
 func storeSession(session Session, config dogeboxd.ServerConfig) {
+	sessionsMu.Lock()
 	sessions = append(sessions, session)
+	sessionsSnapshot := make([]Session, len(sessions))
+	copy(sessionsSnapshot, sessions)
+	sessionsMu.Unlock()
 
 	if config.DevMode {
 		file, err := os.OpenFile(fmt.Sprintf("%s/dev-sessions.gob", config.DataDir), os.O_RDWR|os.O_CREATE, 0666)
 		if err == nil {
 			encoder := gob.NewEncoder(file)
-			err = encoder.Encode(sessions)
+			err = encoder.Encode(sessionsSnapshot)
 			if err != nil {
 				log.Printf("Failed to encode sessions to dev-sessions.gob: %v", err)
 			}
@@ -108,6 +117,9 @@ func delSession(r *http.Request) error {
 	if !tokenOK || token == "" {
 		return errors.New("failed to fetch bearer token")
 	}
+
+	sessionsMu.Lock()
+	defer sessionsMu.Unlock()
 
 	for i, session := range sessions {
 		if session.Token == token {
@@ -316,10 +328,15 @@ func (t api) changePassword(w http.ResponseWriter, r *http.Request) {
 	}
 
 	// Invalidate all existing sessions since they're using the old password
-	for _, session := range sessions {
+	sessionsMu.Lock()
+	sessionsSnapshot := make([]Session, len(sessions))
+	copy(sessionsSnapshot, sessions)
+	sessions = nil
+	sessionsMu.Unlock()
+
+	for _, session := range sessionsSnapshot {
 		t.dkm.InvalidateToken(session.DKM_TOKEN)
 	}
-	sessions = nil
 
 	sendResponse(w, map[string]any{
 		"success": true,

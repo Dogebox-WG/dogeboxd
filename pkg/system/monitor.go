@@ -155,6 +155,11 @@ func (t *SystemMonitor) runChecks(services []string) (map[string]dogeboxd.ProcSt
 	return stats, err
 }
 
+// GetServiceStatusMap returns systemd status for services.
+func GetServiceStatusMap(services []string) (map[string]dogeboxd.ProcStatus, error) {
+	return getStatus(services)
+}
+
 func (t *SystemMonitor) updateServices(args []string) {
 	t.services = args
 }

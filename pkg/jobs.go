@@ -4,6 +4,7 @@ import (
 	"encoding/json"
 	"fmt"
 	"reflect"
+	"strings"
 	"sync"
 	"time"
 )
@@ -310,10 +311,64 @@ func (jm *JobManager) ClearOrphanedJobs(olderThan time.Duration) (int, error) {
 	return count, nil
 }
 
+// ClearOrphanedJobsByAction marks queued/in_progress jobs as failed for matching actions.
+func (jm *JobManager) ClearOrphanedJobsByAction(olderThan time.Duration, actions []string) (int, error) {
+	if len(actions) == 0 {
+		return 0, nil
+	}
+
+	jm.jobsMutex.Lock()
+	defer jm.jobsMutex.Unlock()
+
+	cutoff := time.Now().Add(-olderThan)
+	now := time.Now()
+
+	placeholders := strings.Repeat("?,", len(actions))
+	placeholders = strings.TrimSuffix(placeholders, ",")
+	query := fmt.Sprintf(
+		`UPDATE %s
+		 SET value = json_set(json_set(json_set(value, '$.status', 'failed'), '$.errorMessage', 'Job was orphaned (stuck in queue)'), '$.finished', ?)
+		 WHERE json_extract(value, '$.status') IN ('queued', 'in_progress')
+		   AND json_extract(value, '$.started') < ?
+		   AND json_extract(value, '$.action') IN (%s)`,
+		jm.store.Table,
+		placeholders,
+	)
+
+	args := []any{now.Format(time.RFC3339Nano), cutoff.Format(time.RFC3339Nano)}
+	for _, action := range actions {
+		args = append(args, action)
+	}
+
+	count, err := jm.store.ExecWrite(query, args...)
+	if err != nil {
+		return 0, err
+	}
+
+	for id, job := range jm.activeJobs {
+		if job.Status == JobStatusQueued || job.Status == JobStatusInProgress {
+			if job.Started.Before(cutoff) && containsString(actions, job.Action) {
+				delete(jm.activeJobs, id)
+			}
+		}
+	}
+
+	return int(count), nil
+}
+
 func (jm *JobManager) markOrphanedJobsAsFailed(finished time.Time, startedBefore time.Time) (int, error) {
 	query := fmt.Sprintf(`UPDATE %s SET value = json_set(json_set(json_set(value, '$.status', 'failed'), '$.errorMessage', 'Job was orphaned (stuck in queue)'), '$.finished', ?) WHERE json_extract(value, '$.status') IN ('queued', 'in_progress') AND json_extract(value, '$.started') < ?`, jm.store.Table)
 	count, err := jm.store.ExecWrite(query, finished.Format(time.RFC3339Nano), startedBefore.Format(time.RFC3339Nano))
 	return int(count), err
+}
+
+func containsString(values []string, target string) bool {
+	for _, value := range values {
+		if value == target {
+			return true
+		}
+	}
+	return false
 }
 
 // getDisplayName returns a human-readable name for the job
@@ -398,6 +453,10 @@ func (jm *JobManager) getDisplayName(j Job) string {
 		return "Remove Binary Cache"
 	case SystemUpdate:
 		return "System Update"
+	case BackupConfig:
+		return "Backup Configuration"
+	case RestoreConfig:
+		return "Restore Configuration"
 	case UpdateMetrics:
 		return "Update Metrics"
 	case UpdateTimezone:

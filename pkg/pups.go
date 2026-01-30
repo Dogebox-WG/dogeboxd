@@ -297,6 +297,12 @@ func SetPupBrokenReason(reason string) func(*PupState, *[]Pupdate) {
 	}
 }
 
+func SetPupSource(source ManifestSourceConfiguration) func(*PupState, *[]Pupdate) {
+	return func(p *PupState, pu *[]Pupdate) {
+		p.Source = source
+	}
+}
+
 func SetPupConfig(newFields map[string]string) func(*PupState, *[]Pupdate) {
 	return func(p *PupState, pu *[]Pupdate) {
 		if p.Config == nil {
