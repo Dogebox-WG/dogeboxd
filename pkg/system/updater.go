@@ -171,7 +171,7 @@ func (t SystemUpdater) Run(started, stopped chan bool, stop chan context.Context
 					case dogeboxd.SystemUpdate:
 						logger := j.Logger.Step("system update")
 						logger.Progress(5).Logf("Starting system update to %s", a.Version)
-						if err := DoSystemUpdate(a.Package, a.Version); err != nil {
+						if err := DoSystemUpdate(a.Package, a.Version, logger); err != nil {
 							logger.Errf("System update failed: %v", err)
 							j.Err = err.Error()
 						} else {
