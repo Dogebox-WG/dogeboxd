@@ -86,7 +86,7 @@ func GetFlakePath() (string, error) {
 	return flakePath, nil
 }
 
-func GetRebuildCommand(action string, setRelease string) (string, []string, error) {
+func GetRebuildCommand(action string, setRelease string, offline bool) (string, []string, error) {
 	// Action is allowed to be "boot" or "switch". Throw an error if it's not.
 	if action != "boot" && action != "switch" {
 		return "", nil, fmt.Errorf("invalid action: %s", action)
@@ -98,6 +98,10 @@ func GetRebuildCommand(action string, setRelease string) (string, []string, erro
 	}
 
 	commandArgs := []string{action, "--flake", flakePath, "--impure"}
+
+	if offline {
+		commandArgs = append(commandArgs, "--offline")
+	}
 
 	versionInformation := version.GetDBXRelease()
 

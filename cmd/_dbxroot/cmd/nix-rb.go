@@ -10,12 +10,13 @@ import (
 )
 
 var nixRBSetRelease string
+var nixRBOffline bool
 
 var rbCmd = &cobra.Command{
 	Use:   "rb",
 	Short: "Executes nixos-rebuild boot",
 	Run: func(cmd *cobra.Command, args []string) {
-		rebuildCommand, rebuildArgs, err := utils.GetRebuildCommand("boot", nixRBSetRelease)
+		rebuildCommand, rebuildArgs, err := utils.GetRebuildCommand("boot", nixRBSetRelease, nixRBOffline)
 		if err != nil {
 			fmt.Fprintf(os.Stderr, "Error getting rebuild command: %v\n", err)
 			os.Exit(1)
@@ -35,5 +36,6 @@ var rbCmd = &cobra.Command{
 
 func init() {
 	rbCmd.Flags().StringVarP(&nixRBSetRelease, "set-release", "s", "", "rebuild with specific release (used for upgrades)")
+	rmCmd.Flags().BoolVar(&nixRBOffline, "offline", false, "Rebuild without a working network connection (used for installing in AP mode)")
 	nixCmd.AddCommand(rbCmd)
 }
