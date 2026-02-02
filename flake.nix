@@ -3,13 +3,12 @@
     nixpkgs.url     = "github:NixOS/nixpkgs/nixos-25.11";
     flake-utils.url = "github:numtide/flake-utils";
 
-    dpanel-src = {
-      url   = "github:dogeorg/dpanel/b35a676cf7e66199013b312d96b79053b17d53c6";
-      flake = false;
+    dpanel = {
+      url = "github:dogeorg/dpanel/427fdcafd2d5dcf14cb6ab9edb09315b5818152b";
     };
   };
 
-  outputs = { self, dpanel-src, nixpkgs, flake-utils, ... }:
+  outputs = { self, dpanel, nixpkgs, flake-utils, ... }:
     flake-utils.lib.eachDefaultSystem (system:
       let
         pkgs = import nixpkgs { inherit system; };
@@ -56,7 +55,7 @@
               cp build/* $out/dogeboxd/bin/
 
               mkdir -p $out/dpanel
-              cp -r ${dpanel-src}/. $out/dpanel/
+              cp -r ${dpanel.packages.${system}.default}/. $out/dpanel/
             '';
 
             nativeBuildInputs = [ pkgs.go_1_25 ];
