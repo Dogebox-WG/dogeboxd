@@ -346,7 +346,8 @@ func (t SystemUpdater) installPup(pupSelection dogeboxd.InstallPup, j dogeboxd.J
 	// Do a nix rebuild before we mark the pup as installed, this way
 	// the frontend will get a much longer "Installing.." state, as opposed
 	// to a much longer "Starting.." state, which might confuse the user.
-	if err := nixPatch.Apply(); err != nil {
+	offline := false
+	if err := nixPatch.Apply(offline); err != nil {
 		log.Errf("Failed to apply nix patch: %v", err)
 		return t.markPupBroken(s, dogeboxd.BROKEN_REASON_NIX_APPLY_FAILED, err)
 	}
@@ -381,7 +382,8 @@ func (t SystemUpdater) uninstallPup(j dogeboxd.Job) error {
 	t.nix.RemovePupFile(nixPatch, s.ID)
 	t.nix.UpdateIncludesFile(nixPatch, t.pupManager)
 
-	if err := nixPatch.Apply(); err != nil {
+	offline := false
+	if err := nixPatch.Apply(offline); err != nil {
 		log.Errf("Failed to apply nix patch: %v", err)
 		return t.markPupBroken(s, dogeboxd.BROKEN_REASON_NIX_APPLY_FAILED, err)
 	}
@@ -461,7 +463,8 @@ func (t SystemUpdater) enablePup(j dogeboxd.Job) error {
 	nixPatch := t.nix.NewPatch(log)
 	t.nix.WritePupFile(nixPatch, newState, dbxState)
 
-	if err := nixPatch.Apply(); err != nil {
+	offline := false
+	if err := nixPatch.Apply(offline); err != nil {
 		log.Errf("Failed to apply nix patch: %v", err)
 		return err
 	}
@@ -492,7 +495,8 @@ func (t SystemUpdater) disablePup(j dogeboxd.Job) error {
 	nixPatch := t.nix.NewPatch(log)
 	t.nix.WritePupFile(nixPatch, newState, dbxState)
 
-	if err := nixPatch.Apply(); err != nil {
+	offline := false
+	if err := nixPatch.Apply(offline); err != nil {
 		log.Errf("Failed to apply nix patch: %v", err)
 		return err
 	}
@@ -565,7 +569,8 @@ func (t SystemUpdater) importBlockchainData(j dogeboxd.Job) error {
 			pupState, _, pupErr := t.pupManager.GetPup(dogecoinPup.ID)
 			if pupErr == nil {
 				t.nix.WritePupFile(nixPatch, pupState, dbxState)
-				if applyErr := nixPatch.Apply(); applyErr != nil {
+				offline := false
+				if applyErr := nixPatch.Apply(offline); applyErr != nil {
 					log.Errf("Failed to apply nix patch: %v", applyErr)
 				}
 			}
@@ -603,7 +608,8 @@ func (t SystemUpdater) AddBinaryCache(j dogeboxd.AddBinaryCache, log dogeboxd.Su
 	values := utils.GetNixSystemTemplateValues(dbxState)
 	t.nix.UpdateSystem(nixPatch, values)
 
-	return nixPatch.Apply()
+	offline := false
+	return nixPatch.Apply(offline)
 }
 
 func (t SystemUpdater) removeBinaryCache(j dogeboxd.RemoveBinaryCache) error {
@@ -631,7 +637,8 @@ func (t SystemUpdater) UpdateSystemConfig(dbxState dogeboxd.DogeboxState, log do
 	values := utils.GetNixSystemTemplateValues(dbxState)
 	t.nix.UpdateSystem(patch, values)
 
-	if err := patch.Apply(); err != nil {
+	offline := false
+	if err := patch.Apply(offline); err != nil {
 		log.Errf("Failed to commit system state: %v", err)
 		return err
 	}
@@ -658,7 +665,8 @@ func (t SystemUpdater) updateTimezone(a dogeboxd.UpdateTimezone, log dogeboxd.Su
 	values := utils.GetNixSystemTemplateValues(dbxState)
 	t.nix.UpdateSystem(patch, values)
 
-	if err := patch.Apply(); err != nil {
+	offline := false
+	if err := patch.Apply(offline); err != nil {
 		log.Errf("Failed to apply nix patch: %v", err)
 		return err
 	}
@@ -686,7 +694,8 @@ func (t SystemUpdater) updateKeymap(a dogeboxd.UpdateKeymap, log dogeboxd.SubLog
 	values := utils.GetNixSystemTemplateValues(dbxState)
 	t.nix.UpdateSystem(patch, values)
 
-	if err := patch.Apply(); err != nil {
+	offline := false
+	if err := patch.Apply(offline); err != nil {
 		log.Errf("Failed to apply nix patch: %v", err)
 		return err
 	}
@@ -840,7 +849,8 @@ func (t SystemUpdater) upgradePup(upgrade dogeboxd.UpgradePup, j dogeboxd.Job) e
 	t.nix.WritePupFile(nixPatch, updatedState, dbxState)
 	t.nix.UpdateIncludesFile(nixPatch, t.pupManager)
 
-	if err := nixPatch.Apply(); err != nil {
+	offline := false
+	if err := nixPatch.Apply(offline); err != nil {
 		log.Errf("Failed to apply nix patch: %v", err)
 		return t.markPupBroken(s, dogeboxd.BROKEN_REASON_NIX_APPLY_FAILED, err)
 	}
@@ -851,7 +861,8 @@ func (t SystemUpdater) upgradePup(upgrade dogeboxd.UpgradePup, j dogeboxd.Job) e
 		log.Log("Removing pup from NixOS config (will re-add as new)...")
 		removeNixPatch := t.nix.NewPatch(log)
 		removeNixPatch.RemovePupFile(s.ID)
-		if err := removeNixPatch.Apply(); err != nil {
+
+		if err := removeNixPatch.Apply(offline); err != nil {
 			log.Errf("Failed to remove pup from config: %v", err)
 			return t.markPupBroken(s, dogeboxd.BROKEN_REASON_NIX_APPLY_FAILED, err)
 		}
@@ -885,7 +896,7 @@ func (t SystemUpdater) upgradePup(upgrade dogeboxd.UpgradePup, j dogeboxd.Job) e
 		nixPatch := t.nix.NewPatch(log)
 		t.nix.WritePupFile(nixPatch, newState, dbxState)
 		t.nix.UpdateIncludesFile(nixPatch, t.pupManager)
-		if err := nixPatch.Apply(); err != nil {
+		if err := nixPatch.Apply(offline); err != nil {
 			log.Errf("Failed to add pup back to config: %v", err)
 			return t.markPupBroken(s, dogeboxd.BROKEN_REASON_NIX_APPLY_FAILED, err)
 		}
@@ -1002,7 +1013,8 @@ func (t SystemUpdater) rollbackPupUpgrade(j dogeboxd.Job) error {
 	t.nix.WritePupFile(nixPatch, restoredState, dbxState)
 	t.nix.UpdateIncludesFile(nixPatch, t.pupManager)
 
-	if err := nixPatch.Apply(); err != nil {
+	offline := false
+	if err := nixPatch.Apply(offline); err != nil {
 		log.Errf("Failed to apply nix patch: %v", err)
 		return t.markPupBroken(s, dogeboxd.BROKEN_REASON_NIX_APPLY_FAILED, err)
 	}

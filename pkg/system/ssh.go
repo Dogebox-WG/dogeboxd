@@ -17,7 +17,8 @@ func (t SystemUpdater) sshUpdate(dbxState dogeboxd.DogeboxState, log dogeboxd.Su
 	values := utils.GetNixSystemTemplateValues(dbxState)
 	t.nix.UpdateSystem(patch, values)
 
-	if err := patch.Apply(); err != nil {
+    offline := true
+	if err := patch.Apply(offline); err != nil {
 		log.Errf("Failed to enable SSH: %v", err)
 		return err
 	}

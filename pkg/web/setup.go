@@ -483,7 +483,8 @@ func (t api) initialBootstrap(w http.ResponseWriter, r *http.Request) {
 
 	t.nix.InitSystem(nixPatch, dbxState)
 
-	if err := nixPatch.Apply(); err != nil {
+	offline := true
+	if err := nixPatch.Apply(offline); err != nil {
 		sendErrorResponse(w, http.StatusInternalServerError, "Error initialising system")
 		return
 	}
@@ -530,7 +531,7 @@ func (t api) initialBootstrap(w http.ResponseWriter, r *http.Request) {
 		overlayPatch := t.nix.NewPatch(log)
 		t.nix.UpdateStorageOverlay(overlayPatch, partitionName)
 
-		if err := overlayPatch.Apply(); err != nil {
+		if err := overlayPatch.Apply(offline); err != nil {
 			log.Errf("Error applying overlay patch: %v", err)
 			sendErrorResponse(w, http.StatusInternalServerError, "Error applying overlay patch")
 			return

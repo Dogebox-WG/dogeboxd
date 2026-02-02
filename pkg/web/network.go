@@ -39,7 +39,8 @@ func (t api) connectNetwork(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	if err := nixPatch.Apply(); err != nil {
+	offline := true
+	if err := nixPatch.Apply(offline); err != nil {
 		log.Printf("Failed to apply nix patch: %+v", err)
 		sendErrorResponse(w, http.StatusInternalServerError, "Failed to apply nix patch")
 		return

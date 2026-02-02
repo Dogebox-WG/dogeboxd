@@ -348,11 +348,12 @@ type NixStorageOverlayTemplateValues struct {
 type NixPatchApplyOptions struct {
 	RebuildBoot        bool
 	DangerousNoRebuild bool
+	Offline            bool
 }
 
 type NixPatch interface {
 	State() string
-	Apply() error
+	Apply(offline bool) error
 	ApplyCustom(options NixPatchApplyOptions) error
 
 	Cancel() error

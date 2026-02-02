@@ -506,7 +506,7 @@ func (t *Dogeboxd) updatePupConfig(j Job, u UpdatePupConfig) {
 	nixPatch := t.nix.NewPatch(log)
 	t.nix.WritePupFile(nixPatch, newState, dbxState)
 
-	if err := nixPatch.Apply(); err != nil {
+	if err := nixPatch.Apply(false); err != nil {
 		j.Err = fmt.Sprintf("failed to apply configuration: %v", err)
 		t.sendFinishedJob("action", j)
 		return
@@ -549,7 +549,7 @@ func (t *Dogeboxd) updatePupProviders(j Job, u UpdatePupProviders) {
 		t.nix.UpdateSystemContainerConfiguration(nixPatch)
 		t.nix.WritePupFile(nixPatch, pupState, dbxState)
 
-		if err := nixPatch.Apply(); err != nil {
+		if err := nixPatch.Apply(false); err != nil {
 			j.Err = fmt.Sprintf("Failed to apply nix patch: %v", err)
 			t.sendFinishedJob("action", j)
 			return

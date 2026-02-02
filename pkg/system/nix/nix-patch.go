@@ -103,8 +103,8 @@ func (np *nixPatch) add(name string, op func() error) error {
 	return nil
 }
 
-func (np *nixPatch) Apply() error {
-	return np.ApplyCustom(dogeboxd.NixPatchApplyOptions{})
+func (np *nixPatch) Apply(offline bool) error {
+	return np.ApplyCustom(dogeboxd.NixPatchApplyOptions{ Offline: offline })
 }
 
 func (np *nixPatch) ApplyCustom(options dogeboxd.NixPatchApplyOptions) error {

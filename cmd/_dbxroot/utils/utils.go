@@ -105,14 +105,16 @@ func GetRebuildCommand(action string, setRelease string, offline bool) (string, 
 
 	versionInformation := version.GetDBXRelease()
 
-	for pkg, tuple := range versionInformation.Packages {
-		// Only support dogebox-wg thing for now.
-		repo := fmt.Sprintf("github:dogebox-wg/%s/%s", pkg, tuple.Rev)
-		// override release (for upgrade) if setRelease is set
-		if setRelease != "" {
-			repo = fmt.Sprintf("github:dogebox-wg/%s/%s", pkg, setRelease)
+	if !offline {
+		for pkg, tuple := range versionInformation.Packages {
+			// Only support dogebox-wg thing for now.
+			repo := fmt.Sprintf("github:dogebox-wg/%s/%s", pkg, tuple.Rev)
+			// override release (for upgrade) if setRelease is set
+			if setRelease != "" {
+				repo = fmt.Sprintf("github:dogebox-wg/%s/%s", pkg, setRelease)
+			}
+			commandArgs = append(commandArgs, "--override-input", pkg, repo)
 		}
-		commandArgs = append(commandArgs, "--override-input", pkg, repo)
 	}
 
 	return "nixos-rebuild", commandArgs, nil

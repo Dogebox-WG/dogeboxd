@@ -36,6 +36,6 @@ var rbCmd = &cobra.Command{
 
 func init() {
 	rbCmd.Flags().StringVarP(&nixRBSetRelease, "set-release", "s", "", "rebuild with specific release (used for upgrades)")
-	rmCmd.Flags().BoolVar(&nixRBOffline, "offline", false, "Rebuild without a working network connection (used for installing in AP mode)")
+	rbCmd.Flags().BoolVar(&nixRBOffline, "offline", false, "Rebuild without a working network connection (used for installing in AP mode)")
 	nixCmd.AddCommand(rbCmd)
 }
