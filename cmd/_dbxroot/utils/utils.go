@@ -100,7 +100,7 @@ func GetRebuildCommand(action string, setRelease string, offline bool) (string, 
 	commandArgs := []string{action, "--flake", flakePath, "--impure"}
 
 	if offline {
-		commandArgs = append(commandArgs, "--offline")
+		commandArgs = append(commandArgs, "--offline", "--option", "substitute false")
 	}
 
 	versionInformation := version.GetDBXRelease()
