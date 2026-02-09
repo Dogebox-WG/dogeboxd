@@ -2,11 +2,14 @@ package system
 
 import (
 	"fmt"
+	"io"
 	"log"
 	"os"
 	"os/exec"
 	"sort"
+	"strings"
 
+	dogeboxd "github.com/dogeorg/dogeboxd/pkg"
 	"github.com/dogeorg/dogeboxd/pkg/version"
 	"github.com/go-git/go-git/v5"
 	"github.com/go-git/go-git/v5/config"
@@ -142,7 +145,7 @@ func GetUpgradableReleasesWithFetcher(includePreReleases bool, fetcher RepoTagsF
 	return upgradableTags, nil
 }
 
-func DoSystemUpdate(pkg string, updateVersion string) error {
+func DoSystemUpdate(pkg string, updateVersion string, logger dogeboxd.SubLogger) error {
 	upgradableReleases, err := GetUpgradableReleases(false)
 	if err != nil {
 		return err
@@ -166,8 +169,18 @@ func DoSystemUpdate(pkg string, updateVersion string) error {
 	}
 
 	cmd := exec.Command(SUDO_COMMAND, "_dbxroot", "nix", "rs", "--set-release", updateVersion)
-	cmd.Stderr = os.Stderr
-	cmd.Stdout = os.Stdout
+	if logger != nil {
+		logger.Logf("Running command: %s %s", cmd.Path, strings.Join(cmd.Args[1:], " "))
+		cmd.Stdout = io.MultiWriter(os.Stdout, dogeboxd.NewLineWriter(func(s string) {
+			logger.Log(s)
+		}))
+		cmd.Stderr = io.MultiWriter(os.Stderr, dogeboxd.NewLineWriter(func(s string) {
+			logger.Log(s)
+		}))
+	} else {
+		cmd.Stdout = os.Stdout
+		cmd.Stderr = os.Stderr
+	}
 	if err := cmd.Run(); err != nil {
 		return fmt.Errorf("failed to run dbx-upgrade: %w", err)
 	}

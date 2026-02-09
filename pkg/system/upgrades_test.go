@@ -343,7 +343,7 @@ func TestDoSystemUpdate_InvalidPackage(t *testing.T) {
 	tempDir := setupMockVersioning(t, "v1.1.0")
 	defer os.RemoveAll(tempDir)
 
-	err := DoSystemUpdate("invalid-package", "v1.2.0")
+	err := DoSystemUpdate("invalid-package", "v1.2.0", nil)
 	if err == nil {
 		t.Fatal("expected error for invalid package, got nil")
 	}
@@ -375,7 +375,7 @@ func TestDoSystemUpdate_UnavailableVersion(t *testing.T) {
 	defer os.RemoveAll(tempDir)
 
 	// Try to upgrade to a version that doesn't exist in upgradable releases
-	err := DoSystemUpdate("os", "v2.0.0")
+	err := DoSystemUpdate("os", "v2.0.0", nil)
 	if err == nil {
 		t.Fatal("expected error for unavailable version, got nil")
 	}
@@ -400,7 +400,7 @@ func TestDoSystemUpdate_ErrorFromGetUpgradableReleases(t *testing.T) {
 		err:  fmt.Errorf("network error"),
 	}
 
-	err := DoSystemUpdate("os", "v1.2.0")
+	err := DoSystemUpdate("os", "v1.2.0", nil)
 	if err == nil {
 		t.Fatal("expected error from GetUpgradableReleases, got nil")
 	}
