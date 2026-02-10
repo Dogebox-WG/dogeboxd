@@ -7,17 +7,16 @@
         "playwright": "playwright"
       },
       "locked": {
-        "lastModified": 1760930320,
-        "narHash": "sha256-Of3hd2AsvoDsGJoJuROPMIrgKY9qYnumjRDz5WpLpY0=",
-        "owner": "dogeorg",
+        "lastModified": 1769990844,
+        "narHash": "sha256-X8ckutiA4cjvrwPmDU34POHyNH3pinaHzF0xkhGaY4E=",
+        "owner": "Dogebox-WG",
         "repo": "dpanel",
-        "rev": "427fdcafd2d5dcf14cb6ab9edb09315b5818152b",
+        "rev": "70b058ea01636fea53403f8f914e761bcf0deb3a",
         "type": "github"
       },
       "original": {
-        "owner": "dogeorg",
+        "owner": "Dogebox-WG",
         "repo": "dpanel",
-        "rev": "427fdcafd2d5dcf14cb6ab9edb09315b5818152b",
         "type": "github"
       }
     },
@@ -77,11 +76,11 @@
     },
     "nixpkgs": {
       "locked": {
-        "lastModified": 1768621446,
-        "narHash": "sha256-6YwHV1cjv6arXdF/PQc365h1j+Qje3Pydk501Rm4Q+4=",
+        "lastModified": 1770464364,
+        "narHash": "sha256-z5NJPSBwsLf/OfD8WTmh79tlSU8XgIbwmk6qB1/TFzY=",
         "owner": "NixOS",
         "repo": "nixpkgs",
-        "rev": "72ac591e737060deab2b86d6952babd1f896d7c5",
+        "rev": "23d72dabcb3b12469f57b37170fcbc1789bd7457",
         "type": "github"
       },
       "original": {

@@ -8,8 +8,8 @@ import (
 	connect "connectrpc.com/connect"
 	context "context"
 	errors "errors"
+	v1 "github.com/dogeorg/dogeboxd/protocol/gen/authenticate/v1"
 	http "net/http"
-	v1 "pkg/web/gen/authenticate/v1"
 	strings "strings"
 )
 

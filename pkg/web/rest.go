@@ -10,8 +10,9 @@ import (
 	"os"
 
 	"connectrpc.com/connect"
-	dogeboxd "github.com/Dogebox-WG/dogeboxd/pkg"
-	"github.com/Dogebox-WG/dogeboxd/pkg/conductor"
+	"connectrpc.com/validate"
+	dogeboxd "github.com/dogeorg/dogeboxd/pkg"
+	"github.com/dogeorg/dogeboxd/pkg/conductor"
 	"github.com/dogeorg/dogeboxd/protocol/gen/authenticate/v1/authenticatev1connect"
 	"github.com/rs/cors"
 )
@@ -64,7 +65,7 @@ func RESTAPI(
 	authenticatePath, authenticateHandler := authenticatev1connect.NewAuthenticateServiceHandler(authenticator, connect.WithInterceptors(validate.NewInterceptor()))
 	// Recovery routes are the _only_ routes loaded in recovery mode.
 	recoveryRoutes := map[string]http.HandlerFunc{
-		authenticatePath:        authenticateHandler,
+		authenticatePath:        authenticateHandler.ServeHTTP,
 		"POST /logout":          a.logout,
 		"POST /change-password": a.changePassword,
 

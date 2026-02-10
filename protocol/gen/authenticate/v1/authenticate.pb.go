@@ -7,13 +7,12 @@
 package authenticatev1
 
 import (
-	reflect "reflect"
-	sync "sync"
-	unsafe "unsafe"
-
 	_ "buf.build/gen/go/bufbuild/protovalidate/protocolbuffers/go/buf/validate"
 	protoreflect "google.golang.org/protobuf/reflect/protoreflect"
 	protoimpl "google.golang.org/protobuf/runtime/protoimpl"
+	reflect "reflect"
+	sync "sync"
+	unsafe "unsafe"
 )
 
 const (
@@ -121,8 +120,8 @@ const file_authenticate_v1_authenticate_proto_rawDesc = "" +
 	"\x14AuthenticateResponse\x12\x1f\n" +
 	"\x05token\x18\x01 \x01(\tB\t\xbaH\x06r\x04\x10\x01\x18dR\x05token2t\n" +
 	"\x13AuthenticateService\x12]\n" +
-	"\fAuthenticate\x12$.authenticate.v1.AuthenticateRequest\x1a%.authenticate.v1.AuthenticateResponse\"\x00B\xb1\x01\n" +
-	"\x13com.authenticate.v1B\x11AuthenticateProtoP\x01Z*pkg/web/gen/authenticate/v1;authenticatev1\xa2\x02\x03AXX\xaa\x02\x0fAuthenticate.V1\xca\x02\x0fAuthenticate\\V1\xe2\x02\x1bAuthenticate\\V1\\GPBMetadata\xea\x02\x10Authenticate::V1b\x06proto3"
+	"\fAuthenticate\x12$.authenticate.v1.AuthenticateRequest\x1a%.authenticate.v1.AuthenticateResponse\"\x00B\xce\x01\n" +
+	"\x13com.authenticate.v1B\x11AuthenticateProtoP\x01ZGgithub.com/dogeorg/dogeboxd/protocol/gen/authenticate/v1;authenticatev1\xa2\x02\x03AXX\xaa\x02\x0fAuthenticate.V1\xca\x02\x0fAuthenticate\\V1\xe2\x02\x1bAuthenticate\\V1\\GPBMetadata\xea\x02\x10Authenticate::V1b\x06proto3"
 
 var (
 	file_authenticate_v1_authenticate_proto_rawDescOnce sync.Once

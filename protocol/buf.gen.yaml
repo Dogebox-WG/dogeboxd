@@ -12,7 +12,7 @@ managed:
   enabled: true
   override:
     - file_option: go_package_prefix
-      value: pkg/web/gen
+      value: github.com/dogeorg/dogeboxd/protocol/gen
   disable:
     - file_option: go_package
       module: buf.build/bufbuild/protovalidate

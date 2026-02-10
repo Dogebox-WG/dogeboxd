@@ -15,11 +15,9 @@ import (
 	"time"
 
 	"connectrpc.com/connect"
-	dogeboxd "github.com/Dogebox-WG/dogeboxd/pkg"
+	dogeboxd "github.com/dogeorg/dogeboxd/pkg"
 	authenticatev1 "github.com/dogeorg/dogeboxd/protocol/gen/authenticate/v1"
 	"github.com/gorilla/securecookie"
-
-	authenticatev1 "github.com/dogebox-wg/dogeboxd/protocol/gen/authenticate/v1"
 )
 
 const sessionExpiry = time.Hour
@@ -125,7 +123,7 @@ func delSession(r *http.Request) error {
 }
 
 func authReq(dbx dogeboxd.Dogeboxd, sm dogeboxd.StateManager, route string, next http.HandlerFunc) http.HandlerFunc {
-	if route == "POST /authenticate" {
+	if route == "POST /authenticate" || strings.HasPrefix(route, "/authenticate.v1.AuthenticateService") {
 		return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 			next.ServeHTTP(w, r)
 		})
@@ -200,7 +198,7 @@ func (s *AuthenticateServer) Authenticate(
 	_ context.Context,
 	req *authenticatev1.AuthenticateRequest,
 ) (*authenticatev1.AuthenticateResponse, error) {
-	dkmToken, dkmError, err := s.a.dkm.Authenticate(req.password)
+	dkmToken, dkmError, err := s.a.dkm.Authenticate(req.Password)
 	if err != nil {
 		return nil, connect.NewError(connect.CodeInternal, err)
 	}
@@ -215,7 +213,7 @@ func (s *AuthenticateServer) Authenticate(
 	session.DKM_TOKEN = dkmToken
 	storeSession(session, s.a.config)
 
-	res := authenticatev1.AuthenticateResponse{token}
+	res := &authenticatev1.AuthenticateResponse{Token: token}
 	return res, nil
 }
 
