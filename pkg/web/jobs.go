@@ -7,7 +7,7 @@ import (
 	"strconv"
 	"time"
 
-	dogeboxd "github.com/dogeorg/dogeboxd/pkg"
+	dogeboxd "github.com/Dogebox-WG/dogeboxd/pkg"
 )
 
 // Get all jobs

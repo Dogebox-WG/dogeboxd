@@ -9,8 +9,8 @@ import (
 	"strings"
 	"time"
 
-	dogeboxd "github.com/dogeorg/dogeboxd/pkg"
-	"github.com/dogeorg/dogeboxd/pkg/conductor"
+	dogeboxd "github.com/Dogebox-WG/dogeboxd/pkg"
+	"github.com/Dogebox-WG/dogeboxd/pkg/conductor"
 )
 
 func NewInternalRouter(config dogeboxd.ServerConfig, dbx dogeboxd.Dogeboxd, pm dogeboxd.PupManager, dkm dogeboxd.DKMManager) conductor.Service {

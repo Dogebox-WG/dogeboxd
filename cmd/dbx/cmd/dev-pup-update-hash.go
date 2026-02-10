@@ -9,7 +9,7 @@ import (
 	"os"
 	"path/filepath"
 
-	dogeboxd "github.com/dogeorg/dogeboxd/pkg"
+	dogeboxd "github.com/Dogebox-WG/dogeboxd/pkg"
 	"github.com/spf13/cobra"
 )
 

@@ -11,9 +11,9 @@ import (
 	"strings"
 	"time"
 
-	dogeboxd "github.com/dogeorg/dogeboxd/pkg"
-	"github.com/dogeorg/dogeboxd/pkg/pup"
-	"github.com/dogeorg/dogeboxd/pkg/utils"
+	dogeboxd "github.com/Dogebox-WG/dogeboxd/pkg"
+	"github.com/Dogebox-WG/dogeboxd/pkg/pup"
+	"github.com/Dogebox-WG/dogeboxd/pkg/utils"
 	"github.com/go-git/go-billy/v5/memfs"
 	"github.com/go-git/go-git/v5"
 	"github.com/go-git/go-git/v5/config"

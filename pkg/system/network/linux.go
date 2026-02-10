@@ -7,10 +7,10 @@ import (
 	"net"
 	"strings"
 
-	dogeboxd "github.com/dogeorg/dogeboxd/pkg"
-	network_connector "github.com/dogeorg/dogeboxd/pkg/system/network/connector"
-	network_persistor "github.com/dogeorg/dogeboxd/pkg/system/network/persistor"
-	network_wifi "github.com/dogeorg/dogeboxd/pkg/system/network/wifi"
+	dogeboxd "github.com/Dogebox-WG/dogeboxd/pkg"
+	network_connector "github.com/Dogebox-WG/dogeboxd/pkg/system/network/connector"
+	network_persistor "github.com/Dogebox-WG/dogeboxd/pkg/system/network/persistor"
+	network_wifi "github.com/Dogebox-WG/dogeboxd/pkg/system/network/wifi"
 	"github.com/mdlayher/wifi"
 )
 

@@ -3,8 +3,8 @@ package cmd
 import (
 	"log"
 
+	dbxdev "github.com/Dogebox-WG/dogeboxd/cmd/dbx-dev"
 	tea "github.com/charmbracelet/bubbletea"
-	dbxdev "github.com/dogeorg/dogeboxd/cmd/dbx-dev"
 	"github.com/spf13/cobra"
 )
 

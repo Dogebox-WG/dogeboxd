@@ -6,10 +6,10 @@ import (
 	"os"
 	"path/filepath"
 
+	dbxdev "github.com/Dogebox-WG/dogeboxd/cmd/dbx-dev"
 	"github.com/charmbracelet/wish"
 	wishbubble "github.com/charmbracelet/wish/bubbletea"
 	"github.com/charmbracelet/wish/logging"
-	dbxdev "github.com/dogeorg/dogeboxd/cmd/dbx-dev"
 )
 
 func main() {

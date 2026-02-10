@@ -4,7 +4,7 @@ import (
 	_ "embed"
 	"encoding/json"
 
-	"github.com/dogeorg/dogeboxd/pkg/system/nix"
+	"github.com/Dogebox-WG/dogeboxd/pkg/system/nix"
 )
 
 type Keymap struct {

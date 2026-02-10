@@ -3,7 +3,7 @@ package network_connector
 import (
 	"log"
 
-	dogeboxd "github.com/dogeorg/dogeboxd/pkg"
+	dogeboxd "github.com/Dogebox-WG/dogeboxd/pkg"
 )
 
 func NewNetworkConnector(network dogeboxd.SelectedNetwork) dogeboxd.NetworkConnector {

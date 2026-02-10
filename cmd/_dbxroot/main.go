@@ -5,7 +5,7 @@ import (
 	"os"
 	"syscall"
 
-	"github.com/dogeorg/dogeboxd/cmd/_dbxroot/cmd"
+	"github.com/Dogebox-WG/dogeboxd/cmd/_dbxroot/cmd"
 )
 
 // This program is setuid so that it can be run by the dogeboxd user.

@@ -4,7 +4,7 @@ import (
 	"fmt"
 	"reflect"
 
-	dogeboxd "github.com/dogeorg/dogeboxd/pkg"
+	dogeboxd "github.com/Dogebox-WG/dogeboxd/pkg"
 )
 
 // get all the metrics currently stored for a pup

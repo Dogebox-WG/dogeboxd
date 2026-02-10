@@ -13,8 +13,8 @@ import (
 	"strings"
 	"time"
 
-	dogeboxd "github.com/dogeorg/dogeboxd/pkg"
-	"github.com/dogeorg/dogeboxd/pkg/utils"
+	dogeboxd "github.com/Dogebox-WG/dogeboxd/pkg"
+	"github.com/Dogebox-WG/dogeboxd/pkg/utils"
 )
 
 /*
@@ -692,7 +692,7 @@ func (t SystemUpdater) updateKeymap(a dogeboxd.UpdateKeymap, log dogeboxd.SubLog
 	}
 
 	log.Progress(100).Logf("Keyboard layout updated to %s", a.Keymap)
-  return nil
+	return nil
 }
 
 // getServiceStatus returns detailed status information about a systemd service

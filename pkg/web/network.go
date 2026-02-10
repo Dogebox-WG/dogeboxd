@@ -6,7 +6,7 @@ import (
 	"log"
 	"net/http"
 
-	dogeboxd "github.com/dogeorg/dogeboxd/pkg"
+	dogeboxd "github.com/Dogebox-WG/dogeboxd/pkg"
 )
 
 func (t api) getNetwork(w http.ResponseWriter, r *http.Request) {

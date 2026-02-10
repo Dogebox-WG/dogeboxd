@@ -7,9 +7,9 @@ import (
 	"os"
 	"strings"
 
-	"github.com/dogeorg/dogeboxd/cmd/_dbxroot/utils"
-	dogeboxd "github.com/dogeorg/dogeboxd/pkg"
-	"github.com/dogeorg/dogeboxd/pkg/system"
+	"github.com/Dogebox-WG/dogeboxd/cmd/_dbxroot/utils"
+	dogeboxd "github.com/Dogebox-WG/dogeboxd/pkg"
+	"github.com/Dogebox-WG/dogeboxd/pkg/system"
 	"github.com/spf13/cobra"
 )
 
@@ -139,7 +139,7 @@ Example:
 		utils.RunCommand("touch", "/mnt/opt/dbx-installed")
 		utils.RunCommand("chown", "dogeboxd:dogebox", "/mnt/opt/dbx-installed")
 
-		systemClosure := utils.RunCommand("readlink", "-f", "/run/current-system");
+		systemClosure := utils.RunCommand("readlink", "-f", "/run/current-system")
 
 		// Install
 		utils.RunCommand("nixos-install", "--system", strings.TrimSpace(systemClosure), "--no-root-passwd", "--root", "/mnt")

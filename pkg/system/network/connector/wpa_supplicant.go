@@ -5,7 +5,7 @@ import (
 	"errors"
 	"os/exec"
 
-	dogeboxd "github.com/dogeorg/dogeboxd/pkg"
+	dogeboxd "github.com/Dogebox-WG/dogeboxd/pkg"
 )
 
 var _ dogeboxd.NetworkConnector = &NetworkConnectorWPASupplicant{}

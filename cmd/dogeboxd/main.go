@@ -7,8 +7,8 @@ import (
 	"os"
 	"path/filepath"
 
-	dogeboxd "github.com/dogeorg/dogeboxd/pkg"
-	"github.com/dogeorg/dogeboxd/pkg/system"
+	dogeboxd "github.com/Dogebox-WG/dogeboxd/pkg"
+	"github.com/Dogebox-WG/dogeboxd/pkg/system"
 )
 
 func main() {

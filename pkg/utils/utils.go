@@ -11,7 +11,7 @@ import (
 	"slices"
 	"strings"
 
-	dogeboxd "github.com/dogeorg/dogeboxd/pkg"
+	dogeboxd "github.com/Dogebox-WG/dogeboxd/pkg"
 )
 
 func ImageBytesToWebBase64(imgBytes []byte, filename string) (string, error) {

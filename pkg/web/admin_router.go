@@ -8,8 +8,8 @@ import (
 	"net/http/httputil"
 	"net/url"
 
-	dogeboxd "github.com/dogeorg/dogeboxd/pkg"
-	"github.com/dogeorg/dogeboxd/pkg/conductor"
+	dogeboxd "github.com/Dogebox-WG/dogeboxd/pkg"
+	"github.com/Dogebox-WG/dogeboxd/pkg/conductor"
 )
 
 func NewAdminRouter(config dogeboxd.ServerConfig, pm dogeboxd.PupManager) conductor.Service {

@@ -8,7 +8,7 @@ import (
 	"sort"
 	"strings"
 
-	"github.com/dogeorg/dogeboxd/cmd/_dbxroot/utils"
+	"github.com/Dogebox-WG/dogeboxd/cmd/_dbxroot/utils"
 	"github.com/spf13/cobra"
 )
 
@@ -126,4 +126,3 @@ func init() {
 	writeConfigCmd.Flags().StringP("config", "c", "", "JSON object with config key-value pairs (required)")
 	writeConfigCmd.MarkFlagRequired("config")
 }
-

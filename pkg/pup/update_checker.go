@@ -11,8 +11,8 @@ import (
 	"sync"
 	"time"
 
+	dogeboxd "github.com/Dogebox-WG/dogeboxd/pkg"
 	"github.com/Masterminds/semver/v3"
-	dogeboxd "github.com/dogeorg/dogeboxd/pkg"
 )
 
 type githubReleaseResponse struct {
