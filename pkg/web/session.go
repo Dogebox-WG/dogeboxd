@@ -122,13 +122,7 @@ func delSession(r *http.Request) error {
 	return nil
 }
 
-func authReq(dbx dogeboxd.Dogeboxd, sm dogeboxd.StateManager, route string, next http.HandlerFunc) http.HandlerFunc {
-	if route == "POST /authenticate" {
-		return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-			next.ServeHTTP(w, r)
-		})
-	}
-
+func authReq(dbx dogeboxd.Dogeboxd, sm dogeboxd.StateManager, route string, auth_state AuthState, next http.HandlerFunc) http.HandlerFunc {
 	tokenExtractor := getBearerToken
 
 	sessionHandler := http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
@@ -156,37 +150,16 @@ func authReq(dbx dogeboxd.Dogeboxd, sm dogeboxd.StateManager, route string, next
 		sessionHandler.ServeHTTP(w, r)
 	}
 
+	// Handle routes that are open as long as the dogebox is not fully configured
+	if auth_state == ConfiguredAuth {
+		return http.HandlerFunc(handleConfigCheck)
+	}
+
 	// Handle Websocket request authentication separately.
 	if strings.HasPrefix(route, "/ws/") {
 		tokenExtractor = getQueryToken
 	}
 
-	// We don't want a few routes to be locked down until the user has actually configured their system.
-	// Whitelist those here.
-	// TODO: Don't hardcode these.
-	if route == "GET /system/bootstrap" ||
-		route == "GET /system/recovery-bootstrap" ||
-		route == "POST /system/bootstrap" ||
-		route == "GET /system/disks" ||
-		route == "GET /system/keymaps" ||
-		route == "POST /system/keymap" ||
-		route == "GET /system/timezones" ||
-		route == "POST /system/timezone" ||
-		route == "POST /system/hostname" ||
-		route == "POST /system/storage" ||
-		route == "POST /system/install" ||
-		route == "GET /system/network/list" ||
-		route == "PUT /system/network/set-pending" ||
-		route == "GET /keys" ||
-		route == "POST /keys/create-master" ||
-		route == "POST /system/host/shutdown" ||
-		route == "POST /system/host/reboot" ||
-		route == "POST /system/import-blockchain-data" ||
-		route == "/ws/state/" {
-		return http.HandlerFunc(handleConfigCheck)
-	}
-
-	// Any other function should require an authed session
 	return sessionHandler
 }
 
