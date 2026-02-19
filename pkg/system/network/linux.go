@@ -130,7 +130,19 @@ outer:
 }
 
 func isPhysicalNetworkInterface(name string) bool {
-	_, err := os.Stat(filepath.Join("/sys/class/net", name, "device"))
+	interfacePath := filepath.Join("/sys/class/net", name)
+
+	realPath, err := filepath.EvalSymlinks(interfacePath)
+	if err != nil {
+		return false
+	}
+
+	// Ignore kernel-created virtual interfaces (ap0/bridges/veth/etc.).
+	if strings.Contains(realPath, "/devices/virtual/net/") {
+		return false
+	}
+
+	_, err = os.Stat(filepath.Join(interfacePath, "device"))
 	return err == nil
 }
 
