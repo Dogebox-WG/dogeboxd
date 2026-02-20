@@ -113,8 +113,8 @@ outer:
 			}
 		}
 
-		// Ignore virtual interfaces (e.g. ap0/bridges) and keep physical links.
-		if !isPhysicalNetworkInterface(systemInterface.Name) {
+		// Ignore AP-mode interfaces (ap0/ap1/etc), they should never appear as ethernet.
+		if strings.HasPrefix(systemInterface.Name, "ap") {
 			continue
 		}
 
@@ -127,23 +127,6 @@ outer:
 	}
 
 	return availableNetworkConnections
-}
-
-func isPhysicalNetworkInterface(name string) bool {
-	interfacePath := filepath.Join("/sys/class/net", name)
-
-	realPath, err := filepath.EvalSymlinks(interfacePath)
-	if err != nil {
-		return false
-	}
-
-	// Ignore kernel-created virtual interfaces (ap0/bridges/veth/etc.).
-	if strings.Contains(realPath, "/devices/virtual/net/") {
-		return false
-	}
-
-	_, err = os.Stat(filepath.Join(interfacePath, "device"))
-	return err == nil
 }
 
 func interfaceHasCarrier(name string) bool {
