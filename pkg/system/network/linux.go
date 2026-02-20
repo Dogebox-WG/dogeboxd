@@ -7,6 +7,7 @@ import (
 	"net"
 	"os"
 	"path/filepath"
+	"sort"
 	"strings"
 
 	dogeboxd "github.com/dogeorg/dogeboxd/pkg"
@@ -34,9 +35,9 @@ type WiFiNetwork struct {
 	Frequency string
 }
 
-var physicalInterfaceLabels = map[string]string{
-	"enP4p65s0": "ETH1",
-	"enP2p33s0": "ETH2",
+type EthernetInterface struct {
+	Name string
+	MAC  string
 }
 
 func (t NetworkManagerLinux) GetAvailableNetworks() []dogeboxd.NetworkConnection {
@@ -121,7 +122,6 @@ outer:
 		availableNetworkConnections = append(availableNetworkConnections, dogeboxd.NetworkEthernet{
 			Type:      "ethernet",
 			Interface: systemInterface.Name,
-			Label:     physicalInterfaceLabels[systemInterface.Name],
 			Active:    interfaceHasCarrier(systemInterface.Name),
 		})
 	}
@@ -136,6 +136,76 @@ func interfaceHasCarrier(name string) bool {
 	}
 
 	return strings.TrimSpace(string(carrier)) == "1"
+}
+
+func DiscoverEthernetInterfaces() []EthernetInterface {
+	wifiInterfaceNames := map[string]struct{}{}
+	wifiClient, err := wifi.New()
+	if err != nil {
+		log.Println("Could not init a wifi interface client for discovery, skipping:", err)
+	} else {
+		defer wifiClient.Close()
+		wifiInterfaces, err := wifiClient.Interfaces()
+		if err != nil {
+			log.Println("Could not list wifi interfaces for discovery:", err)
+		} else {
+			for _, wifiInterface := range wifiInterfaces {
+				wifiInterfaceNames[wifiInterface.Name] = struct{}{}
+			}
+		}
+	}
+
+	allInterfaces, err := net.Interfaces()
+	if err != nil {
+		log.Printf("Failed to fetch system interfaces: %s", err)
+		return nil
+	}
+
+	discovered := make([]EthernetInterface, 0, len(allInterfaces))
+	for _, systemInterface := range allInterfaces {
+		// Ignore anything that doesn't have a hardware address.
+		if systemInterface.HardwareAddr == nil {
+			continue
+		}
+
+		// Ignore if it starts with "ve-pup-" as
+		// this is an internal pup-only interface.
+		if strings.HasPrefix(systemInterface.Name, "ve-pup-") {
+			continue
+		}
+
+		// Ignore AP-mode interfaces (ap0/ap1/etc), they should never appear as ethernet.
+		if strings.HasPrefix(systemInterface.Name, "ap") {
+			continue
+		}
+
+		// If we've seen this as a wifi network, ignore it.
+		if _, ok := wifiInterfaceNames[systemInterface.Name]; ok {
+			continue
+		}
+
+		macBytes, err := os.ReadFile(filepath.Join("/sys/class/net", systemInterface.Name, "address"))
+		if err != nil {
+			log.Printf("Failed to read MAC address for interface %s: %s", systemInterface.Name, err)
+			continue
+		}
+
+		mac := strings.ToLower(strings.TrimSpace(string(macBytes)))
+		if mac == "" {
+			continue
+		}
+
+		discovered = append(discovered, EthernetInterface{
+			Name: systemInterface.Name,
+			MAC:  mac,
+		})
+	}
+
+	sort.Slice(discovered, func(i, j int) bool {
+		return discovered[i].Name < discovered[j].Name
+	})
+
+	return discovered
 }
 
 func (t NetworkManagerLinux) SetPendingNetwork(selectedNetwork dogeboxd.SelectedNetwork, j dogeboxd.Job) error {

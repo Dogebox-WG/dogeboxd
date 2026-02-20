@@ -53,6 +53,12 @@ func (t server) Start() {
 	networkManager := network.NewNetworkManager(nixManager, t.sm)
 	lifecycleManager := lifecycle.NewLifecycleManager(t.config)
 
+	if t.config.Recovery {
+		if rebooted := t.ensureRecoveryInterfaceNames(nixManager, pups, lifecycleManager); rebooted {
+			return
+		}
+	}
+
 	systemUpdater := system.NewSystemUpdater(t.config, networkManager, nixManager, sourceManager, pups, t.sm, dkm)
 	journalReader := system.NewJournalReader(t.config)
 	logtailer := system.NewLogTailer(t.config)
@@ -138,4 +144,54 @@ func (t server) Start() {
 
 	// c.Service("Watcher", NewWatcher(t.state, t.config.PupDir))
 	<-c.Start()
+}
+
+func (t server) ensureRecoveryInterfaceNames(
+	nixManager dogeboxd.NixManager,
+	pups dogeboxd.PupManager,
+	lifecycleManager dogeboxd.LifecycleManager,
+) bool {
+	state := t.sm.Get()
+	if state.Dogebox.InitialState.HasRenamedInterfaces {
+		return false
+	}
+
+	discoveredInterfaces := network.DiscoverEthernetInterfaces()
+	if len(discoveredInterfaces) == 0 {
+		state.Dogebox.InitialState.HasRenamedInterfaces = true
+		if err := t.sm.SetDogebox(state.Dogebox); err != nil {
+			log.Printf("Failed to persist interface naming state: %v", err)
+		}
+		return false
+	}
+
+	links := make([]dogeboxd.NixInterfaceLink, 0, len(discoveredInterfaces))
+	for i, iface := range discoveredInterfaces {
+		links = append(links, dogeboxd.NixInterfaceLink{
+			NAME: fmt.Sprintf("eth%d", i+1),
+			MAC:  iface.MAC,
+		})
+	}
+
+	renameLog := dogeboxd.NewConsoleSubLogger("internal", "rename interfaces")
+	renamePatch := nixManager.NewPatch(renameLog)
+	nixManager.UpdateIncludesFile(renamePatch, pups)
+	nixManager.UpdateInterfaceLinks(renamePatch, dogeboxd.NixInterfaceLinksTemplateValues{
+		LINKS: links,
+	})
+
+	if err := renamePatch.Apply(); err != nil {
+		log.Printf("Failed to apply interface naming patch: %v", err)
+		return false
+	}
+
+	state.Dogebox.InitialState.HasRenamedInterfaces = true
+	if err := t.sm.SetDogebox(state.Dogebox); err != nil {
+		log.Printf("Failed to persist interface naming state after patch apply: %v", err)
+		return false
+	}
+
+	log.Printf("Interface naming configured, rebooting to apply renamed interfaces.")
+	lifecycleManager.Reboot()
+	return true
 }

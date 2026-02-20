@@ -13,6 +13,10 @@
     ++ lib.optionals (builtins.pathExists ./custom.nix) [
       ./custom.nix
     ]
+    # Optional interface naming configuration (only if present)
+    ++ lib.optionals (builtins.pathExists ./interface-links.nix) [
+      ./interface-links.nix
+    ]
     # Optional storage overlay (only if present in the nix dir)
     ++ lib.optionals (builtins.pathExists "{{ .NIX_DIR }}/storage-overlay.nix") [
       {{ .NIX_DIR }}/storage-overlay.nix

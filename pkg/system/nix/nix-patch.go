@@ -42,6 +42,9 @@ var rawIncludesFileTemplate []byte
 //go:embed templates/network.nix
 var rawNetworkTemplate []byte
 
+//go:embed templates/interface-links.nix
+var rawInterfaceLinksTemplate []byte
+
 //go:embed templates/storage-overlay.nix
 var rawStorageOverlayTemplate []byte
 
@@ -242,6 +245,12 @@ func (np *nixPatch) UpdateSystem(values dogeboxd.NixSystemTemplateValues) {
 func (np *nixPatch) UpdateNetwork(values dogeboxd.NixNetworkTemplateValues) {
 	np.add("UpdateNetwork", func() error {
 		return np.writeTemplate("network.nix", rawNetworkTemplate, values)
+	})
+}
+
+func (np *nixPatch) UpdateInterfaceLinks(values dogeboxd.NixInterfaceLinksTemplateValues) {
+	np.add("UpdateInterfaceLinks", func() error {
+		return np.writeTemplate("interface-links.nix", rawInterfaceLinksTemplate, values)
 	})
 }
 

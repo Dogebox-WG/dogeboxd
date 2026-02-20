@@ -61,9 +61,10 @@ type ProcStatus struct {
 }
 
 type DogeboxStateInitialSetup struct {
-	HasGeneratedKey    bool `json:"hasGeneratedKey"`
-	HasSetNetwork      bool `json:"hasSetNetwork"`
-	HasFullyConfigured bool `json:"hasFullyConfigured"`
+	HasGeneratedKey      bool `json:"hasGeneratedKey"`
+	HasSetNetwork        bool `json:"hasSetNetwork"`
+	HasRenamedInterfaces bool `json:"hasRenamedInterfaces"`
+	HasFullyConfigured   bool `json:"hasFullyConfigured"`
 }
 
 type DogeboxFlags struct {
@@ -342,6 +343,15 @@ type NixNetworkTemplateValues struct {
 	WIFI_PASSWORD string
 }
 
+type NixInterfaceLink struct {
+	NAME string
+	MAC  string
+}
+
+type NixInterfaceLinksTemplateValues struct {
+	LINKS []NixInterfaceLink
+}
+
 type NixStorageOverlayTemplateValues struct {
 	STORAGE_DEVICE string
 	DATA_DIR       string
@@ -364,6 +374,7 @@ type NixPatch interface {
 	UpdateFirewall(values NixFirewallTemplateValues)
 	UpdateSystem(values NixSystemTemplateValues)
 	UpdateNetwork(values NixNetworkTemplateValues)
+	UpdateInterfaceLinks(values NixInterfaceLinksTemplateValues)
 	UpdateIncludesFile(values NixIncludesFileTemplateValues)
 	WritePupFile(pupId string, values NixPupContainerTemplateValues)
 	RemovePupFile(pupId string)
@@ -379,6 +390,7 @@ type NixManager interface {
 	UpdateSystemContainerConfiguration(patch NixPatch)
 	UpdateFirewallRules(patch NixPatch, dbxState DogeboxState)
 	UpdateNetwork(patch NixPatch, values NixNetworkTemplateValues)
+	UpdateInterfaceLinks(patch NixPatch, values NixInterfaceLinksTemplateValues)
 	UpdateSystem(patch NixPatch, values NixSystemTemplateValues)
 	UpdateStorageOverlay(patch NixPatch, partitionName string)
 

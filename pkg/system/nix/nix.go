@@ -302,6 +302,10 @@ func (nm nixManager) UpdateNetwork(nixPatch dogeboxd.NixPatch, values dogeboxd.N
 	nixPatch.UpdateNetwork(values)
 }
 
+func (nm nixManager) UpdateInterfaceLinks(nixPatch dogeboxd.NixPatch, values dogeboxd.NixInterfaceLinksTemplateValues) {
+	nixPatch.UpdateInterfaceLinks(values)
+}
+
 func (nm nixManager) UpdateStorageOverlay(nixPatch dogeboxd.NixPatch, partitionName string) {
 	currentUID := os.Getuid()
 	uidStr := strconv.Itoa(currentUID)
