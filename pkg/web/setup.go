@@ -582,7 +582,7 @@ func (t api) initialBootstrap(w http.ResponseWriter, r *http.Request) {
 	}
 
 	// Add our DogeOrg source in by default, for people to test things with.
-	if _, err := t.sources.AddSource("https://github.com/dogeorg/pups.git"); err != nil {
+	if _, err := t.sources.AddSource("https://github.com/Dogebox-WG/pups.git"); err != nil {
 		log.Errf("Error adding initial dogeorg source: %v", err)
 		sendErrorResponse(w, http.StatusInternalServerError, "Error adding dogeorg source")
 		return
