@@ -5,6 +5,8 @@ import (
 	"fmt"
 	"log"
 	"net"
+	"os"
+	"path/filepath"
 	"strings"
 
 	dogeboxd "github.com/Dogebox-WG/dogeboxd/pkg"
@@ -30,6 +32,11 @@ type WiFiNetwork struct {
 	Signal    string
 	Channel   string
 	Frequency string
+}
+
+var physicalInterfaceLabels = map[string]string{
+	"enP4p65s0": "ETH1",
+	"enP2p33s0": "ETH2",
 }
 
 func (t NetworkManagerLinux) GetAvailableNetworks() []dogeboxd.NetworkConnection {
@@ -106,13 +113,29 @@ outer:
 			}
 		}
 
+		// Ignore AP-mode interfaces (ap0/ap1/etc), they should never appear as ethernet.
+		if strings.HasPrefix(systemInterface.Name, "ap") {
+			continue
+		}
+
 		availableNetworkConnections = append(availableNetworkConnections, dogeboxd.NetworkEthernet{
 			Type:      "ethernet",
 			Interface: systemInterface.Name,
+			Label:     physicalInterfaceLabels[systemInterface.Name],
+			Active:    interfaceHasCarrier(systemInterface.Name),
 		})
 	}
 
 	return availableNetworkConnections
+}
+
+func interfaceHasCarrier(name string) bool {
+	carrier, err := os.ReadFile(filepath.Join("/sys/class/net", name, "carrier"))
+	if err != nil {
+		return false
+	}
+
+	return strings.TrimSpace(string(carrier)) == "1"
 }
 
 func (t NetworkManagerLinux) SetPendingNetwork(selectedNetwork dogeboxd.SelectedNetwork, j dogeboxd.Job) error {
