@@ -8,10 +8,10 @@ import (
 	"os"
 	"time"
 
-	dogeboxd "github.com/dogeorg/dogeboxd/pkg"
-	"github.com/dogeorg/dogeboxd/pkg/system"
-	"github.com/dogeorg/dogeboxd/pkg/utils"
-	"github.com/dogeorg/dogeboxd/pkg/version"
+	dogeboxd "github.com/Dogebox-WG/dogeboxd/pkg"
+	"github.com/Dogebox-WG/dogeboxd/pkg/system"
+	"github.com/Dogebox-WG/dogeboxd/pkg/utils"
+	"github.com/Dogebox-WG/dogeboxd/pkg/version"
 )
 
 type InitialSystemBootstrapRequestBody struct {

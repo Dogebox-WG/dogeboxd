@@ -1,7 +1,7 @@
 package main
 
 import (
-	"github.com/dogeorg/dogeboxd/cmd/dbx/cmd"
+	"github.com/Dogebox-WG/dogeboxd/cmd/dbx/cmd"
 )
 
 func main() {

@@ -5,7 +5,7 @@ import (
 	"os"
 	"os/exec"
 
-	"github.com/dogeorg/dogeboxd/cmd/_dbxroot/utils"
+	"github.com/Dogebox-WG/dogeboxd/cmd/_dbxroot/utils"
 	"github.com/spf13/cobra"
 )
 

@@ -6,8 +6,8 @@ import (
 	"os"
 	"strings"
 
-	"github.com/dogeorg/dogeboxd/cmd/_dbxroot/utils"
-	"github.com/dogeorg/dogeboxd/pkg/system"
+	"github.com/Dogebox-WG/dogeboxd/cmd/_dbxroot/utils"
+	"github.com/Dogebox-WG/dogeboxd/pkg/system"
 	"github.com/spf13/cobra"
 )
 

@@ -5,9 +5,9 @@ import (
 	"log"
 	"os"
 
-	dogeboxd "github.com/dogeorg/dogeboxd/pkg"
-	"github.com/dogeorg/dogeboxd/pkg/system"
-	"github.com/dogeorg/dogeboxd/pkg/system/lifecycle"
+	dogeboxd "github.com/Dogebox-WG/dogeboxd/pkg"
+	"github.com/Dogebox-WG/dogeboxd/pkg/system"
+	"github.com/Dogebox-WG/dogeboxd/pkg/system/lifecycle"
 	"github.com/spf13/cobra"
 )
 

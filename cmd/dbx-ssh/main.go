@@ -9,7 +9,7 @@ import (
 	"github.com/charmbracelet/wish"
 	wishbubble "github.com/charmbracelet/wish/bubbletea"
 	"github.com/charmbracelet/wish/logging"
-	dbxdev "github.com/dogeorg/dogeboxd/cmd/dbx-dev"
+	dbxdev "github.com/Dogebox-WG/dogeboxd/cmd/dbx-dev"
 )
 
 func main() {

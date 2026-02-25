@@ -6,8 +6,8 @@ import (
 	"fmt"
 	"net"
 
-	dogeboxd "github.com/dogeorg/dogeboxd/pkg"
-	"github.com/dogeorg/dogeboxd/pkg/utils"
+	dogeboxd "github.com/Dogebox-WG/dogeboxd/pkg"
+	"github.com/Dogebox-WG/dogeboxd/pkg/utils"
 )
 
 /* This method is used to add a new pup from a manifest

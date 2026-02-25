@@ -9,8 +9,8 @@ import (
 	"net/http"
 	"os"
 
-	dogeboxd "github.com/dogeorg/dogeboxd/pkg"
-	"github.com/dogeorg/dogeboxd/pkg/conductor"
+	dogeboxd "github.com/Dogebox-WG/dogeboxd/pkg"
+	"github.com/Dogebox-WG/dogeboxd/pkg/conductor"
 	"github.com/rs/cors"
 )
 

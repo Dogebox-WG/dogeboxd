@@ -10,7 +10,7 @@ import (
 	"path/filepath"
 	"strings"
 
-	"github.com/dogeorg/dogeboxd/pkg/conductor"
+	"github.com/Dogebox-WG/dogeboxd/pkg/conductor"
 	"github.com/rs/cors"
 )
 

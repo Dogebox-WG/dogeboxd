@@ -9,7 +9,7 @@ import (
 	"path/filepath"
 	"strings"
 
-	"github.com/dogeorg/dogeboxd/pkg/version"
+	"github.com/Dogebox-WG/dogeboxd/pkg/version"
 )
 
 func IsAlphanumeric(s string) bool {

@@ -5,7 +5,7 @@ import (
 	"fmt"
 	"time"
 
-	dogeboxd "github.com/dogeorg/dogeboxd/pkg"
+	dogeboxd "github.com/Dogebox-WG/dogeboxd/pkg"
 	"golang.org/x/net/websocket"
 )
 

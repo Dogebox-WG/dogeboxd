@@ -7,7 +7,7 @@ import (
 	"time"
 
 	dbus "github.com/coreos/go-systemd/v22/dbus"
-	dogeboxd "github.com/dogeorg/dogeboxd/pkg"
+	dogeboxd "github.com/Dogebox-WG/dogeboxd/pkg"
 	"github.com/shirou/gopsutil/v4/process"
 )
 

@@ -6,7 +6,7 @@ import (
 	"path/filepath"
 	"strings"
 
-	dogeboxd "github.com/dogeorg/dogeboxd/pkg"
+	dogeboxd "github.com/Dogebox-WG/dogeboxd/pkg"
 )
 
 // ValidateNix validates nix content using nix-instantiate --parse.

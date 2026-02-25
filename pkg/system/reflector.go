@@ -10,7 +10,7 @@ import (
 	"path/filepath"
 	"time"
 
-	dogeboxd "github.com/dogeorg/dogeboxd/pkg"
+	dogeboxd "github.com/Dogebox-WG/dogeboxd/pkg"
 	"github.com/go-resty/resty/v2"
 )
 

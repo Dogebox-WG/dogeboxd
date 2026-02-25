@@ -7,7 +7,7 @@ import (
 	"time"
 
 	"github.com/charmbracelet/lipgloss"
-	"github.com/dogeorg/dogeboxd/pkg/version"
+	"github.com/Dogebox-WG/dogeboxd/pkg/version"
 )
 
 // Style definitions

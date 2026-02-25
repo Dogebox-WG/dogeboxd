@@ -3,7 +3,7 @@ package web
 import (
 	"fmt"
 
-	dogeboxd "github.com/dogeorg/dogeboxd/pkg"
+	dogeboxd "github.com/Dogebox-WG/dogeboxd/pkg"
 )
 
 // CollectionPup represents a pup that belongs to a collection

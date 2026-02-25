@@ -1,4 +1,4 @@
-module github.com/dogeorg/dogeboxd
+module github.com/Dogebox-WG/dogeboxd
 
 go 1.23.0
 

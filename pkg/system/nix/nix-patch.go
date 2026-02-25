@@ -15,7 +15,7 @@ import (
 	"text/template"
 	"time"
 
-	dogeboxd "github.com/dogeorg/dogeboxd/pkg"
+	dogeboxd "github.com/Dogebox-WG/dogeboxd/pkg"
 )
 
 var tmplFuncs = template.FuncMap{
