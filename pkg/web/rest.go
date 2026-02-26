@@ -11,9 +11,9 @@ import (
 
 	"connectrpc.com/connect"
 	"connectrpc.com/validate"
+	"github.com/Dogebox-WG/dogeboxd/protocol/gen/authenticate/v1/authenticatev1connect"
 	dogeboxd "github.com/Dogebox-WG/dogeboxd/pkg"
 	"github.com/Dogebox-WG/dogeboxd/pkg/conductor"
-	"github.com/Dogebox-WG/dogeboxd/protocol/gen/authenticate/v1/authenticatev1connect"
 	"github.com/rs/cors"
 )
 

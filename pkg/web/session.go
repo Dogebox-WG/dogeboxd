@@ -15,8 +15,8 @@ import (
 	"time"
 
 	"connectrpc.com/connect"
-	dogeboxd "github.com/Dogebox-WG/dogeboxd/pkg"
 	authenticatev1 "github.com/Dogebox-WG/dogeboxd/protocol/gen/authenticate/v1"
+	dogeboxd "github.com/Dogebox-WG/dogeboxd/pkg"
 	"github.com/gorilla/securecookie"
 )
 

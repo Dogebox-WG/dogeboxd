@@ -13,9 +13,9 @@ import (
 	"slices"
 	"strings"
 
+	"github.com/dell/csi-baremetal/pkg/base/linuxutils/lsblk"
 	dogeboxd "github.com/Dogebox-WG/dogeboxd/pkg"
 	"github.com/Dogebox-WG/dogeboxd/pkg/utils"
-	"github.com/dell/csi-baremetal/pkg/base/linuxutils/lsblk"
 	"github.com/sirupsen/logrus"
 )
 
