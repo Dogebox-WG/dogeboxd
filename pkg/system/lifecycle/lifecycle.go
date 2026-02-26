@@ -1,7 +1,7 @@
 package lifecycle
 
 import (
-	dogeboxd "github.com/dogeorg/dogeboxd/pkg"
+	dogeboxd "github.com/Dogebox-WG/dogeboxd/pkg"
 )
 
 func NewLifecycleManager(config dogeboxd.ServerConfig) dogeboxd.LifecycleManager {

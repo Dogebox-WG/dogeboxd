@@ -6,7 +6,7 @@ import (
 	"net/http"
 	"strings"
 
-	dogeboxd "github.com/dogeorg/dogeboxd/pkg"
+	dogeboxd "github.com/Dogebox-WG/dogeboxd/pkg"
 )
 
 // GET /pup/updates - Get all available pup updates

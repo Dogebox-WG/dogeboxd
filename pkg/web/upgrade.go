@@ -5,9 +5,9 @@ import (
 	"io"
 	"net/http"
 
-	dogeboxd "github.com/dogeorg/dogeboxd/pkg"
-	"github.com/dogeorg/dogeboxd/pkg/system"
-	"github.com/dogeorg/dogeboxd/pkg/version"
+	dogeboxd "github.com/Dogebox-WG/dogeboxd/pkg"
+	"github.com/Dogebox-WG/dogeboxd/pkg/system"
+	"github.com/Dogebox-WG/dogeboxd/pkg/version"
 )
 
 type CommenceUpdateRequest struct {

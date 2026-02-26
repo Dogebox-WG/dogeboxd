@@ -3,7 +3,7 @@ package cmd
 import (
 	"fmt"
 
-	"github.com/dogeorg/dogeboxd/pkg/version"
+	"github.com/Dogebox-WG/dogeboxd/pkg/version"
 	"github.com/spf13/cobra"
 )
 

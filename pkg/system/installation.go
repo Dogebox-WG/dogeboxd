@@ -14,8 +14,8 @@ import (
 	"strings"
 
 	"github.com/dell/csi-baremetal/pkg/base/linuxutils/lsblk"
-	dogeboxd "github.com/dogeorg/dogeboxd/pkg"
-	"github.com/dogeorg/dogeboxd/pkg/utils"
+	dogeboxd "github.com/Dogebox-WG/dogeboxd/pkg"
+	"github.com/Dogebox-WG/dogeboxd/pkg/utils"
 	"github.com/sirupsen/logrus"
 )
 

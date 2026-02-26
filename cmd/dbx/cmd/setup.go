@@ -4,7 +4,7 @@ import (
 	"log"
 
 	tea "github.com/charmbracelet/bubbletea"
-	dbxsetup "github.com/dogeorg/dogeboxd/cmd/dbx-setup"
+	dbxsetup "github.com/Dogebox-WG/dogeboxd/cmd/dbx-setup"
 	"github.com/spf13/cobra"
 )
 

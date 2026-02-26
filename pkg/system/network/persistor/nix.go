@@ -3,7 +3,7 @@ package network_persistor
 import (
 	_ "embed"
 
-	dogeboxd "github.com/dogeorg/dogeboxd/pkg"
+	dogeboxd "github.com/Dogebox-WG/dogeboxd/pkg"
 )
 
 var _ dogeboxd.NetworkPersistor = &NetworkPersistorNix{}

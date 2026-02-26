@@ -6,7 +6,7 @@ import (
 	"time"
 
 	"github.com/coreos/go-systemd/sdjournal"
-	dogeboxd "github.com/dogeorg/dogeboxd/pkg"
+	dogeboxd "github.com/Dogebox-WG/dogeboxd/pkg"
 )
 
 func NewJournalReader(config dogeboxd.ServerConfig) JournalReader {

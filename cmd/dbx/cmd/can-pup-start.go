@@ -6,11 +6,11 @@ import (
 	"log"
 	"os"
 
-	"github.com/dogeorg/dogeboxd/cmd/dbx/utils"
-	dogeboxd "github.com/dogeorg/dogeboxd/pkg"
-	"github.com/dogeorg/dogeboxd/pkg/pup"
-	source "github.com/dogeorg/dogeboxd/pkg/sources"
-	"github.com/dogeorg/dogeboxd/pkg/system"
+	"github.com/Dogebox-WG/dogeboxd/cmd/dbx/utils"
+	dogeboxd "github.com/Dogebox-WG/dogeboxd/pkg"
+	"github.com/Dogebox-WG/dogeboxd/pkg/pup"
+	source "github.com/Dogebox-WG/dogeboxd/pkg/sources"
+	"github.com/Dogebox-WG/dogeboxd/pkg/system"
 	"github.com/spf13/cobra"
 )
 

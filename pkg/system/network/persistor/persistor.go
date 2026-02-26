@@ -3,7 +3,7 @@ package network_persistor
 import (
 	"errors"
 
-	dogeboxd "github.com/dogeorg/dogeboxd/pkg"
+	dogeboxd "github.com/Dogebox-WG/dogeboxd/pkg"
 )
 
 func NewNetworkPersistor(nix dogeboxd.NixManager, network dogeboxd.SelectedNetwork) (dogeboxd.NetworkPersistor, error) {

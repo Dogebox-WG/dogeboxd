@@ -6,15 +6,15 @@ import (
 	"log"
 	"time"
 
-	dogeboxd "github.com/dogeorg/dogeboxd/pkg"
-	"github.com/dogeorg/dogeboxd/pkg/conductor"
-	"github.com/dogeorg/dogeboxd/pkg/pup"
-	source "github.com/dogeorg/dogeboxd/pkg/sources"
-	"github.com/dogeorg/dogeboxd/pkg/system"
-	"github.com/dogeorg/dogeboxd/pkg/system/lifecycle"
-	"github.com/dogeorg/dogeboxd/pkg/system/network"
-	"github.com/dogeorg/dogeboxd/pkg/system/nix"
-	"github.com/dogeorg/dogeboxd/pkg/web"
+	dogeboxd "github.com/Dogebox-WG/dogeboxd/pkg"
+	"github.com/Dogebox-WG/dogeboxd/pkg/conductor"
+	"github.com/Dogebox-WG/dogeboxd/pkg/pup"
+	source "github.com/Dogebox-WG/dogeboxd/pkg/sources"
+	"github.com/Dogebox-WG/dogeboxd/pkg/system"
+	"github.com/Dogebox-WG/dogeboxd/pkg/system/lifecycle"
+	"github.com/Dogebox-WG/dogeboxd/pkg/system/network"
+	"github.com/Dogebox-WG/dogeboxd/pkg/system/nix"
+	"github.com/Dogebox-WG/dogeboxd/pkg/web"
 )
 
 //go:embed pup.json

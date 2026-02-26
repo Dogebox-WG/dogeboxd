@@ -4,7 +4,7 @@ import (
 	"encoding/json"
 	"net/http"
 
-	"github.com/dogeorg/dogeboxd/pkg/system"
+	"github.com/Dogebox-WG/dogeboxd/pkg/system"
 )
 
 type InstallToDiskRequest struct {

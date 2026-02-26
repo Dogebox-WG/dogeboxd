@@ -3,7 +3,7 @@ package pup
 import (
 	"fmt"
 
-	dogeboxd "github.com/dogeorg/dogeboxd/pkg"
+	dogeboxd "github.com/Dogebox-WG/dogeboxd/pkg"
 )
 
 // This function only checks pup-specific conditions, it does not check

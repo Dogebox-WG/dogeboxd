@@ -1,8 +1,8 @@
 package network
 
 import (
-	dogeboxd "github.com/dogeorg/dogeboxd/pkg"
-	network_wifi "github.com/dogeorg/dogeboxd/pkg/system/network/wifi"
+	dogeboxd "github.com/Dogebox-WG/dogeboxd/pkg"
+	network_wifi "github.com/Dogebox-WG/dogeboxd/pkg/system/network/wifi"
 )
 
 func NewNetworkManager(nix dogeboxd.NixManager, sm dogeboxd.StateManager) dogeboxd.NetworkManager {
