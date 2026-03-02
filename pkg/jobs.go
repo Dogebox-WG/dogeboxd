@@ -200,9 +200,9 @@ func (jm *JobManager) CompleteJob(jobID string, err string) error {
 
 	// Emit WebSocket event for job completion
 	if jm.dbx != nil {
-		eventType := "job:completed"
+		eventType := ChangeTypeJobCompletedLegacy
 		if err != "" {
-			eventType = "job:failed"
+			eventType = ChangeTypeJobFailedLegacy
 		}
 		jm.dbx.sendChange(Change{ID: "internal", Type: eventType, Update: record})
 	}

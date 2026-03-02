@@ -674,7 +674,7 @@ func (t Dogeboxd) sendChange(c Change) {
 }
 
 // helper to report a completed job back to the client
-func (t Dogeboxd) sendFinishedJob(changeType string, j Job) {
+func (t Dogeboxd) sendFinishedJob(changeType ChangeType, j Job) {
 	if j.Err != "" {
 		j.Logger.Step("queue").Err(j.Err)
 	}
