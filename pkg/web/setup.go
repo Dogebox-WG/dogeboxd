@@ -155,7 +155,7 @@ func (t api) installPupCollection(w http.ResponseWriter, r *http.Request) {
 	}
 
 	// Process the collection installation
-	processPupCollections(t.sm, t.dbx, session.DKM_TOKEN, requestBody.CollectionName)
+	processPupCollections(t.sources, t.dbx, session.DKM_TOKEN, requestBody.CollectionName)
 
 	sendResponse(w, map[string]any{"success": true})
 }
