@@ -89,7 +89,10 @@ func (t api) getStoreList(w http.ResponseWriter, r *http.Request) {
 					}
 				}
 
-				pups[installedPup.Manifest.Meta.Name].Versions[installedPup.Version] = installedPup.Manifest
+				pupEntry := pups[installedPup.Manifest.Meta.Name]
+				pupEntry.Versions[installedPup.Version] = installedPup.Manifest
+				pupEntry.LatestVersion = installedPup.Version
+				pups[installedPup.Manifest.Meta.Name] = pupEntry
 			}
 		}
 
