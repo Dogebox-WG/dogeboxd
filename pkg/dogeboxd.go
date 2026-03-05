@@ -337,7 +337,6 @@ func (t Dogeboxd) jobDispatcher(j Job) {
 		for i, pup := range a {
 			pupJobID := fmt.Sprintf("%s-%d", j.ID, i+1)
 
-			// Create a separate job for each pup in the batch
 			pupJob := Job{
 				ID:      pupJobID,
 				A:       pup,
@@ -347,6 +346,14 @@ func (t Dogeboxd) jobDispatcher(j Job) {
 				Logger:  NewActionLogger(Job{ID: pupJobID}, "", t),
 				State:   j.State,
 			}
+			if t.JobManager != nil {
+				// Create a separate job for each pup in the batch
+				record, err := t.JobManager.CreateJobRecord(pupJob)
+				if err == nil {
+					t.sendChange(Change{ID: "internal", Type: "job:created", Update: record})
+				}
+			}
+
 			t.createPupFromManifest(pupJob, pup.PupName, pup.PupVersion, pup.SourceId, pup.Options)
 		}
 	case UninstallPup:
@@ -712,6 +719,8 @@ func (t Dogeboxd) shouldTrackJob(j Job) bool {
 		return false // Config updates are instantaneous, don't need tracking
 	case UpdatePupHooks:
 		return false // Hook updates are instantaneous
+	case InstallPups:
+		return false // Individual sub-jobs are tracked separately in jobDispatcher
 	default:
 		return true // Track everything else
 	}
