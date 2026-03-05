@@ -112,4 +112,3 @@ func init() {
 
 	listCmd.Flags().String("dataDir", "/opt/dogebox", "Path to dogeboxd data directory")
 }
-

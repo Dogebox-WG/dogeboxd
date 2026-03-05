@@ -717,7 +717,7 @@ func (t SystemUpdater) updateKeymap(a dogeboxd.UpdateKeymap, log dogeboxd.SubLog
 	}
 
 	log.Progress(100).Logf("Keyboard layout updated to %s", a.Keymap)
-  return nil
+	return nil
 }
 
 // getServiceStatus returns detailed status information about a systemd service

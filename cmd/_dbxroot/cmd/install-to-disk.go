@@ -139,7 +139,7 @@ Example:
 		utils.RunCommand("touch", "/mnt/opt/dbx-installed")
 		utils.RunCommand("chown", "dogeboxd:dogebox", "/mnt/opt/dbx-installed")
 
-		systemClosure := utils.RunCommand("readlink", "-f", "/run/current-system");
+		systemClosure := utils.RunCommand("readlink", "-f", "/run/current-system")
 
 		// Install
 		utils.RunCommand("nixos-install", "--system", strings.TrimSpace(systemClosure), "--no-root-passwd", "--root", "/mnt")
