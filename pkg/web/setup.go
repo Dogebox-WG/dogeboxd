@@ -169,13 +169,7 @@ func (t api) hostShutdown(w http.ResponseWriter, r *http.Request) {
 }
 
 func (t api) getKeymap(w http.ResponseWriter, r *http.Request) {
-	keymap, err := system.GetKeymap()
-	if err != nil {
-		sendErrorResponse(w, http.StatusInternalServerError, "Error getting current keymap")
-		return
-	}
-
-	sendResponse(w, keymap)
+	sendResponse(w, t.sm.Get().Dogebox.KeyMap)
 }
 
 func (t api) getKeymaps(w http.ResponseWriter, r *http.Request) {
@@ -198,13 +192,7 @@ func (t api) getKeymaps(w http.ResponseWriter, r *http.Request) {
 }
 
 func (t api) getTimezone(w http.ResponseWriter, r *http.Request) {
-	timezone, err := system.GetTimezone()
-	if err != nil {
-		sendErrorResponse(w, http.StatusInternalServerError, "Error getting current timezone")
-		return
-	}
-
-	sendResponse(w, timezone)
+	sendResponse(w, t.sm.Get().Dogebox.Timezone)
 }
 
 func (t api) getTimezones(w http.ResponseWriter, r *http.Request) {

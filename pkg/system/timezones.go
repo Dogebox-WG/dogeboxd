@@ -3,8 +3,6 @@ package system
 import (
 	_ "embed"
 	"encoding/json"
-
-	"github.com/Dogebox-WG/dogeboxd/pkg/system/nix"
 )
 
 type Timezone struct {
@@ -29,10 +27,3 @@ func GetTimezones() ([]Timezone, error) {
 	return tz_precompiled, nil
 }
 
-func GetTimezone() (string, error) {
-	timezoneString, err := nix.GetConfigValue("time.timeZone")
-	if err != nil {
-		return "", err
-	}
-	return timezoneString, nil
-}
