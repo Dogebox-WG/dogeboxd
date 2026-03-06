@@ -146,7 +146,9 @@ func GetUpgradableReleasesWithFetcher(includePreReleases bool, fetcher RepoTagsF
 }
 
 func DoSystemUpdate(pkg string, updateVersion string, logger dogeboxd.SubLogger) error {
-	upgradableReleases, err := GetUpgradableReleases(true)
+	// For sake of testing, GetUpgradableReleases is passed 'false' which
+	// ensures release candidates are NOT upgradable releases.
+	upgradableReleases, err := GetUpgradableReleases(false)
 	if err != nil {
 		return err
 	}
