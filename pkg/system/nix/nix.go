@@ -387,8 +387,10 @@ func GetConfigValue(configItem string) (string, error) {
 		//log.Errf("error getting flake path: %v", err)
 		return "", err
 	}
-	cmdArgs := []string{"nix", "eval", "--raw", flakePath + ".config." + configItem, "--impure"}
-	cmd := exec.Command("sudo", cmdArgs...)
+	cmdArgs := []string{"eval", "--raw", flakePath + ".config." + configItem, "--impure"}
+	cmd := exec.Command("nix", cmdArgs...)
+	cmdEnv := append(os.Environ(), "NIX_CACHE_HOME=/tmp/nix-cache")
+	cmd.Env = cmdEnv
 	stdout, err := cmd.Output()
 	if err != nil {
 		//log.Errf("error getting config value: %v", err)
