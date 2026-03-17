@@ -581,6 +581,13 @@ func (t api) initialBootstrap(w http.ResponseWriter, r *http.Request) {
 		}
 	}
 
+	log.Log("Waiting for network to recover after applying system configuration.")
+	if err := utils.WaitForNetworkRecovery(t.dbx.NetworkManager.GetLocalIP); err != nil {
+		log.Errf("Error waiting for network recovery: %v", err)
+		sendErrorResponse(w, http.StatusInternalServerError, "Network did not recover after applying system configuration")
+		return
+	}
+
 	// Add our DogeOrg source in by default, for people to test things with.
 	if _, err := t.sources.AddSource("https://github.com/Dogebox-WG/pups.git"); err != nil {
 		log.Errf("Error adding initial dogeorg source: %v", err)
