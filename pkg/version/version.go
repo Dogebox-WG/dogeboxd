@@ -61,7 +61,7 @@ func GetDBXRelease() *DBXVersionInfo {
 		Release:  release,
 		Packages: packages,
 		Git: DBXVersionInfoGit{
-			Commit: strings.TrimSpace(versioninfo.Revision + " test"),
+			Commit: "test",
 			Dirty:  versioninfo.DirtyBuild,
 		},
 	}
