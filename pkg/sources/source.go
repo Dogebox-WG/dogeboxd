@@ -1,6 +1,8 @@
 package source
 
 import (
+	"crypto/sha256"
+	"encoding/hex"
 	"encoding/json"
 	"fmt"
 	"log"
@@ -31,9 +33,10 @@ func NewSourceManager(config dogeboxd.ServerConfig, sm dogeboxd.StateManager, pm
 	log.Printf("Loaded %d sources", len(sources))
 
 	sourceManager := sourceManager{
-		sm:      sm,
-		pm:      pm,
-		sources: sources,
+		serverConfig: config,
+		sm:           sm,
+		pm:           pm,
+		sources:      sources,
 	}
 
 	return &sourceManager
@@ -42,9 +45,10 @@ func NewSourceManager(config dogeboxd.ServerConfig, sm dogeboxd.StateManager, pm
 var _ dogeboxd.SourceManager = &sourceManager{}
 
 type sourceManager struct {
-	sm      dogeboxd.StateManager
-	pm      dogeboxd.PupManager
-	sources []dogeboxd.ManifestSource
+	serverConfig dogeboxd.ServerConfig
+	sm           dogeboxd.StateManager
+	pm           dogeboxd.PupManager
+	sources      []dogeboxd.ManifestSource
 }
 
 func (sourceManager *sourceManager) GetAll(ignoreCache bool) (map[string]dogeboxd.ManifestSourceList, error) {
@@ -250,7 +254,6 @@ func (sourceManager *sourceManager) determineSourceType(location string) (string
 
 func (sourceManager *sourceManager) AddSource(location string) (dogeboxd.ManifestSource, error) {
 	var c dogeboxd.ManifestSourceConfiguration
-	var s dogeboxd.ManifestSource
 
 	sourceType, err := sourceManager.determineSourceType(location)
 	if err != nil || sourceType == "" {
@@ -265,7 +268,6 @@ func (sourceManager *sourceManager) AddSource(location string) (dogeboxd.Manifes
 				return nil, err
 			}
 			c = config
-			s = &ManifestSourceDisk{config: config}
 		}
 	case "git":
 		{
@@ -274,7 +276,6 @@ func (sourceManager *sourceManager) AddSource(location string) (dogeboxd.Manifes
 				return nil, err
 			}
 			c = config
-			s = &ManifestSourceGit{config: config}
 		}
 
 	default:
@@ -283,26 +284,71 @@ func (sourceManager *sourceManager) AddSource(location string) (dogeboxd.Manifes
 
 	log.Printf("generated config: %+v", c)
 
+	return sourceManager.addSourceFromConfiguration(c)
+}
+
+func (sourceManager *sourceManager) AddSourcePending(location string) error {
+	sourceType, err := sourceManager.determineSourceType(location)
+	if err != nil || sourceType == "" {
+		return err
+	}
+
+	config := dogeboxd.ManifestSourceConfiguration{
+		ID:          pendingSourceID(location),
+		Name:        location,
+		Description: "",
+		Location:    location,
+		Type:        sourceType,
+	}
+
+	log.Printf("generated pending source config: %+v", config)
+
+	_, err = sourceManager.addSourceFromConfiguration(config)
+	return err
+}
+
+func pendingSourceID(location string) string {
+	sum := sha256.Sum256([]byte(location))
+	return "pending-" + hex.EncodeToString(sum[:])
+}
+
+func (sourceManager *sourceManager) addSourceFromConfiguration(config dogeboxd.ManifestSourceConfiguration) (dogeboxd.ManifestSource, error) {
+	source, err := sourceManager.newSourceFromConfiguration(config)
+	if err != nil {
+		return nil, err
+	}
+
 	// Ensure no existing source has the same id
 	for _, _s := range sourceManager.sources {
 		_c := _s.Config()
-		if _c.ID == c.ID {
-			log.Printf("source with id %s already exists", c.ID)
-			return nil, fmt.Errorf("source with id %s already exists", c.ID)
+		if _c.ID == config.ID {
+			log.Printf("source with id %s already exists", config.ID)
+			return nil, fmt.Errorf("source with id %s already exists", config.ID)
 		}
-		if _c.Location == c.Location {
-			log.Printf("source with location %s already exists", c.Location)
-			return nil, fmt.Errorf("source with location %s already exists", c.Location)
+		if _c.Location == config.Location {
+			log.Printf("source with location %s already exists", config.Location)
+			return nil, fmt.Errorf("source with location %s already exists", config.Location)
 		}
 	}
 
-	sourceManager.sources = append(sourceManager.sources, s)
+	sourceManager.sources = append(sourceManager.sources, source)
 	if err := sourceManager.Save(); err != nil {
 		log.Println("error while saving sources:", err)
 		return nil, err
 	}
 
-	return s, nil
+	return source, nil
+}
+
+func (sourceManager *sourceManager) newSourceFromConfiguration(config dogeboxd.ManifestSourceConfiguration) (dogeboxd.ManifestSource, error) {
+	switch config.Type {
+	case "disk":
+		return &ManifestSourceDisk{config: config}, nil
+	case "git":
+		return &ManifestSourceGit{serverConfig: sourceManager.serverConfig, config: config}, nil
+	default:
+		return nil, fmt.Errorf("unknown source type: %s", config.Type)
+	}
 }
 
 func (sourceManager *sourceManager) RemoveSource(id string) error {
