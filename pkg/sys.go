@@ -134,6 +134,7 @@ type NetworkManager interface {
 	SetPendingNetwork(selectedNetwork SelectedNetwork, j Job) error
 	TryConnect(nixPatch NixPatch) error
 	TestConnect() error
+	HasInternetConnectivity() bool
 	GetLocalIP() (net.IP, error)
 }
 

@@ -584,9 +584,13 @@ func (t api) initialBootstrap(w http.ResponseWriter, r *http.Request) {
 	// Add our DogeOrg source in by default, for people to test things with.
 	initialPupSource := "https://github.com/Dogebox-WG/pups.git"
 	if _, err := t.sources.AddSource(initialPupSource); err != nil {
-		log.Logf("Unable to verify initial pup source during setup, continuing with a pending source: %v", err)
-		if err := t.sources.AddSourcePending(initialPupSource); err != nil {
-			log.Logf("Unable to save pending initial pup source, continuing without it: %v", err)
+		if internetOffline(t.dbx.NetworkManager) {
+			log.Logf("Unable to verify initial pup source during setup while offline, continuing with a pending source: %v", err)
+			if err := t.sources.AddSourcePending(initialPupSource); err != nil {
+				log.Logf("Unable to save pending initial pup source, continuing without it: %v", err)
+			}
+		} else {
+			log.Logf("Unable to verify initial pup source during setup, continuing without it: %v", err)
 		}
 	}
 

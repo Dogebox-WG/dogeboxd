@@ -8,6 +8,7 @@ import (
 	"os"
 	"path/filepath"
 	"strings"
+	"time"
 
 	dogeboxd "github.com/Dogebox-WG/dogeboxd/pkg"
 	network_connector "github.com/Dogebox-WG/dogeboxd/pkg/system/network/connector"
@@ -229,6 +230,26 @@ func (t NetworkManagerLinux) TryConnect(nixPatch dogeboxd.NixPatch) error {
 
 	log.Printf("Successfully saved network configuration to disk")
 	return nil
+}
+
+func (t NetworkManagerLinux) HasInternetConnectivity() bool {
+	// Use direct IP endpoints so this check doesn't confuse DNS problems
+	// or a merely assigned local address with actual internet reachability.
+	endpoints := []string{
+		"1.1.1.1:443",
+		"8.8.8.8:53",
+		"9.9.9.9:53",
+	}
+
+	for _, endpoint := range endpoints {
+		conn, err := net.DialTimeout("tcp", endpoint, 1500*time.Millisecond)
+		if err == nil {
+			conn.Close()
+			return true
+		}
+	}
+
+	return false
 }
 
 func (t NetworkManagerLinux) GetLocalIP() (net.IP, error) {
