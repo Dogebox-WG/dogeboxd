@@ -213,6 +213,7 @@ type SourceManager interface {
 	GetSource(name string) (ManifestSource, error)
 	AddSource(location string) (ManifestSource, error)
 	AddSourcePending(location string) error
+	RetryPendingSources() (int, error)
 	RemoveSource(id string) error
 	DownloadPup(diskPath, sourceId, pupName, pupVersion string) (PupManifest, error)
 	GetAllSourceConfigurations() []ManifestSourceConfiguration

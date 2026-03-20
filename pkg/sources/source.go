@@ -312,6 +312,25 @@ func pendingSourceID(location string) string {
 	return "pending-" + hex.EncodeToString(sum[:])
 }
 
+func isPendingSourceID(id string) bool {
+	return strings.HasPrefix(id, "pending-")
+}
+
+func (sourceManager *sourceManager) hasConflictingSourceConfiguration(index int, config dogeboxd.ManifestSourceConfiguration) bool {
+	for i, existingSource := range sourceManager.sources {
+		if i == index {
+			continue
+		}
+
+		existingConfig := existingSource.Config()
+		if existingConfig.ID == config.ID || existingConfig.Location == config.Location {
+			return true
+		}
+	}
+
+	return false
+}
+
 func (sourceManager *sourceManager) addSourceFromConfiguration(config dogeboxd.ManifestSourceConfiguration) (dogeboxd.ManifestSource, error) {
 	source, err := sourceManager.newSourceFromConfiguration(config)
 	if err != nil {
@@ -338,6 +357,50 @@ func (sourceManager *sourceManager) addSourceFromConfiguration(config dogeboxd.M
 	}
 
 	return source, nil
+}
+
+func (sourceManager *sourceManager) RetryPendingSources() (int, error) {
+	retriedCount := 0
+	updated := false
+
+	for i, source := range sourceManager.sources {
+		config := source.Config()
+		if !isPendingSourceID(config.ID) {
+			continue
+		}
+
+		validatedConfig, err := source.ValidateFromLocation(config.Location)
+		if err != nil {
+			log.Printf("Pending source '%s' still unavailable: %v", config.Location, err)
+			continue
+		}
+
+		if sourceManager.hasConflictingSourceConfiguration(i, validatedConfig) {
+			log.Printf("Validated source '%s' conflicts with an existing source, leaving pending source in place", config.Location)
+			continue
+		}
+
+		retriedSource, err := sourceManager.newSourceFromConfiguration(validatedConfig)
+		if err != nil {
+			return retriedCount, err
+		}
+
+		sourceManager.sources[i] = retriedSource
+		retriedCount++
+		updated = true
+
+		log.Printf("Promoted pending source '%s' after connectivity returned", config.Location)
+	}
+
+	if !updated {
+		return retriedCount, nil
+	}
+
+	if err := sourceManager.Save(); err != nil {
+		return retriedCount, err
+	}
+
+	return retriedCount, nil
 }
 
 func (sourceManager *sourceManager) newSourceFromConfiguration(config dogeboxd.ManifestSourceConfiguration) (dogeboxd.ManifestSource, error) {

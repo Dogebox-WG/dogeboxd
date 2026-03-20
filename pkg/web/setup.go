@@ -37,6 +37,10 @@ type SidebarPreferencesResponse struct {
 	SidebarPups []string `json:"sidebarPups"`
 }
 
+type NetworkFacts struct {
+	HasInternetConnectivity *bool `json:"hasInternetConnectivity,omitempty"`
+}
+
 type BootstrapResponse struct {
 	TS                 int64                        `json:"ts"`
 	Version            *version.DBXVersionInfo      `json:"version"`
@@ -46,6 +50,7 @@ type BootstrapResponse struct {
 	Stats              map[string]dogeboxd.PupStats `json:"stats"`
 	Flags              BootstrapFlags               `json:"flags"`
 	SetupFacts         BootstrapFacts               `json:"setupFacts"`
+	NetworkFacts       *NetworkFacts                `json:"networkFacts,omitempty"`
 	SidebarPreferences SidebarPreferencesResponse   `json:"sidebarPreferences"`
 }
 
@@ -56,6 +61,14 @@ func (t api) getRawBS() BootstrapResponse {
 	sidebarPups := dbxState.SidebarPups
 	if sidebarPups == nil {
 		sidebarPups = []string{}
+	}
+
+	var networkFacts *NetworkFacts
+	if t.dbx.NetworkManager != nil {
+		hasInternet := t.dbx.NetworkManager.HasInternetConnectivity()
+		networkFacts = &NetworkFacts{
+			HasInternetConnectivity: &hasInternet,
+		}
 	}
 
 	return BootstrapResponse{
@@ -74,6 +87,7 @@ func (t api) getRawBS() BootstrapResponse {
 			HasConfiguredNetwork:             dbxState.InitialState.HasSetNetwork,
 			HasCompletedInitialConfiguration: dbxState.InitialState.HasFullyConfigured,
 		},
+		NetworkFacts:       networkFacts,
 		SidebarPreferences: SidebarPreferencesResponse{SidebarPups: sidebarPups},
 	}
 }
@@ -585,12 +599,16 @@ func (t api) initialBootstrap(w http.ResponseWriter, r *http.Request) {
 	initialPupSource := "https://github.com/Dogebox-WG/pups.git"
 	if _, err := t.sources.AddSource(initialPupSource); err != nil {
 		if internetOffline(t.dbx.NetworkManager) {
-			log.Logf("Unable to verify initial pup source during setup while offline, continuing with a pending source: %v", err)
+			log.Logf("Unable to verify initial pup source while offline, continuing with a pending source: %v", err)
 			if err := t.sources.AddSourcePending(initialPupSource); err != nil {
-				log.Logf("Unable to save pending initial pup source, continuing without it: %v", err)
+				log.Errf("Unable to save pending initial pup source: %v", err)
+				sendErrorResponse(w, http.StatusInternalServerError, "Error adding dogeorg source")
+				return
 			}
 		} else {
-			log.Logf("Unable to verify initial pup source during setup, continuing without it: %v", err)
+			log.Errf("Error adding initial dogeorg source: %v", err)
+			sendErrorResponse(w, http.StatusInternalServerError, "Error adding dogeorg source")
+			return
 		}
 	}
 

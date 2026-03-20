@@ -18,7 +18,7 @@ type stubSourceManager struct {
 
 type stubNetworkManager struct {
 	hasInternetConnectivity func() bool
-	getLocalIP             func() (net.IP, error)
+	getLocalIP              func() (net.IP, error)
 }
 
 func (s stubSourceManager) GetAll(bool) (map[string]dogeboxd.ManifestSourceList, error) {
@@ -49,6 +49,10 @@ func (s stubSourceManager) AddSourcePending(location string) error {
 		panic("unexpected call to AddSourcePending")
 	}
 	return s.addSourcePending(location)
+}
+
+func (s stubSourceManager) RetryPendingSources() (int, error) {
+	panic("unexpected call to RetryPendingSources")
 }
 
 func (s stubSourceManager) RemoveSource(string) error {
@@ -93,7 +97,7 @@ func (s stubNetworkManager) GetLocalIP() (net.IP, error) {
 	return s.getLocalIP()
 }
 
-func TestCreateSourceFallsBackToPendingWhenInternetOffline(t *testing.T) {
+func TestCreateSourceFallsBackToPendingWhenOffline(t *testing.T) {
 	location := "https://github.com/elusiveshiba/test-pup.git"
 	addPendingCalls := 0
 
@@ -111,7 +115,7 @@ func TestCreateSourceFallsBackToPendingWhenInternetOffline(t *testing.T) {
 					t.Fatalf("AddSource location = %q, want %q", gotLocation, location)
 				}
 
-				return nil, fmt.Errorf("failed to clone repository")
+				return nil, fmt.Errorf("repository not found")
 			},
 			addSourcePending: func(gotLocation string) error {
 				addPendingCalls++
@@ -139,7 +143,7 @@ func TestCreateSourceFallsBackToPendingWhenInternetOffline(t *testing.T) {
 	}
 }
 
-func TestCreateSourceReturnsErrorWhenInternetIsAvailable(t *testing.T) {
+func TestCreateSourceReturnsErrorWhenOnline(t *testing.T) {
 	location := "https://github.com/elusiveshiba/test-pup.git"
 	addPendingCalls := 0
 

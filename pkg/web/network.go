@@ -24,7 +24,10 @@ func (t api) testConnectNetwork(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	sendResponse(w, map[string]bool{"success": true})
+	sendResponse(w, map[string]any{
+		"success":                 true,
+		"hasInternetConnectivity": t.dbx.NetworkManager.HasInternetConnectivity(),
+	})
 }
 
 func (t api) connectNetwork(w http.ResponseWriter, r *http.Request) {

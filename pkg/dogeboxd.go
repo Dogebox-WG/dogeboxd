@@ -43,6 +43,7 @@ import (
 	_ "embed"
 	"encoding/json"
 	"fmt"
+	"log"
 	"os/exec"
 	"sync"
 	"time"
@@ -79,6 +80,8 @@ type Dogeboxd struct {
 // We use a process-wide counter (rather than a Dogeboxd field) so that sequence ordering
 // remains stable even when Dogeboxd methods use value receivers (copies).
 var globalChangeSeq uint64
+
+const internetConnectivityCheckInterval = 30 * time.Second
 
 func NewDogeboxd(
 	stateManager StateManager,
@@ -125,6 +128,24 @@ func (t *Dogeboxd) SetJobManager(jm *JobManager) {
 	t.JobManager = jm
 }
 
+func (t Dogeboxd) runInternetConnectivityCheck(havePrevious bool, previous bool) (bool, bool) {
+	if t.NetworkManager == nil {
+		return false, false
+	}
+
+	current := t.NetworkManager.HasInternetConnectivity()
+	if current && (!havePrevious || !previous) && t.sources != nil {
+		retriedCount, err := t.sources.RetryPendingSources()
+		if err != nil {
+			log.Printf("Failed to retry pending sources after connectivity returned: %v", err)
+		} else if retriedCount > 0 {
+			log.Printf("Retried %d pending source(s) after connectivity returned", retriedCount)
+		}
+	}
+
+	return true, current
+}
+
 // Main Dogeboxd goroutine, handles routing messages in
 // and out of the system via job and change channels,
 // handles messages from subsystems ie: SystemUpdater,
@@ -133,6 +154,7 @@ func (t Dogeboxd) Run(started, stopped chan bool, stop chan context.Context) err
 	// Start periodic pup update checking in the background
 	updateCheckerStop := make(chan bool)
 	t.PupUpdateChecker.StartPeriodicCheck(updateCheckerStop)
+	haveLastInternetConnectivity, lastInternetConnectivity := t.runInternetConnectivityCheck(false, false)
 
 	go func() {
 		go func() {
@@ -141,6 +163,10 @@ func (t Dogeboxd) Run(started, stopped chan bool, stop chan context.Context) err
 			statsChannel := t.Pups.GetStatsChannel()
 			eventChannel := t.PupUpdateChecker.GetEventChannel()
 			updaterChannel := t.SystemUpdater.GetUpdateChannel()
+			queueTicker := time.NewTicker(100 * time.Millisecond)
+			connectivityTicker := time.NewTicker(internetConnectivityCheckInterval)
+			defer queueTicker.Stop()
+			defer connectivityTicker.Stop()
 
 		mainloop:
 			for {
@@ -263,8 +289,14 @@ func (t Dogeboxd) Run(started, stopped chan bool, stop chan context.Context) err
 
 					t.sendFinishedJob("action", j)
 
-				case <-time.After(time.Millisecond * 100): // Periodic check
+				case <-queueTicker.C:
 					t.pumpQueue()
+
+				case <-connectivityTicker.C:
+					haveLastInternetConnectivity, lastInternetConnectivity = t.runInternetConnectivityCheck(
+						haveLastInternetConnectivity,
+						lastInternetConnectivity,
+					)
 				}
 			}
 		}()
