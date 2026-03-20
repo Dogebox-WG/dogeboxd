@@ -389,7 +389,7 @@ func GetConfigValue(configItem string) (string, error) {
 	}
 	cmdArgs := []string{"eval", "--raw", flakePath + ".config." + configItem, "--impure"}
 	cmd := exec.Command("nix", cmdArgs...)
-	cmdEnv := append(os.Environ(), "NIX_CACHE_HOME=/tmp/nix-cache")
+	cmdEnv := append(os.Environ(), "NIX_CACHE_HOME=/opt/dogebox/tmp/nix-cache")
 	cmd.Env = cmdEnv
 	stdout, err := cmd.Output()
 	if err != nil {
