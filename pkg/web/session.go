@@ -174,6 +174,7 @@ func authReq(dbx dogeboxd.Dogeboxd, sm dogeboxd.StateManager, route string, next
 		route == "POST /system/install" ||
 		route == "GET /system/network/list" ||
 		route == "PUT /system/network/set-pending" ||
+		route == "POST /system/network/test" ||
 		route == "GET /keys" ||
 		route == "POST /keys/create-master" ||
 		route == "POST /system/host/shutdown" ||

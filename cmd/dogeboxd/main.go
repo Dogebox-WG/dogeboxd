@@ -96,6 +96,13 @@ func main() {
 			log.Printf("Failed to call DidEnterRecovery: %+v", err)
 		}
 
+		// Reset initial setup state so the setup wizard runs fresh. (Previous partial install may have set flags such as HasFullyConfigured)
+		dbxState := stateManager.Get().Dogebox
+		dbxState.InitialState = dogeboxd.DogeboxStateInitialSetup{}
+		if err := stateManager.SetDogebox(dbxState); err != nil {
+			log.Printf("Failed to reset initial state for recovery: %+v", err)
+		}
+
 		log.Println("********************************************************************************")
 		log.Println("************************ ENTERING DOGEBOX RECOVERY MODE ************************")
 		log.Println("********************************************************************************")
