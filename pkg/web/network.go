@@ -17,16 +17,20 @@ func (t api) getNetwork(w http.ResponseWriter, r *http.Request) {
 }
 
 func (t api) testConnectNetwork(w http.ResponseWriter, r *http.Request) {
+	log.Printf("Testing pending network connectivity")
 	err := t.dbx.NetworkManager.TestConnect()
 	if err != nil {
-		log.Printf("Failed to connect to network: %+v", err)
+		log.Printf("Pending network connectivity test failed during connect phase: %+v", err)
 		sendErrorResponse(w, http.StatusInternalServerError, "Failed to connect to network")
 		return
 	}
 
+	hasInternetConnectivity := t.dbx.NetworkManager.HasInternetConnectivity()
+	log.Printf("Pending network connectivity test completed: hasInternetConnectivity=%t", hasInternetConnectivity)
+
 	sendResponse(w, map[string]any{
 		"success":                 true,
-		"hasInternetConnectivity": t.dbx.NetworkManager.HasInternetConnectivity(),
+		"hasInternetConnectivity": hasInternetConnectivity,
 	})
 }
 
