@@ -386,6 +386,8 @@ type NixManager interface {
 	Rebuild(log SubLogger) error
 
 	NewPatch(log SubLogger) NixPatch
+
+	GetConfigValue(configItem string) (string, error)
 }
 
 type SystemDiskSuitabilityEntry struct {
