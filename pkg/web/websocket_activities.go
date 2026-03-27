@@ -33,9 +33,9 @@ func (t api) GetJobsHandler() *websocket.Server {
 
 // GetJobLogHandler creates a WebSocket handler for streaming job logs
 // Uses the same log streaming mechanism as pup logs (ActionLogger)
-func GetJobLogHandler(JobID string, dbx dogeboxd.Dogeboxd) (*websocket.Server, error) {
+func GetJobLogHandler(JobID string, resumeToken *string, dbx dogeboxd.Dogeboxd) (*websocket.Server, error) {
 	// Get log channel for this job (same system as pup logs)
-	cancel, logChan, err := dbx.GetJobLogChannel(JobID)
+	cancel, logChan, err := dbx.GetJobLogChannel(JobID, resumeToken)
 	if err != nil {
 		return nil, err
 	}

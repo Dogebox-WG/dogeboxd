@@ -35,7 +35,8 @@ func (t api) getUpdateSocket(w http.ResponseWriter, r *http.Request) {
 // Handle incoming websocket connections for pup log output
 func (t api) getPupLogSocket(w http.ResponseWriter, r *http.Request) {
 	PupID := r.PathValue("PupID")
-	wh, err := GetLogHandler(PupID, t.dbx)
+	resumeToken := parseLogResumeToken(r)
+	wh, err := GetLogHandler(PupID, resumeToken, t.dbx)
 	if err != nil {
 		sendErrorResponse(w, http.StatusBadRequest, "Error establishing pup log channel")
 		return
@@ -46,7 +47,8 @@ func (t api) getPupLogSocket(w http.ResponseWriter, r *http.Request) {
 // Handle incoming websocket connections for job log output
 func (t api) getJobLogSocket(w http.ResponseWriter, r *http.Request) {
 	JobID := r.PathValue("JobID")
-	wh, err := GetJobLogHandler(JobID, t.dbx)
+	resumeToken := parseLogResumeToken(r)
+	wh, err := GetJobLogHandler(JobID, resumeToken, t.dbx)
 	if err != nil {
 		sendErrorResponse(w, http.StatusBadRequest, "Error establishing job log channel: "+err.Error())
 		return
@@ -58,4 +60,13 @@ func (t api) getJobLogSocket(w http.ResponseWriter, r *http.Request) {
 func (t api) getJobsSocket(w http.ResponseWriter, r *http.Request) {
 	wh := t.GetJobsHandler()
 	wh.ServeHTTP(w, r)
+}
+
+func parseLogResumeToken(r *http.Request) *string {
+	rawResumeToken := r.URL.Query().Get("resumeToken")
+	if rawResumeToken == "" {
+		return nil
+	}
+
+	return &rawResumeToken
 }
