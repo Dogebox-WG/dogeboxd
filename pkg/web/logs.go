@@ -54,31 +54,27 @@ func (t api) downloadJobLog(w http.ResponseWriter, r *http.Request) {
 }
 
 func (t api) getPupLogTail(w http.ResponseWriter, r *http.Request) {
-	pupID := r.PathValue("PupID")
-	limit, err := parseLogTailLimit(r)
-	if err != nil {
-		sendErrorResponse(w, http.StatusBadRequest, err.Error())
-		return
-	}
-
-	lines, resumeToken, err := t.dbx.GetLogTail(pupID, limit)
-	if err != nil {
-		sendErrorResponse(w, http.StatusBadRequest, err.Error())
-		return
-	}
-
-	sendResponse(w, logTailResponse{Lines: lines, ResumeToken: resumeToken})
+	t.getLogTail(w, r, "PupID", t.dbx.GetLogTail)
 }
 
 func (t api) getJobLogTail(w http.ResponseWriter, r *http.Request) {
-	jobID := r.PathValue("JobID")
+	t.getLogTail(w, r, "JobID", t.dbx.GetJobLogTail)
+}
+
+func (t api) getLogTail(
+	w http.ResponseWriter,
+	r *http.Request,
+	pathValue string,
+	fetchTail func(string, int) ([]string, *string, error),
+) {
+	logID := r.PathValue(pathValue)
 	limit, err := parseLogTailLimit(r)
 	if err != nil {
 		sendErrorResponse(w, http.StatusBadRequest, err.Error())
 		return
 	}
 
-	lines, resumeToken, err := t.dbx.GetJobLogTail(jobID, limit)
+	lines, resumeToken, err := fetchTail(logID, limit)
 	if err != nil {
 		sendErrorResponse(w, http.StatusBadRequest, err.Error())
 		return
