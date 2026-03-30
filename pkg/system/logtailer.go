@@ -15,6 +15,8 @@ import (
 
 const maxInitialLines = 1000
 const tailReadChunkSize int64 = 8192
+const logFileOpenAttempts = 300
+const logFileOpenRetryDelay = 100 * time.Millisecond
 
 func NewLogTailer(config dogeboxd.ServerConfig) LogTailer {
 	return LogTailer{
@@ -109,12 +111,15 @@ func (t LogTailer) GetTail(pupId string, limit int) ([]string, int64, error) {
 func waitForLogFile(logFile string) (*os.File, error) {
 	var file *os.File
 	var err error
-	for i := 0; i < 300; i++ { // 300 * 100ms = 30 seconds
+	for i := 0; i < logFileOpenAttempts; i++ {
+		if i > 0 {
+			time.Sleep(logFileOpenRetryDelay)
+		}
+
 		file, err = os.Open(logFile)
 		if err == nil {
 			return file, nil
 		}
-		time.Sleep(100 * time.Millisecond)
 	}
 
 	return nil, err
