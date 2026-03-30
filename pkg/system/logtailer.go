@@ -40,6 +40,7 @@ func (t LogTailer) GetChannelFromOffset(pupId string, startOffset int64) (contex
 	go func() {
 		logFile := filepath.Join(t.config.ContainerLogDir, "pup-"+pupId)
 
+		// Wait for the file to be created (up to 30 seconds)
 		file, err := waitForLogFile(logFile)
 		if err != nil {
 			// File never appeared, close the channel
