@@ -382,6 +382,8 @@ func (jm *JobManager) getDisplayName(j Job) string {
 		return "Import Blockchain Data"
 	case UpdatePendingSystemNetwork:
 		return "Update Network Configuration"
+	case InitialBootstrap:
+		return "Initial Setup"
 	case EnableSSH:
 		return "Enable SSH"
 	case DisableSSH:
