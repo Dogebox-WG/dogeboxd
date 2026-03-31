@@ -1,6 +1,7 @@
 package nix
 
 import (
+	"encoding/json"
 	"fmt"
 	"os"
 	"os/exec"
@@ -16,12 +17,19 @@ var _ dogeboxd.NixManager = &nixManager{}
 type nixManager struct {
 	config dogeboxd.ServerConfig
 	pups   dogeboxd.PupManager
+	// Post nix rebuild callback. Hook added in cmd/dogeboxd/server.go
+	postRebuild func()
 }
 
-func NewNixManager(config dogeboxd.ServerConfig, pups dogeboxd.PupManager) dogeboxd.NixManager {
+func NewNixManager(
+	config dogeboxd.ServerConfig,
+	pups dogeboxd.PupManager,
+	postRebuild func(),
+) dogeboxd.NixManager {
 	return nixManager{
-		config: config,
-		pups:   pups,
+		config:      config,
+		pups:        pups,
+		postRebuild: postRebuild,
 	}
 }
 
@@ -381,18 +389,60 @@ func GetRunningFlakePath() (string, error) {
 	return flakePath, nil
 }
 
-func GetConfigValue(configItem string) (string, error) {
+func (nm nixManager) GetConfigValue(configItem string) (string, error) {
 	flakePath, err := GetRunningFlakePath()
 	if err != nil {
-		//log.Errf("error getting flake path: %v", err)
 		return "", err
 	}
-	cmdArgs := []string{"nix", "eval", "--raw", flakePath + ".config." + configItem, "--impure"}
-	cmd := exec.Command("sudo", cmdArgs...)
-	stdout, err := cmd.Output()
-	if err != nil {
-		//log.Errf("error getting config value: %v", err)
-		return "", err
+
+	expr := flakePath + ".config." + configItem
+	cmdEnv := append(os.Environ(), "NIX_CACHE_HOME="+nm.config.TmpDir+"/nix-cache")
+
+	// Special case, if configItem doesn't contain a dot, it's a section root
+	// and we're only trying to preload the cache. Because the config may
+	// contain errors about deprecated items, we use the default nix output,
+	// rather than raw or JSON, as this stringifies the errors rather than
+	// failing the command.
+	if !strings.Contains(configItem, ".") {
+		cmd := exec.Command("nix", "eval", expr, "--impure")
+		cmd.Env = cmdEnv
+		err := cmd.Run()
+		if err != nil {
+			return "", err
+		}
+		return "", nil
 	}
-	return string(stdout), nil
+
+	// Fast path: try `--raw` first (works when the option evaluates to a string).
+	cmd := exec.Command("nix", "eval", "--raw", expr, "--impure")
+	cmd.Env = cmdEnv
+	stdout, rawErr := cmd.Output()
+	if rawErr == nil {
+		return strings.TrimSpace(string(stdout)), nil
+	}
+
+	// Fallback: evaluate as JSON, then only return the string if the evaluated
+	// value is actually a string.
+	cmd = exec.Command("nix", "eval", "--json", expr, "--impure")
+	cmd.Env = cmdEnv
+	stdout, jsonErr := cmd.Output()
+	if jsonErr != nil {
+		return "", fmt.Errorf("nix eval for %q failed (raw error: %w, json error: %v)", configItem, rawErr, jsonErr)
+	}
+
+	var v any
+	if err := json.Unmarshal(stdout, &v); err != nil {
+		return "", fmt.Errorf("failed to parse nix json for %q: %w", configItem, err)
+	}
+
+	if v == nil {
+		// `nullOr` evaluated to null.
+		return "", nil
+	}
+	s, ok := v.(string)
+	if ok {
+		return strings.TrimSpace(s), nil
+	}
+
+	return "", fmt.Errorf("nix config %q did not evaluate to a string (got %T)", configItem, v)
 }

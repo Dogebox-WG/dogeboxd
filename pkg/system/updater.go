@@ -193,6 +193,13 @@ func (t SystemUpdater) Run(started, stopped chan bool, stop chan context.Context
 						}
 						t.done <- j
 
+					case dogeboxd.UpdateNixCache:
+						err := t.updateNixCache(j)
+						if err != nil {
+							j.Err = "Failed to update nix cache"
+						}
+						t.done <- j
+
 					default:
 						fmt.Printf("Unknown action type: %v\n", a)
 					}
@@ -717,7 +724,26 @@ func (t SystemUpdater) updateKeymap(a dogeboxd.UpdateKeymap, log dogeboxd.SubLog
 	}
 
 	log.Progress(100).Logf("Keyboard layout updated to %s", a.Keymap)
-  return nil
+	return nil
+}
+
+func (t SystemUpdater) updateNixCache(j dogeboxd.Job) error {
+	log := j.Logger.Step("update nix cache")
+	log.Log("Updating nix cache...")
+
+	// These two sections should be a balance between pre-populating what
+	// we need and not eating too many resources to fetch.
+	if _, err := t.nix.GetConfigValue("console"); err != nil {
+		log.Errf("Failed to get console section from nix config: %v", err)
+		return err
+	}
+
+	if _, err := t.nix.GetConfigValue("time"); err != nil {
+		log.Errf("Failed to get time section from nix config: %v", err)
+		return err
+	}
+
+	return nil
 }
 
 // getServiceStatus returns detailed status information about a systemd service

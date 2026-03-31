@@ -404,6 +404,8 @@ func (jm *JobManager) getDisplayName(j Job) string {
 		return "Update Timezone"
 	case UpdateKeymap:
 		return "Update Keyboard Layout"
+	case UpdateNixCache:
+		return "Update Nix Cache"
 	case CheckPupUpdates:
 		if a.PupID != "" {
 			// Checking specific pup

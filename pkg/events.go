@@ -211,6 +211,11 @@ type SystemUpdate struct {
 
 func (SystemUpdate) ActionName() string { return "system-update" }
 
+type UpdateNixCache struct {
+}
+
+func (UpdateNixCache) ActionName() string { return "update-nix-cache" }
+
 type AddBinaryCache struct {
 	Host string
 	Key  string

@@ -434,6 +434,9 @@ func (t Dogeboxd) jobDispatcher(j Job) {
 	case UpdateKeymap:
 		t.enqueue(j)
 
+	case UpdateNixCache:
+		t.enqueue(j)
+
 	// Pup router actions
 	case UpdateMetrics:
 		t.Pups.UpdateMetrics(a)
