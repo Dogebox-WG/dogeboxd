@@ -24,6 +24,7 @@ type BootstrapFacts struct {
 	HasGeneratedKey                  bool `json:"hasGeneratedKey"`
 	HasConfiguredNetwork             bool `json:"hasConfiguredNetwork"`
 	HasCompletedInitialConfiguration bool `json:"hasCompletedInitialConfiguration"`
+	SetupSessionID                   string `json:"setupSessionId"`
 	ActiveBootstrapJobId             string `json:"activeBootstrapJobId,omitempty"`
 }
 
@@ -86,6 +87,7 @@ func (t api) getRawBS() BootstrapResponse {
 			HasGeneratedKey:                  dbxState.InitialState.HasGeneratedKey,
 			HasConfiguredNetwork:             dbxState.InitialState.HasSetNetwork,
 			HasCompletedInitialConfiguration: dbxState.InitialState.HasFullyConfigured,
+			SetupSessionID:                   dbxState.InitialState.SetupSessionID,
 			ActiveBootstrapJobId:             activeBootstrapJobID,
 		},
 		SidebarPreferences: SidebarPreferencesResponse{SidebarPups: sidebarPups},

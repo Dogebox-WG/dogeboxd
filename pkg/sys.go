@@ -61,9 +61,10 @@ type ProcStatus struct {
 }
 
 type DogeboxStateInitialSetup struct {
-	HasGeneratedKey    bool `json:"hasGeneratedKey"`
-	HasSetNetwork      bool `json:"hasSetNetwork"`
-	HasFullyConfigured bool `json:"hasFullyConfigured"`
+	SetupSessionID     string `json:"setupSessionId"`
+	HasGeneratedKey    bool   `json:"hasGeneratedKey"`
+	HasSetNetwork      bool   `json:"hasSetNetwork"`
+	HasFullyConfigured bool   `json:"hasFullyConfigured"`
 }
 
 type DogeboxFlags struct {
