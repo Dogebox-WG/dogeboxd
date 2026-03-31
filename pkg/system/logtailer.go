@@ -4,6 +4,7 @@ import (
 	"bufio"
 	"bytes"
 	"context"
+	"fmt"
 	"io"
 	"log"
 	"os"
@@ -90,6 +91,10 @@ func (t LogTailer) GetChannelFromOffset(pupId string, startOffset int64) (contex
 }
 
 func (t LogTailer) GetTail(pupId string, limit int) ([]string, int64, error) {
+	if limit <= 0 {
+		return nil, 0, fmt.Errorf("Log tail limit must be greater than zero")
+	}
+
 	logFile := filepath.Join(t.config.ContainerLogDir, "pup-"+pupId)
 
 	file, err := os.Open(logFile)
@@ -142,7 +147,7 @@ func resolveStartOffset(file *os.File, requestedOffset int64) (int64, error) {
 
 func readLastLines(file *os.File, limit int) ([]string, int64, error) {
 	if limit <= 0 {
-		return []string{}, 0, nil
+		return nil, 0, fmt.Errorf("Log tail limit must be greater than zero")
 	}
 
 	stat, err := file.Stat()

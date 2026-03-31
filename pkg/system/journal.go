@@ -105,7 +105,7 @@ func (t JournalReader) getJournalChannel(service string, cursor *string) (contex
 
 func (t JournalReader) GetJournalTail(service string, limit int) ([]string, *string, error) {
 	if limit <= 0 {
-		return []string{}, nil, nil
+		return nil, nil, fmt.Errorf("Log tail limit must be greater than zero")
 	}
 
 	j, err := sdjournal.NewJournal()

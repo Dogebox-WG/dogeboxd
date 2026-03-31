@@ -847,6 +847,10 @@ func (t Dogeboxd) GetLogChannel(PupID string, resumeToken *string) (context.Canc
 }
 
 func (t Dogeboxd) GetLogTail(PupID string, limit int) ([]string, *string, error) {
+	if limit <= 0 {
+		return nil, nil, fmt.Errorf("Log tail limit must be greater than zero")
+	}
+
 	service, ok := allowedJournalServices[PupID]
 	if ok {
 		lines, resumeToken, err := t.JournalReader.GetJournalTail(service, limit)
@@ -887,6 +891,10 @@ func (t Dogeboxd) GetJobLogChannel(JobID string, resumeToken *string) (context.C
 }
 
 func (t Dogeboxd) GetJobLogTail(JobID string, limit int) ([]string, *string, error) {
+	if limit <= 0 {
+		return nil, nil, fmt.Errorf("Log tail limit must be greater than zero")
+	}
+
 	_, err := t.JobManager.GetJob(JobID)
 	if err != nil {
 		return nil, nil, fmt.Errorf("job not found: %s", JobID)
