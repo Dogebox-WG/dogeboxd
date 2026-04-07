@@ -10,3 +10,7 @@ func ExitBad(isSystemd bool) {
 
 	os.Exit(1)
 }
+
+func ExitConditionNotMet(_ bool) {
+	os.Exit(1)
+}
