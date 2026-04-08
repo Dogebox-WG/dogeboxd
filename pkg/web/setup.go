@@ -480,6 +480,7 @@ func (t api) setStorageDevice(w http.ResponseWriter, r *http.Request) {
 }
 
 func (t api) initialBootstrap(w http.ResponseWriter, r *http.Request) {
+	// Check a few things first.
 	if !t.config.Recovery {
 		sendErrorResponse(w, http.StatusForbidden, "Cannot initiate bootstrap in non-recovery mode.")
 		return
