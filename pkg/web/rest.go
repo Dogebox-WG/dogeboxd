@@ -160,6 +160,7 @@ func RESTAPI(
 		"GET /jobs/{jobID}":          a.getJob,
 		"POST /jobs/clear-completed": a.clearCompletedJobs,
 		"POST /jobs/clear-all":       a.clearAllJobs,
+		"POST /jobs/force-reset":     a.forceResetJobs,
 	}
 
 	// We always want to load recovery routes.

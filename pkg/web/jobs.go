@@ -4,6 +4,7 @@ import (
 	"encoding/json"
 	"fmt"
 	"net/http"
+	"os"
 	"strconv"
 	"time"
 
@@ -146,6 +147,7 @@ func (t api) getJobStats(w http.ResponseWriter, r *http.Request) {
 }
 
 // Clear ALL jobs (development/cleanup endpoint)
+// This just clears the jobs from the database. No other tidying up is done.
 func (t api) clearAllJobs(w http.ResponseWriter, r *http.Request) {
 	count, err := t.dbx.JobManager.ClearAllJobs()
 	if err != nil {
@@ -158,4 +160,30 @@ func (t api) clearAllJobs(w http.ResponseWriter, r *http.Request) {
 		"cleared": count,
 		"message": fmt.Sprintf("Cleared all %d jobs", count),
 	})
+}
+
+// Force reset all jobs and restart dogeboxd.
+// This is intended as a developer recovery tool to be used if jobs are stuck.
+func (t api) forceResetJobs(w http.ResponseWriter, r *http.Request) {
+	count, err := t.dbx.JobManager.ClearAllJobs()
+	if err != nil {
+		sendErrorResponse(w, http.StatusInternalServerError, "Failed to clear jobs")
+		return
+	}
+
+	sendResponse(w, map[string]interface{}{
+		"success": true,
+		"cleared": count,
+		"message": fmt.Sprintf("Cleared %d jobs. Restarting dogeboxd...", count),
+	})
+
+	// Ensure the response is flushed to the client before restarting.
+	if flusher, ok := w.(http.Flusher); ok {
+		flusher.Flush()
+	}
+
+	go func() {
+		time.Sleep(250 * time.Millisecond)
+		os.Exit(0)
+	}()
 }
