@@ -5,6 +5,7 @@ import (
 	"io"
 	"log"
 	"net/http"
+	"strings"
 	"time"
 
 	dogeboxd "github.com/Dogebox-WG/dogeboxd/pkg"
@@ -185,10 +186,18 @@ func (t api) hostShutdown(w http.ResponseWriter, r *http.Request) {
 }
 
 func (t api) getKeymap(w http.ResponseWriter, r *http.Request) {
-	keymap, err := system.GetKeymap()
-	if err != nil {
-		sendErrorResponse(w, http.StatusInternalServerError, "Error getting current keymap")
-		return
+	keymap, err := t.nix.GetConfigValue("console.keyMap")
+	keymap = strings.TrimSpace(keymap)
+	if err != nil || keymap == "" {
+		if fb := strings.TrimSpace(t.sm.Get().Dogebox.KeyMap); fb != "" {
+			sendResponse(w, fb)
+			return
+		}
+		if err != nil {
+			log.Printf("getKeymap: nix eval failed: %v", err)
+			sendErrorResponse(w, http.StatusInternalServerError, "Error getting current keymap")
+			return
+		}
 	}
 
 	sendResponse(w, keymap)
@@ -214,10 +223,18 @@ func (t api) getKeymaps(w http.ResponseWriter, r *http.Request) {
 }
 
 func (t api) getTimezone(w http.ResponseWriter, r *http.Request) {
-	timezone, err := system.GetTimezone()
-	if err != nil {
-		sendErrorResponse(w, http.StatusInternalServerError, "Error getting current timezone")
-		return
+	timezone, err := t.nix.GetConfigValue("time.timeZone")
+	timezone = strings.TrimSpace(timezone)
+	if err != nil || timezone == "" {
+		if fb := strings.TrimSpace(t.sm.Get().Dogebox.Timezone); fb != "" {
+			sendResponse(w, fb)
+			return
+		}
+		if err != nil {
+			log.Printf("getTimezone: nix eval failed: %v", err)
+			sendErrorResponse(w, http.StatusInternalServerError, "Error getting current timezone")
+			return
+		}
 	}
 
 	sendResponse(w, timezone)

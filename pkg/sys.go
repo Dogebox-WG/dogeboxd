@@ -41,10 +41,14 @@ type SystemMonitor interface {
 // when done
 type JournalReader interface {
 	GetJournalChannel(string) (context.CancelFunc, chan string, error)
+	GetJournalChannelFromCursor(string, string) (context.CancelFunc, chan string, error)
+	GetJournalTail(string, int) ([]string, *string, error)
 }
 
 type LogTailer interface {
 	GetChannel(string) (context.CancelFunc, chan string, error)
+	GetChannelFromOffset(string, int64) (context.CancelFunc, chan string, error)
+	GetTail(string, int) ([]string, int64, error)
 }
 
 // SystemMonitor issues these for monitored PUPs
@@ -387,6 +391,8 @@ type NixManager interface {
 	Rebuild(log SubLogger) error
 
 	NewPatch(log SubLogger) NixPatch
+
+	GetConfigValue(configItem string) (string, error)
 }
 
 type SystemDiskSuitabilityEntry struct {

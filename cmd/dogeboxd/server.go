@@ -4,6 +4,7 @@ import (
 	_ "embed"
 	"fmt"
 	"log"
+	"sync/atomic"
 	"time"
 
 	dogeboxd "github.com/Dogebox-WG/dogeboxd/pkg"
@@ -47,7 +48,18 @@ func (t server) Start() {
 
 	sourceManager := source.NewSourceManager(t.config, t.sm, pups)
 	pups.SetSourceManager(sourceManager)
-	nixManager := nix.NewNixManager(t.config, pups)
+
+	// Add hook to post nix rebuild
+	var dbxReady uint32
+	var dbx dogeboxd.Dogeboxd
+	postRebuild := func() {
+		if atomic.LoadUint32(&dbxReady) == 0 {
+			return
+		}
+		go dbx.AddAction(dogeboxd.UpdateNixCache{})
+	}
+
+	nixManager := nix.NewNixManager(t.config, pups, postRebuild)
 
 	// Set up our system interfaces so we can talk to the host OS
 	networkManager := network.NewNetworkManager(nixManager, t.sm)
@@ -79,11 +91,12 @@ func (t server) Start() {
 	// Set up Dogeboxd, the beating heart of the beast
 
 	// Create Dogeboxd instance
-	dbx := dogeboxd.NewDogeboxd(t.sm, pups, systemUpdater, systemMonitor, journalReader, networkManager, sourceManager, nixManager, logtailer, pups, &t.config)
+	dbx = dogeboxd.NewDogeboxd(t.sm, pups, systemUpdater, systemMonitor, journalReader, networkManager, sourceManager, nixManager, logtailer, pups, &t.config)
 
 	// Create JobManager
 	jobManager := dogeboxd.NewJobManager(t.store, &dbx)
 	dbx.SetJobManager(jobManager)
+	atomic.StoreUint32(&dbxReady, 1)
 
 	// Clean up any orphaned jobs from previous runs (stuck in queued/in_progress)
 	// Jobs older than 30 minutes are considered orphaned on startup

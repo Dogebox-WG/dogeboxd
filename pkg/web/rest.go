@@ -116,6 +116,10 @@ func RESTAPI(
 		"PUT /source":                         a.createSource,
 		"GET /sources/store":                  a.getStoreList,
 		"DELETE /source/{id}":                 a.deleteSource,
+		"GET /log/pup/{PupID}/download":       a.downloadPupLog,
+		"GET /log/job/{JobID}/download":       a.downloadJobLog,
+		"GET /log/pup/{PupID}/tail":           a.getPupLogTail,
+		"GET /log/job/{JobID}/tail":           a.getJobLogTail,
 		"/ws/log/pup/{PupID}":                 a.getPupLogSocket,
 		"/ws/log/job/{JobID}":                 a.getJobLogSocket,
 		"POST /system/welcome-complete":       a.setWelcomeComplete,
@@ -123,8 +127,8 @@ func RESTAPI(
 		"GET /missing-deps/{PupID}":           a.getMissingDeps,
 
 		// Sidebar preferences
-		"GET /system/sidebar-preferences":             a.getSidebarPreferences,
-		"POST /system/sidebar-preferences/pups/add":   a.addSidebarPup,
+		"GET /system/sidebar-preferences":              a.getSidebarPreferences,
+		"POST /system/sidebar-preferences/pups/add":    a.addSidebarPup,
 		"POST /system/sidebar-preferences/pups/remove": a.removeSidebarPup,
 
 		"GET /system/binary-caches":        a.getBinaryCaches,

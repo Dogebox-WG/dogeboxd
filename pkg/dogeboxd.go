@@ -44,6 +44,7 @@ import (
 	"encoding/json"
 	"fmt"
 	"os/exec"
+	"strconv"
 	"sync"
 	"time"
 
@@ -437,6 +438,9 @@ func (t Dogeboxd) jobDispatcher(j Job) {
 	case UpdateKeymap:
 		t.enqueue(j)
 
+	case UpdateNixCache:
+		t.enqueue(j)
+
 	// Pup router actions
 	case UpdateMetrics:
 		t.Pups.UpdateMetrics(a)
@@ -820,11 +824,14 @@ var allowedJournalServices = map[string]string{
 	"dkm": "dkm.service",
 }
 
-func (t Dogeboxd) GetLogChannel(PupID string) (context.CancelFunc, chan string, error) {
+func (t Dogeboxd) GetLogChannel(PupID string, resumeToken *string) (context.CancelFunc, chan string, error) {
 	// We read dogeboxd and dkm from the host systemd journal,
 	// and read everything else (pups) from the container logs we export.
 	service, ok := allowedJournalServices[PupID]
 	if ok {
+		if resumeToken != nil {
+			return t.JournalReader.GetJournalChannelFromCursor(service, *resumeToken)
+		}
 		return t.JournalReader.GetJournalChannel(service)
 	}
 
@@ -834,18 +841,92 @@ func (t Dogeboxd) GetLogChannel(PupID string) (context.CancelFunc, chan string, 
 		return nil, nil, err
 	}
 
+	if resumeToken != nil {
+		offset, err := parseLogOffsetResumeToken(*resumeToken)
+		if err != nil {
+			return nil, nil, err
+		}
+		return t.logtailer.GetChannelFromOffset(PupID, offset)
+	}
+
 	return t.logtailer.GetChannel(PupID)
+}
+
+func (t Dogeboxd) GetLogTail(PupID string, limit int) ([]string, *string, error) {
+	if limit <= 0 {
+		return nil, nil, fmt.Errorf("Log tail limit must be greater than zero")
+	}
+
+	service, ok := allowedJournalServices[PupID]
+	if ok {
+		lines, resumeToken, err := t.JournalReader.GetJournalTail(service, limit)
+		return lines, resumeToken, err
+	}
+
+	_, _, err := t.Pups.GetPup(PupID)
+	if err != nil {
+		return nil, nil, err
+	}
+
+	lines, resumeToken, err := t.logtailer.GetTail(PupID, limit)
+	if err != nil {
+		return nil, nil, err
+	}
+
+	return lines, logOffsetResumeToken(resumeToken), nil
 }
 
 // GetJobLogChannel returns a log channel for a specific job
 // Streams logs from the job's ActionLogger in real-time (same system as pup logs)
-func (t Dogeboxd) GetJobLogChannel(JobID string) (context.CancelFunc, chan string, error) {
+func (t Dogeboxd) GetJobLogChannel(JobID string, resumeToken *string) (context.CancelFunc, chan string, error) {
 	// Verify job exists
 	_, err := t.JobManager.GetJob(JobID)
 	if err != nil {
 		return nil, nil, fmt.Errorf("job not found: %s", JobID)
 	}
 
-	// Get log channel from the action logger for this job
+	if resumeToken != nil {
+		offset, err := parseLogOffsetResumeToken(*resumeToken)
+		if err != nil {
+			return nil, nil, err
+		}
+		return t.logtailer.GetChannelFromOffset(JobID, offset)
+	}
+
 	return t.logtailer.GetChannel(JobID)
+}
+
+func (t Dogeboxd) GetJobLogTail(JobID string, limit int) ([]string, *string, error) {
+	if limit <= 0 {
+		return nil, nil, fmt.Errorf("Log tail limit must be greater than zero")
+	}
+
+	_, err := t.JobManager.GetJob(JobID)
+	if err != nil {
+		return nil, nil, fmt.Errorf("job not found: %s", JobID)
+	}
+
+	lines, resumeToken, err := t.logtailer.GetTail(JobID, limit)
+	if err != nil {
+		return nil, nil, err
+	}
+
+	return lines, logOffsetResumeToken(resumeToken), nil
+}
+
+func parseLogOffsetResumeToken(resumeToken string) (int64, error) {
+	offset, err := strconv.ParseInt(resumeToken, 10, 64)
+	if err != nil {
+		return 0, fmt.Errorf("invalid log resume token")
+	}
+	if offset < 0 {
+		offset = 0
+	}
+
+	return offset, nil
+}
+
+func logOffsetResumeToken(offset int64) *string {
+	resumeToken := strconv.FormatInt(offset, 10)
+	return &resumeToken
 }
