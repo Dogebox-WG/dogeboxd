@@ -25,7 +25,7 @@ dogeboxd.Dogeboxd, especially as they relate to the operating system.
 
 */
 
-func NewSystemUpdater(config dogeboxd.ServerConfig, networkManager dogeboxd.NetworkManager, nixManager dogeboxd.NixManager, sourceManager dogeboxd.SourceManager, pupManager dogeboxd.PupManager, stateManager dogeboxd.StateManager, dkm dogeboxd.DKMManager) SystemUpdater {
+func NewSystemUpdater(config dogeboxd.ServerConfig, networkManager dogeboxd.NetworkManager, nixManager dogeboxd.NixManager, sourceManager dogeboxd.SourceManager, pupManager dogeboxd.PupManager, stateManager dogeboxd.StateManager, lifecycle dogeboxd.LifecycleManager, dkm dogeboxd.DKMManager) SystemUpdater {
 	return SystemUpdater{
 		config:     config,
 		jobs:       make(chan dogeboxd.Job),
@@ -35,6 +35,7 @@ func NewSystemUpdater(config dogeboxd.ServerConfig, networkManager dogeboxd.Netw
 		sources:    sourceManager,
 		pupManager: pupManager,
 		sm:         stateManager,
+		lifecycle:  lifecycle,
 		dkm:        dkm,
 	}
 }
@@ -48,6 +49,7 @@ type SystemUpdater struct {
 	sources    dogeboxd.SourceManager
 	pupManager dogeboxd.PupManager
 	sm         dogeboxd.StateManager
+	lifecycle  dogeboxd.LifecycleManager
 	dkm        dogeboxd.DKMManager
 }
 
@@ -117,6 +119,13 @@ func (t SystemUpdater) Run(started, stopped chan bool, stop chan context.Context
 						err := t.network.SetPendingNetwork(a.Network, j)
 						if err != nil {
 							j.Err = "Failed to set system network"
+						}
+						t.done <- j
+
+					case dogeboxd.InitialBootstrap:
+						err := t.initialBootstrap(a, j)
+						if err != nil {
+							j.Err = err.Error()
 						}
 						t.done <- j
 

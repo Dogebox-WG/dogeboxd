@@ -161,6 +161,16 @@ type UpdatePendingSystemNetwork struct {
 
 func (UpdatePendingSystemNetwork) ActionName() string { return "network" }
 
+type InitialBootstrap struct {
+	ReflectorToken              string
+	ReflectorHost               string
+	InitialSSHKey               string
+	UseFoundationOSBinaryCache  bool
+	UseFoundationPupBinaryCache bool
+}
+
+func (InitialBootstrap) ActionName() string { return "initial-bootstrap" }
+
 type (
 	EnableSSH  struct{}
 	DisableSSH struct{}
