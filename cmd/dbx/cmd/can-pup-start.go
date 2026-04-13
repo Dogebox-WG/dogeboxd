@@ -89,7 +89,7 @@ var canPupStartCmd = &cobra.Command{
 		} else {
 			log.Println("Can start: false")
 		}
-		utils.ExitConditionNotMet(systemd)
+		os.Exit(1)
 	},
 }
 
