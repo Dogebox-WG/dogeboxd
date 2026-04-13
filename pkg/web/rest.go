@@ -98,6 +98,7 @@ func RESTAPI(
 		"POST /system/import-blockchain-data": a.importBlockchainData,
 		"/ws/state/":                          a.getUpdateSocket,
 		"/ws/jobs":                            a.getJobsSocket,
+		"/ws/log/job/{JobID}":                 a.getJobLogSocket,
 	}
 
 	// Normal routes are used when we are not in recovery mode.

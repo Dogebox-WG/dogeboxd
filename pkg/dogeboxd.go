@@ -518,6 +518,9 @@ func (t Dogeboxd) jobDispatcher(j Job) {
 	case UpdatePendingSystemNetwork:
 		t.enqueue(j)
 
+	case InitialBootstrap:
+		t.enqueue(j)
+
 	case EnableSSH:
 		t.enqueue(j)
 
