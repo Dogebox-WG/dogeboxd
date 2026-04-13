@@ -34,7 +34,7 @@ multipassdev:
 dpanel-build:
 	@set -eu; \
 	ROLLUP_OS=$$(uname -s | tr '[:upper:]' '[:lower:]'); \
-	ROLLUP_ARCH=$$(uname -m | sed 's/x86_64/x64/'); \
+	ROLLUP_ARCH=$$(uname -m | sed 's/x86_64/x64/' | sed 's/aarch64/arm64/'); \
 	NEED_INSTALL=0; \
 	if [ ! -x "$(DPANEL_DIR)/node_modules/.bin/vite" ]; then \
 		NEED_INSTALL=1; \
