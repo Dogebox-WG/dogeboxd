@@ -52,10 +52,12 @@ import (
 )
 
 type syncQueue struct {
-	jobQueue      []Job
-	jobQLock      sync.Mutex
-	jobInProgress sync.Mutex
-	jobTimer      time.Time
+	jobQueue            []Job              // pending jobs waiting to be handed to SystemUpdater
+	nonQueuedActiveJobs map[string]struct{} // runtime-active jobs that are not currently in jobQueue
+	currentSystemJobID  string             // the single job currently handed to SystemUpdater
+	jobQLock            sync.Mutex
+	jobInProgress       sync.Mutex
+	jobTimer            time.Time
 }
 
 type Dogeboxd struct {
@@ -95,9 +97,10 @@ func NewDogeboxd(
 	config *ServerConfig,
 ) Dogeboxd {
 	q := syncQueue{
-		jobQueue:      []Job{},
-		jobQLock:      sync.Mutex{},
-		jobInProgress: sync.Mutex{},
+		jobQueue:            []Job{},
+		nonQueuedActiveJobs: map[string]struct{}{},
+		jobQLock:            sync.Mutex{},
+		jobInProgress:       sync.Mutex{},
 	}
 	s := Dogeboxd{
 		Pups:             pups,
@@ -137,6 +140,11 @@ func (t Dogeboxd) Run(started, stopped chan bool, stop chan context.Context) err
 
 	go func() {
 		go func() {
+			queueTicker := time.NewTicker(100 * time.Millisecond)
+			orphanTicker := time.NewTicker(60 * time.Second)
+			defer queueTicker.Stop()
+			defer orphanTicker.Stop()
+
 			// Create channels once outside the loop
 			pupdateChannel := t.Pups.GetUpdateChannel()
 			statsChannel := t.Pups.GetStatsChannel()
@@ -161,12 +169,10 @@ func (t Dogeboxd) Run(started, stopped chan bool, stop chan context.Context) err
 					}
 					j.Start = time.Now() // start the job timer
 
-					// Create job record for tracking (skip routine operations like metrics)
-					if t.JobManager != nil && t.shouldTrackJob(j) {
-						record, err := t.JobManager.CreateJobRecord(j)
-						if err == nil {
-							t.sendChange(Change{ID: "internal", Type: "job:created", Update: record})
-						}
+					// Register tracked jobs in runtime state before persisting them so
+					// orphan detection never sees "active in DB, missing from runtime".
+					if record, err := t.createTrackedJobRecord(j); err == nil && record != nil {
+						t.sendChange(Change{ID: "internal", Type: "job:created", Update: record})
 					}
 
 					t.jobDispatcher(j)
@@ -204,6 +210,7 @@ func (t Dogeboxd) Run(started, stopped chan bool, stop chan context.Context) err
 						break dance
 					}
 					// job is finished, unlock the queue for the next job
+					t.clearCurrentSystemJobID(j.ID)
 					t.queue.jobInProgress.Unlock()
 					j.Logger.Step("queue").Progress(100).Log(fmt.Sprintf("finished in %.2fs, queued %.2fs", time.Since(t.queue.jobTimer).Seconds(), time.Since(j.Start).Seconds()))
 
@@ -264,8 +271,12 @@ func (t Dogeboxd) Run(started, stopped chan bool, stop chan context.Context) err
 
 					t.sendFinishedJob("action", j)
 
-				case <-time.After(time.Millisecond * 100): // Periodic check
+				case <-queueTicker.C:
 					t.pumpQueue()
+				case <-orphanTicker.C:
+					if _, err := t.DetectAndMarkOrphanedJobs(); err != nil {
+						fmt.Printf("Warning: failed to detect orphaned jobs: %v\n", err)
+					}
 				}
 			}
 		}()
@@ -289,6 +300,7 @@ func (t *Dogeboxd) pumpQueue() {
 
 			job := t.queue.jobQueue[0]
 			t.queue.jobQueue = t.queue.jobQueue[1:]
+			t.queue.currentSystemJobID = job.ID
 			t.queue.jobQLock.Unlock()
 
 			job.Logger.Step("queue").Log(fmt.Sprintf("Queued, position %d\n", len(t.queue.jobQueue)))
@@ -305,7 +317,111 @@ func (t *Dogeboxd) pumpQueue() {
 func (t *Dogeboxd) enqueue(j Job) {
 	t.queue.jobQLock.Lock()
 	defer t.queue.jobQLock.Unlock()
+	delete(t.queue.nonQueuedActiveJobs, j.ID)
 	t.queue.jobQueue = append(t.queue.jobQueue, j)
+}
+
+func (t *Dogeboxd) markNonQueuedActiveJob(jobID string) {
+	t.queue.jobQLock.Lock()
+	defer t.queue.jobQLock.Unlock()
+	t.queue.nonQueuedActiveJobs[jobID] = struct{}{}
+}
+
+func (t *Dogeboxd) clearNonQueuedActiveJob(jobID string) {
+	t.queue.jobQLock.Lock()
+	defer t.queue.jobQLock.Unlock()
+	delete(t.queue.nonQueuedActiveJobs, jobID)
+}
+
+func (t *Dogeboxd) clearCurrentSystemJobID(jobID string) {
+	t.queue.jobQLock.Lock()
+	defer t.queue.jobQLock.Unlock()
+	if t.queue.currentSystemJobID == jobID {
+		t.queue.currentSystemJobID = ""
+	}
+}
+
+func (t *Dogeboxd) createTrackedJobRecord(j Job) (*JobRecord, error) {
+	if t.JobManager == nil || !t.shouldTrackJob(j) {
+		return nil, nil
+	}
+
+	t.markNonQueuedActiveJob(j.ID)
+
+	record, err := t.JobManager.CreateJobRecord(j)
+	if err != nil {
+		t.clearNonQueuedActiveJob(j.ID)
+		return nil, err
+	}
+
+	return record, nil
+}
+
+func (t *Dogeboxd) GetRuntimeJobIDs() []string {
+	t.queue.jobQLock.Lock()
+	defer t.queue.jobQLock.Unlock()
+
+	ids := make([]string, 0, len(t.queue.jobQueue)+len(t.queue.nonQueuedActiveJobs)+1)
+	if t.queue.currentSystemJobID != "" {
+		ids = append(ids, t.queue.currentSystemJobID)
+	}
+	for _, job := range t.queue.jobQueue {
+		ids = append(ids, job.ID)
+	}
+	for jobID := range t.queue.nonQueuedActiveJobs {
+		ids = append(ids, jobID)
+	}
+
+	return ids
+}
+
+func (t *Dogeboxd) RemoveFromQueue(jobID string) bool {
+	t.queue.jobQLock.Lock()
+	defer t.queue.jobQLock.Unlock()
+
+	for i, job := range t.queue.jobQueue {
+		if job.ID != jobID {
+			continue
+		}
+
+		t.queue.jobQueue = append(t.queue.jobQueue[:i], t.queue.jobQueue[i+1:]...)
+		delete(t.queue.nonQueuedActiveJobs, jobID)
+		return true
+	}
+
+	return false
+}
+
+// DetectAndMarkOrphanedJobs reconciles persisted active jobs against runtime state.
+// It is used on the periodic orphan scan and during WS bootstrap.
+func (t *Dogeboxd) DetectAndMarkOrphanedJobs() ([]string, error) {
+	if t.JobManager == nil {
+		return nil, nil
+	}
+
+	activeJobs, err := t.JobManager.GetActiveJobs()
+	if err != nil {
+		return nil, err
+	}
+
+	runtimeJobIDs := t.GetRuntimeJobIDs()
+	runtimeSet := make(map[string]struct{}, len(runtimeJobIDs))
+	for _, jobID := range runtimeJobIDs {
+		runtimeSet[jobID] = struct{}{}
+	}
+
+	orphaned := make([]string, 0)
+	for _, job := range activeJobs {
+		if _, ok := runtimeSet[job.ID]; ok {
+			continue
+		}
+		if err := t.JobManager.MarkJobOrphaned(job.ID); err != nil {
+			return orphaned, err
+		}
+		orphaned = append(orphaned, job.ID)
+	}
+
+	return orphaned, nil
 }
 
 // Add an Action to the Action queue, returns a unique ID
@@ -347,12 +463,9 @@ func (t Dogeboxd) jobDispatcher(j Job) {
 				Logger:  NewActionLogger(Job{ID: pupJobID}, "", t),
 				State:   j.State,
 			}
-			if t.JobManager != nil {
-				// Create a separate job for each pup in the batch
-				record, err := t.JobManager.CreateJobRecord(pupJob)
-				if err == nil {
-					t.sendChange(Change{ID: "internal", Type: "job:created", Update: record})
-				}
+			// Create a separate tracked job for each pup in the batch.
+			if record, err := t.createTrackedJobRecord(pupJob); err == nil && record != nil {
+				t.sendChange(Change{ID: "internal", Type: "job:created", Update: record})
 			}
 
 			t.createPupFromManifest(pupJob, pup.PupName, pup.PupVersion, pup.SourceId, pup.Options)
@@ -670,7 +783,11 @@ func (t *Dogeboxd) checkPupUpdates(j Job, c CheckPupUpdates) {
 	}
 }
 
-// send changes without blocking if the channel is full
+// SendChange sends a change to the websocket relay without blocking if the channel is full.
+func (t Dogeboxd) SendChange(c Change) {
+	t.sendChange(c)
+}
+
 func (t Dogeboxd) sendChange(c Change) {
 	// Attach ordering metadata for client-side staleness protection.
 	c.Seq = atomic.AddUint64(&globalChangeSeq, 1)
@@ -689,6 +806,7 @@ func (t Dogeboxd) sendFinishedJob(changeType string, j Job) {
 	if j.Err != "" {
 		j.Logger.Step("queue").Err(j.Err)
 	}
+	t.clearNonQueuedActiveJob(j.ID)
 
 	// Update job record as completed/failed for immediate jobs (those that don't go through SystemUpdater)
 	// This ensures jobs like UpdatePupProviders get properly marked as completed

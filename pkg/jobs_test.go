@@ -8,6 +8,12 @@ import (
 	"github.com/stretchr/testify/require"
 )
 
+type marshalFailAction struct {
+	Ch chan int
+}
+
+func (marshalFailAction) ActionName() string { return "marshal-fail" }
+
 // ============================================================================
 // Test Suite: Job Creation
 // ============================================================================
@@ -784,3 +790,129 @@ func TestConcurrentJobUpdates(t *testing.T) {
 	assert.Equal(t, JobStatusInProgress, updated.Status)
 	assert.NotEmpty(t, updated.SummaryMessage)
 }
+
+func TestJobCreationStoresActionPayload(t *testing.T) {
+	jm, err := setupTestJobManager()
+	require.NoError(t, err)
+
+	job := createTestJob("InstallPup")
+	record, err := jm.CreateJobRecord(job)
+	require.NoError(t, err)
+
+	assert.NotEmpty(t, record.ActionPayload)
+
+	action, err := DeserializeAction(record.ActionPayload)
+	require.NoError(t, err)
+
+	installAction, ok := action.(InstallPup)
+	require.True(t, ok)
+	assert.Equal(t, "test-app", installAction.PupName)
+}
+
+func TestMarkJobOrphaned(t *testing.T) {
+	jm, _, err := setupTestJobManagerWithDBX()
+	require.NoError(t, err)
+
+	job := createTestJob("InstallPup")
+	_, err = jm.CreateJobRecord(job)
+	require.NoError(t, err)
+
+	err = jm.MarkJobOrphaned(job.ID)
+	require.NoError(t, err)
+
+	orphanedJob, err := jm.GetJob(job.ID)
+	require.NoError(t, err)
+	assert.Equal(t, JobStatusOrphaned, orphanedJob.Status)
+	assert.Equal(t, "Job marked as orphaned", orphanedJob.SummaryMessage)
+	assert.Equal(t, "Job is no longer being processed", orphanedJob.ErrorMessage)
+	assert.NotNil(t, orphanedJob.Finished)
+	assert.False(t, jm.IsJobActive(job.ID))
+}
+
+func TestDetectAndMarkOrphanedJobs(t *testing.T) {
+	sm, err := NewStoreManager(":memory:")
+	require.NoError(t, err)
+
+	dbx := Dogeboxd{
+		queue: &syncQueue{
+			jobQueue:            []Job{},
+			nonQueuedActiveJobs: map[string]struct{}{},
+		},
+		Changes: make(chan Change, 10),
+		config:  &ServerConfig{ContainerLogDir: ""},
+	}
+
+	jm := NewJobManager(sm, &dbx)
+	dbx.SetJobManager(jm)
+
+	job := createTestJob("InstallPup")
+	_, err = jm.CreateJobRecord(job)
+	require.NoError(t, err)
+
+	orphanedIDs, err := dbx.DetectAndMarkOrphanedJobs()
+	require.NoError(t, err)
+	assert.Equal(t, []string{job.ID}, orphanedIDs)
+
+	orphanedJob, err := jm.GetJob(job.ID)
+	require.NoError(t, err)
+	assert.Equal(t, JobStatusOrphaned, orphanedJob.Status)
+}
+
+func TestCreateTrackedJobRecordClearsRuntimeRegistrationOnError(t *testing.T) {
+	sm, err := NewStoreManager(":memory:")
+	require.NoError(t, err)
+
+	dbx := Dogeboxd{
+		queue: &syncQueue{
+			jobQueue:            []Job{},
+			nonQueuedActiveJobs: map[string]struct{}{},
+		},
+		Changes: make(chan Change, 10),
+		config:  &ServerConfig{ContainerLogDir: ""},
+	}
+
+	jm := NewJobManager(sm, &dbx)
+	dbx.SetJobManager(jm)
+
+	job := Job{
+		ID:    "marshal-fail-job",
+		Start: time.Now(),
+		A:     marshalFailAction{Ch: make(chan int)},
+	}
+
+	record, err := dbx.createTrackedJobRecord(job)
+	require.Error(t, err)
+	assert.Nil(t, record)
+	assert.Empty(t, dbx.GetRuntimeJobIDs())
+}
+
+func TestDetectAndMarkOrphanedJobsSkipsRuntimeTrackedJobs(t *testing.T) {
+	sm, err := NewStoreManager(":memory:")
+	require.NoError(t, err)
+
+	dbx := Dogeboxd{
+		queue: &syncQueue{
+			jobQueue:            []Job{},
+			nonQueuedActiveJobs: map[string]struct{}{},
+		},
+		Changes: make(chan Change, 10),
+		config:  &ServerConfig{ContainerLogDir: ""},
+	}
+
+	jm := NewJobManager(sm, &dbx)
+	dbx.SetJobManager(jm)
+
+	job := createTestJob("InstallPup")
+	dbx.markNonQueuedActiveJob(job.ID)
+	_, err = jm.CreateJobRecord(job)
+	require.NoError(t, err)
+
+	orphanedIDs, err := dbx.DetectAndMarkOrphanedJobs()
+	require.NoError(t, err)
+	assert.Empty(t, orphanedIDs)
+
+	activeJob, err := jm.GetJob(job.ID)
+	require.NoError(t, err)
+	assert.Equal(t, JobStatusQueued, activeJob.Status)
+}
+

@@ -1,6 +1,10 @@
 package dogeboxd
 
-import "time"
+import (
+	"encoding/json"
+	"fmt"
+	"time"
+)
 
 // A Job is created when an Action is recieved by the system.
 // Jobs are passed through the Dogeboxd service and result in
@@ -55,6 +59,127 @@ type ActionProgress struct {
  */
 type Action interface {
 	ActionName() string
+}
+
+type serializedAction struct {
+	Type string          `json:"type"`
+	Data json.RawMessage `json:"data"`
+}
+
+func SerializeAction(a Action) (json.RawMessage, error) {
+	data, err := json.Marshal(a)
+	if err != nil {
+		return nil, err
+	}
+
+	payload, err := json.Marshal(serializedAction{
+		Type: a.ActionName(),
+		Data: data,
+	})
+	if err != nil {
+		return nil, err
+	}
+
+	return payload, nil
+}
+
+func DeserializeAction(payload json.RawMessage) (Action, error) {
+	var wrapper serializedAction
+	if err := json.Unmarshal(payload, &wrapper); err != nil {
+		return nil, err
+	}
+
+	if len(wrapper.Data) == 0 {
+		return nil, fmt.Errorf("action payload missing data")
+	}
+
+	switch wrapper.Type {
+	case "install":
+		if len(wrapper.Data) > 0 && wrapper.Data[0] == '[' {
+			var action InstallPups
+			if err := json.Unmarshal(wrapper.Data, &action); err != nil {
+				return nil, err
+			}
+			return action, nil
+		}
+
+		var action InstallPup
+		if err := json.Unmarshal(wrapper.Data, &action); err != nil {
+			return nil, err
+		}
+		return action, nil
+	case "uninstall":
+		var action UninstallPup
+		return action, json.Unmarshal(wrapper.Data, &action)
+	case "purge":
+		var action PurgePup
+		return action, json.Unmarshal(wrapper.Data, &action)
+	case "enable":
+		var action EnablePup
+		return action, json.Unmarshal(wrapper.Data, &action)
+	case "disable":
+		var action DisablePup
+		return action, json.Unmarshal(wrapper.Data, &action)
+	case "upgrade":
+		var action UpgradePup
+		return action, json.Unmarshal(wrapper.Data, &action)
+	case "rollback":
+		var action RollbackPupUpgrade
+		return action, json.Unmarshal(wrapper.Data, &action)
+	case "config":
+		var action UpdatePupConfig
+		return action, json.Unmarshal(wrapper.Data, &action)
+	case "providers":
+		var action UpdatePupProviders
+		return action, json.Unmarshal(wrapper.Data, &action)
+	case "hooks":
+		var action UpdatePupHooks
+		return action, json.Unmarshal(wrapper.Data, &action)
+	case "metrics":
+		var action UpdateMetrics
+		return action, json.Unmarshal(wrapper.Data, &action)
+	case "network":
+		var action UpdatePendingSystemNetwork
+		return action, json.Unmarshal(wrapper.Data, &action)
+	case "enable-ssh":
+		var action EnableSSH
+		return action, json.Unmarshal(wrapper.Data, &action)
+	case "disable-ssh":
+		var action DisableSSH
+		return action, json.Unmarshal(wrapper.Data, &action)
+	case "add-ssh-key":
+		var action AddSSHKey
+		return action, json.Unmarshal(wrapper.Data, &action)
+	case "remove-ssh-key":
+		var action RemoveSSHKey
+		return action, json.Unmarshal(wrapper.Data, &action)
+	case "save-custom-nix":
+		var action SaveCustomNix
+		return action, json.Unmarshal(wrapper.Data, &action)
+	case "import-blockchain":
+		var action ImportBlockchainData
+		return action, json.Unmarshal(wrapper.Data, &action)
+	case "update-timezone":
+		var action UpdateTimezone
+		return action, json.Unmarshal(wrapper.Data, &action)
+	case "update-keymap":
+		var action UpdateKeymap
+		return action, json.Unmarshal(wrapper.Data, &action)
+	case "system-update":
+		var action SystemUpdate
+		return action, json.Unmarshal(wrapper.Data, &action)
+	case "update-nix-cache":
+		var action UpdateNixCache
+		return action, json.Unmarshal(wrapper.Data, &action)
+	case "add-binary-cache":
+		var action AddBinaryCache
+		return action, json.Unmarshal(wrapper.Data, &action)
+	case "remove-binary-cache":
+		var action RemoveBinaryCache
+		return action, json.Unmarshal(wrapper.Data, &action)
+	default:
+		return nil, fmt.Errorf("unsupported action type: %s", wrapper.Type)
+	}
 }
 
 // Install a pup on the system

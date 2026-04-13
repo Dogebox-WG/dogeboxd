@@ -17,6 +17,7 @@ const (
 	JobStatusCompleted  JobStatus = "completed"
 	JobStatusFailed     JobStatus = "failed"
 	JobStatusCancelled  JobStatus = "cancelled"
+	JobStatusOrphaned   JobStatus = "orphaned"
 )
 
 // JobRecord represents a persisted job for the frontend activity view
@@ -26,6 +27,7 @@ type JobRecord struct {
 	Finished       *time.Time `json:"finished"` // nil if not finished
 	DisplayName    string     `json:"displayName"`
 	Action         string     `json:"action"`   // Action type: install, upgrade, uninstall, etc.
+	ActionPayload  json.RawMessage `json:"actionPayload,omitempty"`
 	Progress       int        `json:"progress"` // 0-100
 	Status         JobStatus  `json:"status"`
 	SummaryMessage string     `json:"summaryMessage"`
@@ -61,6 +63,10 @@ func (jm *JobManager) CreateJobRecord(j Job) (*JobRecord, error) {
 
 	displayName := jm.getDisplayName(j)
 	action := jm.getActionName(j)
+	actionPayload, err := SerializeAction(j.A)
+	if err != nil {
+		return nil, fmt.Errorf("failed to serialize action payload: %w", err)
+	}
 
 	// Extract pupID from Action (j.State is not yet set when CreateJobRecord is called)
 	pupID := jm.getPupIDFromAction(j)
@@ -71,6 +77,7 @@ func (jm *JobManager) CreateJobRecord(j Job) (*JobRecord, error) {
 		Finished:       nil,
 		DisplayName:    displayName,
 		Action:         action,
+		ActionPayload:  actionPayload,
 		Progress:       0,
 		Status:         JobStatusQueued,
 		SummaryMessage: "Job queued",
@@ -210,6 +217,39 @@ func (jm *JobManager) CompleteJob(jobID string, err string) error {
 	return nil
 }
 
+// MarkJobOrphaned marks a job as orphaned when it no longer has runtime processing state.
+func (jm *JobManager) MarkJobOrphaned(jobID string) error {
+	jm.jobsMutex.Lock()
+	defer jm.jobsMutex.Unlock()
+
+	record, ok := jm.activeJobs[jobID]
+	if !ok {
+		recordValue, loadErr := jm.store.Get(jobID)
+		if loadErr != nil {
+			return fmt.Errorf("job not found: %s", jobID)
+		}
+		record = &recordValue
+	}
+
+	now := time.Now()
+	record.Finished = &now
+	record.Status = JobStatusOrphaned
+	record.SummaryMessage = "Job marked as orphaned"
+	record.ErrorMessage = "Job is no longer being processed"
+
+	delete(jm.activeJobs, jobID)
+
+	if err := jm.store.Set(record.ID, *record); err != nil {
+		return err
+	}
+
+	if jm.dbx != nil {
+		jm.dbx.sendChange(Change{ID: "internal", Type: "job:orphaned", Update: record})
+	}
+
+	return nil
+}
+
 // GetJob retrieves a job record by ID
 func (jm *JobManager) GetJob(jobID string) (*JobRecord, error) {
 	jm.jobsMutex.RLock()
@@ -251,7 +291,7 @@ func (jm *JobManager) GetActiveJobs() ([]JobRecord, error) {
 
 // GetRecentJobs retrieves recent completed/failed jobs
 func (jm *JobManager) GetRecentJobs(limit int) ([]JobRecord, error) {
-	query := fmt.Sprintf("SELECT value FROM %s WHERE json_extract(value, '$.status') IN ('completed', 'failed', 'cancelled') ORDER BY json_extract(value, '$.finished') DESC LIMIT %d", jm.store.Table, limit)
+	query := fmt.Sprintf("SELECT value FROM %s WHERE json_extract(value, '$.status') IN ('completed', 'failed', 'cancelled', 'orphaned') ORDER BY json_extract(value, '$.finished') DESC LIMIT %d", jm.store.Table, limit)
 	return jm.store.Exec(query)
 }
 
@@ -259,7 +299,7 @@ func (jm *JobManager) GetRecentJobs(limit int) ([]JobRecord, error) {
 func (jm *JobManager) ClearCompletedJobs(olderThan time.Duration) (int, error) {
 	cutoff := time.Now().Add(-olderThan).Format(time.RFC3339Nano)
 	query := fmt.Sprintf(`DELETE FROM %s 
-		WHERE json_extract(value, '$.status') IN ('completed', 'failed', 'cancelled')
+		WHERE json_extract(value, '$.status') IN ('completed', 'failed', 'cancelled', 'orphaned')
 		  AND json_extract(value, '$.finished') IS NOT NULL
 		  AND json_extract(value, '$.finished') < ?`, jm.store.Table)
 
@@ -284,36 +324,13 @@ func (jm *JobManager) ClearAllJobs() (int, error) {
 	return int(count), nil
 }
 
-// ClearOrphanedJobs marks jobs stuck in queued/in_progress state as failed
-// Jobs are considered orphaned if they've been queued for longer than the threshold
-func (jm *JobManager) ClearOrphanedJobs(olderThan time.Duration) (int, error) {
+// DeleteJob removes a single job record from storage and the active cache.
+func (jm *JobManager) DeleteJob(jobID string) error {
 	jm.jobsMutex.Lock()
 	defer jm.jobsMutex.Unlock()
 
-	cutoff := time.Now().Add(-olderThan)
-	now := time.Now()
-
-	count, err := jm.markOrphanedJobsAsFailed(now, cutoff)
-	if err != nil {
-		return 0, err
-	}
-
-	// Clear active jobs cache for these orphaned jobs
-	for id, job := range jm.activeJobs {
-		if job.Status == JobStatusQueued || job.Status == JobStatusInProgress {
-			if job.Started.Before(cutoff) {
-				delete(jm.activeJobs, id)
-			}
-		}
-	}
-
-	return count, nil
-}
-
-func (jm *JobManager) markOrphanedJobsAsFailed(finished time.Time, startedBefore time.Time) (int, error) {
-	query := fmt.Sprintf(`UPDATE %s SET value = json_set(json_set(json_set(value, '$.status', 'failed'), '$.errorMessage', 'Job was orphaned (stuck in queue)'), '$.finished', ?) WHERE json_extract(value, '$.status') IN ('queued', 'in_progress') AND json_extract(value, '$.started') < ?`, jm.store.Table)
-	count, err := jm.store.ExecWrite(query, finished.Format(time.RFC3339Nano), startedBefore.Format(time.RFC3339Nano))
-	return int(count), err
+	delete(jm.activeJobs, jobID)
+	return jm.store.Del(jobID)
 }
 
 // getDisplayName returns a human-readable name for the job
