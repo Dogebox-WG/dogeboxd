@@ -231,6 +231,10 @@ func (jm *JobManager) MarkJobOrphaned(jobID string) error {
 		record = &recordValue
 	}
 
+	if record.Status != JobStatusQueued && record.Status != JobStatusInProgress {
+		return nil
+	}
+
 	now := time.Now()
 	record.Finished = &now
 	record.Status = JobStatusOrphaned

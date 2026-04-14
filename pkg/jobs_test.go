@@ -829,6 +829,68 @@ func TestMarkJobOrphaned(t *testing.T) {
 	assert.False(t, jm.IsJobActive(job.ID))
 }
 
+func TestMarkJobOrphanedSkipsTerminalJobs(t *testing.T) {
+	terminalStatuses := []JobStatus{
+		JobStatusCompleted,
+		JobStatusFailed,
+		JobStatusCancelled,
+		JobStatusOrphaned,
+	}
+
+	for _, status := range terminalStatuses {
+		t.Run(string(status), func(t *testing.T) {
+			jm, _, err := setupTestJobManagerWithDBX()
+			require.NoError(t, err)
+
+			job := createTestJob("InstallPup")
+			record, err := jm.CreateJobRecord(job)
+			require.NoError(t, err)
+
+			now := time.Now()
+			record.Status = status
+			record.Finished = &now
+			record.SummaryMessage = "Original summary"
+			record.ErrorMessage = "Original error"
+			delete(jm.activeJobs, job.ID)
+			err = jm.store.Set(record.ID, *record)
+			require.NoError(t, err)
+
+			err = jm.MarkJobOrphaned(job.ID)
+			require.NoError(t, err)
+
+			updatedJob, err := jm.GetJob(job.ID)
+			require.NoError(t, err)
+			assert.Equal(t, status, updatedJob.Status)
+			assert.Equal(t, "Original summary", updatedJob.SummaryMessage)
+			assert.Equal(t, "Original error", updatedJob.ErrorMessage)
+		})
+	}
+}
+
+func TestMarkJobOrphanedSkipsJobsCompletedAfterActiveSnapshot(t *testing.T) {
+	jm, _, err := setupTestJobManagerWithDBX()
+	require.NoError(t, err)
+
+	job := createTestJob("InstallPup")
+	_, err = jm.CreateJobRecord(job)
+	require.NoError(t, err)
+
+	activeJobs, err := jm.GetActiveJobs()
+	require.NoError(t, err)
+	require.Len(t, activeJobs, 1)
+
+	err = jm.CompleteJob(job.ID, "")
+	require.NoError(t, err)
+
+	err = jm.MarkJobOrphaned(activeJobs[0].ID)
+	require.NoError(t, err)
+
+	completedJob, err := jm.GetJob(job.ID)
+	require.NoError(t, err)
+	assert.Equal(t, JobStatusCompleted, completedJob.Status)
+	assert.Equal(t, "Job completed successfully", completedJob.SummaryMessage)
+}
+
 func TestDetectAndMarkOrphanedJobs(t *testing.T) {
 	sm, err := NewStoreManager(":memory:")
 	require.NoError(t, err)
