@@ -203,51 +203,6 @@ func (t api) deleteJob(w http.ResponseWriter, r *http.Request) {
 	})
 }
 
-func (t api) retryJob(w http.ResponseWriter, r *http.Request) {
-	jobID := r.PathValue("jobID")
-	if jobID == "" {
-		sendErrorResponse(w, http.StatusBadRequest, "Job ID required")
-		return
-	}
-
-	job, err := t.dbx.JobManager.GetJob(jobID)
-	if err != nil {
-		sendErrorResponse(w, http.StatusNotFound, "Job not found")
-		return
-	}
-
-	switch job.Status {
-	case dogeboxd.JobStatusOrphaned, dogeboxd.JobStatusFailed, dogeboxd.JobStatusCancelled:
-	default:
-		sendErrorResponse(w, http.StatusConflict, "Only orphaned, failed, or cancelled jobs can be retried")
-		return
-	}
-
-	action, err := dogeboxd.DeserializeAction(job.ActionPayload)
-	if err != nil {
-		sendErrorResponse(w, http.StatusBadRequest, fmt.Sprintf("Failed to deserialize action: %v", err))
-		return
-	}
-
-	newJobID := t.dbx.AddAction(action)
-
-	if err := t.dbx.JobManager.DeleteJob(jobID); err != nil {
-		sendResponse(w, map[string]interface{}{
-			"success": true,
-			"id":      newJobID,
-			"warning": "Retried job, but failed to delete original record",
-		})
-		return
-	}
-
-	t.dbx.SendChange(dogeboxd.Change{ID: "internal", Type: "job:deleted", Update: job})
-
-	sendResponse(w, map[string]interface{}{
-		"success": true,
-		"id":      newJobID,
-	})
-}
-
 func (t api) createOrphanCandidateJob(w http.ResponseWriter, r *http.Request) {
 	if !t.config.DevMode {
 		sendErrorResponse(w, http.StatusForbidden, "This endpoint is only available in dev mode")

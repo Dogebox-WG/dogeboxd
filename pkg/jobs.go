@@ -1,7 +1,6 @@
 package dogeboxd
 
 import (
-	"encoding/json"
 	"fmt"
 	"reflect"
 	"sync"
@@ -27,7 +26,6 @@ type JobRecord struct {
 	Finished       *time.Time `json:"finished"` // nil if not finished
 	DisplayName    string     `json:"displayName"`
 	Action         string     `json:"action"`   // Action type: install, upgrade, uninstall, etc.
-	ActionPayload  json.RawMessage `json:"actionPayload,omitempty"`
 	Progress       int        `json:"progress"` // 0-100
 	Status         JobStatus  `json:"status"`
 	SummaryMessage string     `json:"summaryMessage"`
@@ -63,10 +61,6 @@ func (jm *JobManager) CreateJobRecord(j Job) (*JobRecord, error) {
 
 	displayName := jm.getDisplayName(j)
 	action := jm.getActionName(j)
-	actionPayload, err := SerializeAction(j.A)
-	if err != nil {
-		return nil, fmt.Errorf("failed to serialize action payload: %w", err)
-	}
 
 	// Extract pupID from Action (j.State is not yet set when CreateJobRecord is called)
 	pupID := jm.getPupIDFromAction(j)
@@ -77,7 +71,6 @@ func (jm *JobManager) CreateJobRecord(j Job) (*JobRecord, error) {
 		Finished:       nil,
 		DisplayName:    displayName,
 		Action:         action,
-		ActionPayload:  actionPayload,
 		Progress:       0,
 		Status:         JobStatusQueued,
 		SummaryMessage: "Job queued",
