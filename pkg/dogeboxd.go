@@ -172,7 +172,7 @@ func (t Dogeboxd) Run(started, stopped chan bool, stop chan context.Context) err
 					// Register tracked jobs in runtime state before persisting them so
 					// orphan detection never sees "active in DB, missing from runtime".
 					if record, err := t.createTrackedJobRecord(j); err == nil && record != nil {
-						t.sendChange(Change{ID: "internal", Type: "job:created", Update: record})
+						t.SendChange(Change{ID: "internal", Type: "job:created", Update: record})
 					}
 
 					t.jobDispatcher(j)
@@ -184,9 +184,9 @@ func (t Dogeboxd) Run(started, stopped chan bool, stop chan context.Context) err
 					}
 					// Don't broadcast a purged pup as a normal pup state update, otherwise clients may resurrect it in their local model.
 					if p.Event == PUP_PURGED {
-						t.sendChange(Change{ID: "internal", Type: "pup_purged", Update: map[string]string{"pupId": p.State.ID}})
+						t.SendChange(Change{ID: "internal", Type: "pup_purged", Update: map[string]string{"pupId": p.State.ID}})
 					} else {
-						t.sendChange(Change{ID: "internal", Type: "pup", Update: p.State})
+						t.SendChange(Change{ID: "internal", Type: "pup", Update: p.State})
 					}
 
 				// Handle stats from PupManager
@@ -194,7 +194,7 @@ func (t Dogeboxd) Run(started, stopped chan bool, stop chan context.Context) err
 					if !ok {
 						break dance
 					}
-					t.sendChange(Change{ID: "internal", Type: "stats", Update: stats})
+					t.SendChange(Change{ID: "internal", Type: "stats", Update: stats})
 
 				// Handle pup update check events
 				case event, ok := <-eventChannel:
@@ -202,7 +202,7 @@ func (t Dogeboxd) Run(started, stopped chan bool, stop chan context.Context) err
 						break dance
 					}
 					// Send event to frontend so it can refresh its cache
-					t.sendChange(Change{ID: "internal", Type: "pup-updates-checked", Update: event})
+					t.SendChange(Change{ID: "internal", Type: "pup-updates-checked", Update: event})
 
 				// Handle completed jobs from SystemUpdater
 				case j, ok := <-updaterChannel:
@@ -261,14 +261,14 @@ func (t Dogeboxd) Run(started, stopped chan bool, stop chan context.Context) err
 						if err == nil {
 							jobRecord, getErr := t.JobManager.GetJob(j.ID)
 							if getErr == nil {
-								t.sendChange(Change{ID: "internal", Type: "job_completed", Update: jobRecord})
+								t.SendChange(Change{ID: "internal", Type: "job_completed", Update: jobRecord})
 							}
 						}
 					}
 
 					t.sendFinishedJob("action", j)
-					// Keep the finishing job runtime-visible until its DB row is no
-					// longer active, then allow the next queued system job to start.
+					// Only clear this after completion so the orphaned job monitor
+					// doesn't mistakenly pick it up as missing from runtime state.
 					t.clearCurrentSystemJobID(j.ID)
 					t.queue.jobInProgress.Unlock()
 
@@ -466,7 +466,7 @@ func (t Dogeboxd) jobDispatcher(j Job) {
 			}
 			// Create a separate tracked job for each pup in the batch.
 			if record, err := t.createTrackedJobRecord(pupJob); err == nil && record != nil {
-				t.sendChange(Change{ID: "internal", Type: "job:created", Update: record})
+				t.SendChange(Change{ID: "internal", Type: "job:created", Update: record})
 			}
 
 			t.createPupFromManifest(pupJob, pup.PupName, pup.PupVersion, pup.SourceId, pup.Options)
@@ -789,10 +789,6 @@ func (t *Dogeboxd) checkPupUpdates(j Job, c CheckPupUpdates) {
 
 // SendChange sends a change to the websocket relay without blocking if the channel is full.
 func (t Dogeboxd) SendChange(c Change) {
-	t.sendChange(c)
-}
-
-func (t Dogeboxd) sendChange(c Change) {
 	// Attach ordering metadata for client-side staleness protection.
 	c.Seq = atomic.AddUint64(&globalChangeSeq, 1)
 	c.TS = time.Now().UnixMilli()
@@ -821,7 +817,7 @@ func (t Dogeboxd) sendFinishedJob(changeType string, j Job) {
 		if err == nil {
 			jobRecord, getErr := t.JobManager.GetJob(j.ID)
 			if getErr == nil {
-				t.sendChange(Change{ID: "internal", Type: "job:completed", Update: jobRecord})
+				t.SendChange(Change{ID: "internal", Type: "job:completed", Update: jobRecord})
 			}
 		}
 	}
@@ -833,7 +829,7 @@ func (t Dogeboxd) sendFinishedJob(changeType string, j Job) {
 	// Jobs completed by SystemUpdater (like upgrade) already send job:completed events
 	// and don't need a redundant "action" event
 	if t.JobManager == nil || !t.shouldTrackJob(j) || jobWasActive {
-		t.sendChange(Change{ID: j.ID, Error: j.Err, Type: changeType, Update: j.Success})
+		t.SendChange(Change{ID: j.ID, Error: j.Err, Type: changeType, Update: j.Success})
 	}
 }
 
@@ -862,12 +858,12 @@ func (t Dogeboxd) sendProgress(p ActionProgress) {
 		if err == nil {
 			jobRecord, getErr := t.JobManager.GetJob(p.ActionID)
 			if getErr == nil {
-				t.sendChange(Change{ID: "internal", Type: "job:updated", Update: jobRecord})
+				t.SendChange(Change{ID: "internal", Type: "job:updated", Update: jobRecord})
 			}
 		}
 	}
 
-	t.sendChange(Change{ID: p.ActionID, Type: "progress", Update: p})
+	t.SendChange(Change{ID: p.ActionID, Type: "progress", Update: p})
 }
 
 // helper to attach PupState to a job and send it to the SystemUpdater

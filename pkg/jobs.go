@@ -204,7 +204,7 @@ func (jm *JobManager) CompleteJob(jobID string, err string) error {
 		if err != "" {
 			eventType = "job:failed"
 		}
-		jm.dbx.sendChange(Change{ID: "internal", Type: eventType, Update: record})
+		jm.dbx.SendChange(Change{ID: "internal", Type: eventType, Update: record})
 	}
 
 	return nil
@@ -241,7 +241,7 @@ func (jm *JobManager) MarkJobOrphaned(jobID string) error {
 	}
 
 	if jm.dbx != nil {
-		jm.dbx.sendChange(Change{ID: "internal", Type: "job:orphaned", Update: record})
+		jm.dbx.SendChange(Change{ID: "internal", Type: "job:orphaned", Update: record})
 	}
 
 	return nil
