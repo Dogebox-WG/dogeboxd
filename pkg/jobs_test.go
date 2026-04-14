@@ -784,3 +784,208 @@ func TestConcurrentJobUpdates(t *testing.T) {
 	assert.Equal(t, JobStatusInProgress, updated.Status)
 	assert.NotEmpty(t, updated.SummaryMessage)
 }
+
+func TestMarkJobOrphaned(t *testing.T) {
+	jm, _, err := setupTestJobManagerWithDBX()
+	require.NoError(t, err)
+
+	job := createTestJob("InstallPup")
+	_, err = jm.CreateJobRecord(job)
+	require.NoError(t, err)
+
+	err = jm.MarkJobOrphaned(job.ID)
+	require.NoError(t, err)
+
+	orphanedJob, err := jm.GetJob(job.ID)
+	require.NoError(t, err)
+	assert.Equal(t, JobStatusOrphaned, orphanedJob.Status)
+	assert.Equal(t, "Job marked as orphaned", orphanedJob.SummaryMessage)
+	assert.Equal(t, "Job is no longer being processed", orphanedJob.ErrorMessage)
+	assert.NotNil(t, orphanedJob.Finished)
+	assert.False(t, jm.IsJobActive(job.ID))
+}
+
+func TestMarkJobOrphanedSkipsTerminalJobs(t *testing.T) {
+	terminalStatuses := []JobStatus{
+		JobStatusCompleted,
+		JobStatusFailed,
+		JobStatusCancelled,
+		JobStatusOrphaned,
+	}
+
+	for _, status := range terminalStatuses {
+		t.Run(string(status), func(t *testing.T) {
+			jm, _, err := setupTestJobManagerWithDBX()
+			require.NoError(t, err)
+
+			job := createTestJob("InstallPup")
+			record, err := jm.CreateJobRecord(job)
+			require.NoError(t, err)
+
+			now := time.Now()
+			record.Status = status
+			record.Finished = &now
+			record.SummaryMessage = "Original summary"
+			record.ErrorMessage = "Original error"
+			delete(jm.activeJobs, job.ID)
+			err = jm.store.Set(record.ID, *record)
+			require.NoError(t, err)
+
+			err = jm.MarkJobOrphaned(job.ID)
+			require.NoError(t, err)
+
+			updatedJob, err := jm.GetJob(job.ID)
+			require.NoError(t, err)
+			assert.Equal(t, status, updatedJob.Status)
+			assert.Equal(t, "Original summary", updatedJob.SummaryMessage)
+			assert.Equal(t, "Original error", updatedJob.ErrorMessage)
+		})
+	}
+}
+
+func TestMarkJobOrphanedSkipsJobsCompletedAfterActiveSnapshot(t *testing.T) {
+	jm, _, err := setupTestJobManagerWithDBX()
+	require.NoError(t, err)
+
+	job := createTestJob("InstallPup")
+	_, err = jm.CreateJobRecord(job)
+	require.NoError(t, err)
+
+	activeJobs, err := jm.GetActiveJobs()
+	require.NoError(t, err)
+	require.Len(t, activeJobs, 1)
+
+	err = jm.CompleteJob(job.ID, "")
+	require.NoError(t, err)
+
+	err = jm.MarkJobOrphaned(activeJobs[0].ID)
+	require.NoError(t, err)
+
+	completedJob, err := jm.GetJob(job.ID)
+	require.NoError(t, err)
+	assert.Equal(t, JobStatusCompleted, completedJob.Status)
+	assert.Equal(t, "Job completed successfully", completedJob.SummaryMessage)
+}
+
+func TestDetectAndMarkOrphanedJobs(t *testing.T) {
+	sm, err := NewStoreManager(":memory:")
+	require.NoError(t, err)
+
+	dbx := Dogeboxd{
+		queue: &syncQueue{
+			jobQueue:            []Job{},
+			nonQueuedActiveJobs: map[string]struct{}{},
+		},
+		Changes: make(chan Change, 10),
+		config:  &ServerConfig{ContainerLogDir: ""},
+	}
+
+	jm := NewJobManager(sm, &dbx)
+	dbx.SetJobManager(jm)
+
+	job := createTestJob("InstallPup")
+	_, err = jm.CreateJobRecord(job)
+	require.NoError(t, err)
+
+	orphanedIDs, err := dbx.DetectAndMarkOrphanedJobs()
+	require.NoError(t, err)
+	assert.Equal(t, []string{job.ID}, orphanedIDs)
+
+	orphanedJob, err := jm.GetJob(job.ID)
+	require.NoError(t, err)
+	assert.Equal(t, JobStatusOrphaned, orphanedJob.Status)
+}
+
+func TestDetectAndMarkOrphanedJobsSkipsRuntimeTrackedJobs(t *testing.T) {
+	sm, err := NewStoreManager(":memory:")
+	require.NoError(t, err)
+
+	dbx := Dogeboxd{
+		queue: &syncQueue{
+			jobQueue:            []Job{},
+			nonQueuedActiveJobs: map[string]struct{}{},
+		},
+		Changes: make(chan Change, 10),
+		config:  &ServerConfig{ContainerLogDir: ""},
+	}
+
+	jm := NewJobManager(sm, &dbx)
+	dbx.SetJobManager(jm)
+
+	job := createTestJob("InstallPup")
+	dbx.markNonQueuedActiveJob(job.ID)
+	_, err = jm.CreateJobRecord(job)
+	require.NoError(t, err)
+
+	orphanedIDs, err := dbx.DetectAndMarkOrphanedJobs()
+	require.NoError(t, err)
+	assert.Empty(t, orphanedIDs)
+
+	activeJob, err := jm.GetJob(job.ID)
+	require.NoError(t, err)
+	assert.Equal(t, JobStatusQueued, activeJob.Status)
+}
+
+func TestDetectAndMarkOrphanedJobsSkipsCurrentSystemJob(t *testing.T) {
+	sm, err := NewStoreManager(":memory:")
+	require.NoError(t, err)
+
+	dbx := Dogeboxd{
+		queue: &syncQueue{
+			jobQueue:            []Job{},
+			nonQueuedActiveJobs: map[string]struct{}{},
+			currentSystemJobID:  "",
+		},
+		Changes: make(chan Change, 10),
+		config:  &ServerConfig{ContainerLogDir: ""},
+	}
+
+	jm := NewJobManager(sm, &dbx)
+	dbx.SetJobManager(jm)
+
+	job := createTestJob("InstallPup")
+	_, err = jm.CreateJobRecord(job)
+	require.NoError(t, err)
+
+	dbx.queue.jobQLock.Lock()
+	dbx.queue.currentSystemJobID = job.ID
+	dbx.queue.jobQLock.Unlock()
+
+	orphanedIDs, err := dbx.DetectAndMarkOrphanedJobs()
+	require.NoError(t, err)
+	assert.Empty(t, orphanedIDs)
+
+	activeJob, err := jm.GetJob(job.ID)
+	require.NoError(t, err)
+	assert.Equal(t, JobStatusQueued, activeJob.Status)
+}
+
+func TestSendFinishedJobCompletesTrackedJobAndClearsRuntimeTracking(t *testing.T) {
+	sm, err := NewStoreManager(":memory:")
+	require.NoError(t, err)
+
+	dbx := Dogeboxd{
+		queue: &syncQueue{
+			jobQueue:            []Job{},
+			nonQueuedActiveJobs: map[string]struct{}{},
+		},
+		Changes: make(chan Change, 10),
+		config:  &ServerConfig{ContainerLogDir: ""},
+	}
+
+	jm := NewJobManager(sm, &dbx)
+	dbx.SetJobManager(jm)
+
+	job := createTestJob("UpdatePupProviders")
+	_, err = jm.CreateJobRecord(job)
+	require.NoError(t, err)
+	dbx.markNonQueuedActiveJob(job.ID)
+
+	dbx.sendFinishedJob("action", job)
+
+	completedJob, err := jm.GetJob(job.ID)
+	require.NoError(t, err)
+	assert.Equal(t, JobStatusCompleted, completedJob.Status)
+	assert.Empty(t, dbx.GetRuntimeJobIDs())
+}
+

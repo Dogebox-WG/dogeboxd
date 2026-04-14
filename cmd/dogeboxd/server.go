@@ -98,12 +98,6 @@ func (t server) Start() {
 	dbx.SetJobManager(jobManager)
 	atomic.StoreUint32(&dbxReady, 1)
 
-	// Clean up any orphaned jobs from previous runs (stuck in queued/in_progress)
-	// Jobs older than 30 minutes are considered orphaned on startup
-	if cleared, err := jobManager.ClearOrphanedJobs(30 * time.Minute); err == nil && cleared > 0 {
-		log.Printf("Cleaned up %d orphaned jobs from previous run", cleared)
-	}
-
 	//No need to show welcome screen if any pups are already installed (may have just done a system update or something similar)
 	if len(pups.GetStateMap()) > 0 {
 		state := t.sm.Get()
