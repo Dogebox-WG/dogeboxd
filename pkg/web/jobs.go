@@ -165,29 +165,22 @@ func (t api) deleteJob(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	switch job.Status {
-	case dogeboxd.JobStatusQueued:
-	default:
+	if job.Status != dogeboxd.JobStatusQueued {
 		sendErrorResponse(w, http.StatusConflict, "Only queued jobs can be deleted")
 		return
 	}
 
-	runtimeJobs := t.dbx.GetRuntimeJobIDs()
-	isRuntimeJob := false
-	for _, runtimeJobID := range runtimeJobs {
-		if runtimeJobID == jobID {
-			isRuntimeJob = true
-			break
+	for _, runtimeJobID := range t.dbx.GetRuntimeJobIDs() {
+		if runtimeJobID != jobID {
+			continue
 		}
-	}
 
-	if isRuntimeJob {
-		if job.Status == dogeboxd.JobStatusQueued && t.dbx.RemoveFromQueue(jobID) {
-			isRuntimeJob = false
-		} else {
+		if !t.dbx.RemoveFromQueue(jobID) {
 			sendErrorResponse(w, http.StatusConflict, "Job is still being processed")
 			return
 		}
+
+		break
 	}
 
 	if err := t.dbx.JobManager.DeleteJob(jobID); err != nil {
