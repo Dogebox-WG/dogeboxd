@@ -209,9 +209,6 @@ func (t Dogeboxd) Run(started, stopped chan bool, stop chan context.Context) err
 					if !ok {
 						break dance
 					}
-					// job is finished, unlock the queue for the next job
-					t.clearCurrentSystemJobID(j.ID)
-					t.queue.jobInProgress.Unlock()
 					j.Logger.Step("queue").Progress(100).Log(fmt.Sprintf("finished in %.2fs, queued %.2fs", time.Since(t.queue.jobTimer).Seconds(), time.Since(j.Start).Seconds()))
 
 					// if this job was successful, AND it was a
@@ -270,6 +267,10 @@ func (t Dogeboxd) Run(started, stopped chan bool, stop chan context.Context) err
 					}
 
 					t.sendFinishedJob("action", j)
+					// Keep the finishing job runtime-visible until its DB row is no
+					// longer active, then allow the next queued system job to start.
+					t.clearCurrentSystemJobID(j.ID)
+					t.queue.jobInProgress.Unlock()
 
 				case <-queueTicker.C:
 					t.pumpQueue()
@@ -809,7 +810,6 @@ func (t Dogeboxd) sendFinishedJob(changeType string, j Job) {
 	if j.Err != "" {
 		j.Logger.Step("queue").Err(j.Err)
 	}
-	t.clearNonQueuedActiveJob(j.ID)
 
 	// Update job record as completed/failed for immediate jobs (those that don't go through SystemUpdater)
 	// This ensures jobs like UpdatePupProviders get properly marked as completed
@@ -825,6 +825,9 @@ func (t Dogeboxd) sendFinishedJob(changeType string, j Job) {
 			}
 		}
 	}
+	// Keep direct-completion jobs runtime-visible until their DB row has left the
+	// active states, so concurrent orphan scans cannot observe a false orphan.
+	t.clearNonQueuedActiveJob(j.ID)
 
 	// Only send "action" event for jobs that were NOT already completed by JobManager
 	// Jobs completed by SystemUpdater (like upgrade) already send job:completed events
