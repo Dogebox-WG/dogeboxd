@@ -5,7 +5,6 @@ import (
 	"fmt"
 	"log"
 	"sync/atomic"
-	"time"
 
 	dogeboxd "github.com/Dogebox-WG/dogeboxd/pkg"
 	"github.com/Dogebox-WG/dogeboxd/pkg/conductor"
