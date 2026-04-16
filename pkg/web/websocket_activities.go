@@ -11,6 +11,10 @@ import (
 // Sends initial jobs list, then streams job:created, job:updated, job:completed, job:failed events
 func (t api) GetJobsHandler() *websocket.Server {
 	initialPayload := func() any {
+		if _, err := t.dbx.DetectAndMarkOrphanedJobs(); err != nil {
+			fmt.Printf("failed to detect orphaned jobs during bootstrap: %v\n", err)
+		}
+
 		// Load all jobs from database as initial payload
 		jobs, err := t.dbx.JobManager.GetAllJobs()
 		if err != nil {
