@@ -159,6 +159,12 @@ func (t Dogeboxd) Run(started, stopped chan bool, stop chan context.Context) err
 					if !ok {
 						break dance
 					}
+					// Queue management: skip a nix cache update if the next queued
+					// job is already a nix cache update.
+					if t.shouldSkipJob(j) {
+						break dance
+					}
+
 					j.Start = time.Now() // start the job timer
 
 					// Create job record for tracking (skip routine operations like metrics)
@@ -306,6 +312,32 @@ func (t *Dogeboxd) enqueue(j Job) {
 	t.queue.jobQLock.Lock()
 	defer t.queue.jobQLock.Unlock()
 	t.queue.jobQueue = append(t.queue.jobQueue, j)
+}
+
+func (t Dogeboxd) shouldSkipJob(j Job) bool {
+	if _, ok := j.A.(UpdateNixCache); ok {
+		return t.shouldSkipQueuedNixCacheJob()
+	}
+
+	return false
+}
+
+func (t Dogeboxd) shouldSkipQueuedNixCacheJob() bool {
+	t.queue.jobQLock.Lock()
+	defer t.queue.jobQLock.Unlock()
+
+	if len(t.queue.jobQueue) == 0 {
+		return false
+	}
+
+	lastQueued := t.queue.jobQueue[len(t.queue.jobQueue)-1]
+	if _, ok := lastQueued.A.(UpdateNixCache); !ok {
+		return false
+	}
+
+	// Intentionally ignore the currently running job. Only skip when the
+	// next queued job is already a nix cache update.
+	return true
 }
 
 // Add an Action to the Action queue, returns a unique ID
