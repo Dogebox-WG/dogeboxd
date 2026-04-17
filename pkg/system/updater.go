@@ -53,6 +53,8 @@ type SystemUpdater struct {
 	dkm        dogeboxd.DKMManager
 }
 
+var nixCacheUpdateTimeout = 60 * time.Second
+
 func (t SystemUpdater) Run(started, stopped chan bool, stop chan context.Context) error {
 	go func() {
 		go func() {
@@ -205,7 +207,7 @@ func (t SystemUpdater) Run(started, stopped chan bool, stop chan context.Context
 					case dogeboxd.UpdateNixCache:
 						err := t.updateNixCache(j)
 						if err != nil {
-							j.Err = "Failed to update nix cache"
+							j.Err = err.Error()
 						}
 						t.done <- j
 
@@ -739,15 +741,17 @@ func (t SystemUpdater) updateKeymap(a dogeboxd.UpdateKeymap, log dogeboxd.SubLog
 func (t SystemUpdater) updateNixCache(j dogeboxd.Job) error {
 	log := j.Logger.Step("update nix cache")
 	log.Log("Updating nix cache...")
+	ctx, cancel := context.WithTimeout(context.Background(), nixCacheUpdateTimeout)
+	defer cancel()
 
 	// These two sections should be a balance between pre-populating what
 	// we need and not eating too many resources to fetch.
-	if _, err := t.nix.GetConfigValue("console"); err != nil {
+	if _, err := t.nix.GetConfigValueContext(ctx, "console"); err != nil {
 		log.Errf("Failed to get console section from nix config: %v", err)
 		return err
 	}
 
-	if _, err := t.nix.GetConfigValue("time"); err != nil {
+	if _, err := t.nix.GetConfigValueContext(ctx, "time"); err != nil {
 		log.Errf("Failed to get time section from nix config: %v", err)
 		return err
 	}
