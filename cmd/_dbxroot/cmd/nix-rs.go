@@ -25,6 +25,10 @@ var rsCmd = &cobra.Command{
 		execCmd.Stdout = os.Stdout
 		execCmd.Stderr = os.Stderr
 
+		if nixRSSetRelease != "" {
+			execCmd.Env = append(os.Environ(), "DBX_RELEASE="+nixRSSetRelease)
+		}
+
 		err = execCmd.Run()
 		if err != nil {
 			fmt.Fprintf(os.Stderr, "Error executing nixos-rebuild switch: %v\n", err)
