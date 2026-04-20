@@ -290,6 +290,26 @@ func TestJobCompletionRemovedFromActiveCache(t *testing.T) {
 	assert.False(t, exists, "Job should be removed from active cache")
 }
 
+func TestJobCompletionKeepsActiveCacheWhenPersistFails(t *testing.T) {
+	jm, _, err := setupTestJobManagerWithDBX()
+	require.NoError(t, err)
+
+	job := createTestJob("InstallPup")
+	_, err = jm.CreateJobRecord(job)
+	require.NoError(t, err)
+
+	require.NoError(t, jm.store.sm.DB.Close())
+
+	err = jm.CompleteJob(job.ID, "")
+	require.Error(t, err)
+	assert.True(t, jm.IsJobActive(job.ID), "Job should remain active if completion persistence fails")
+
+	stillActive, getErr := jm.GetJob(job.ID)
+	require.NoError(t, getErr)
+	assert.Equal(t, JobStatusQueued, stillActive.Status)
+	assert.Nil(t, stillActive.Finished)
+}
+
 func TestJobCompletionEmitsWebSocketEvent(t *testing.T) {
 	jm, _, err := setupTestJobManagerWithDBX()
 	require.NoError(t, err)

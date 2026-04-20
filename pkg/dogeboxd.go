@@ -209,8 +209,7 @@ func (t Dogeboxd) Run(started, stopped chan bool, stop chan context.Context) err
 					if !ok {
 						break dance
 					}
-					// job is finished, unlock the queue for the next job
-					t.queue.jobInProgress.Unlock()
+					fmt.Printf("[temp-debug][updater-done] job=%s action=%s err=%q starting completion before unlock\n", j.ID, j.A.ActionName(), j.Err)
 					j.Logger.Step("queue").Progress(100).Log(fmt.Sprintf("finished in %.2fs, queued %.2fs", time.Since(t.queue.jobTimer).Seconds(), time.Since(j.Start).Seconds()))
 
 					// if this job was successful, AND it was a
@@ -261,14 +260,20 @@ func (t Dogeboxd) Run(started, stopped chan bool, stop chan context.Context) err
 					if t.JobManager != nil {
 						err := t.JobManager.CompleteJob(j.ID, j.Err)
 						if err == nil {
+							fmt.Printf("[temp-debug][updater-done] job=%s initial CompleteJob succeeded before unlock\n", j.ID)
 							jobRecord, getErr := t.JobManager.GetJob(j.ID)
 							if getErr == nil {
 								t.sendChange(Change{ID: "internal", Type: "job_completed", Update: jobRecord})
 							}
+						} else {
+							fmt.Printf("[temp-debug][updater-done] job=%s initial CompleteJob failed before unlock: %v\n", j.ID, err)
+							j.Logger.Step("queue").Errf("Failed to persist completed job state: %v", err)
 						}
 					}
 
 					t.sendFinishedJob("action", j)
+					fmt.Printf("[temp-debug][updater-done] job=%s sendFinishedJob finished, unlocking updater slot\n", j.ID)
+					t.queue.jobInProgress.Unlock()
 
 				case <-time.After(time.Millisecond * 100): // Periodic check
 					t.pumpQueue()
@@ -729,14 +734,19 @@ func (t Dogeboxd) sendFinishedJob(changeType string, j Job) {
 	// This ensures jobs like UpdatePupProviders get properly marked as completed
 	// Only call CompleteJob if the job is still active (not already completed by SystemUpdater path)
 	jobWasActive := false
+	fmt.Printf("[temp-debug][send-finished] job=%s action=%s shouldTrack=%t isActive=%t err=%q\n", j.ID, j.A.ActionName(), t.shouldTrackJob(j), t.JobManager != nil && t.shouldTrackJob(j) && t.JobManager.IsJobActive(j.ID), j.Err)
 	if t.JobManager != nil && t.shouldTrackJob(j) && t.JobManager.IsJobActive(j.ID) {
 		jobWasActive = true
+		fmt.Printf("[temp-debug][send-finished] job=%s retrying CompleteJob from sendFinishedJob\n", j.ID)
 		err := t.JobManager.CompleteJob(j.ID, j.Err)
 		if err == nil {
+			fmt.Printf("[temp-debug][send-finished] job=%s retry CompleteJob succeeded\n", j.ID)
 			jobRecord, getErr := t.JobManager.GetJob(j.ID)
 			if getErr == nil {
 				t.sendChange(Change{ID: "internal", Type: "job:completed", Update: jobRecord})
 			}
+		} else {
+			fmt.Printf("[temp-debug][send-finished] job=%s retry CompleteJob failed: %v\n", j.ID, err)
 		}
 	}
 

@@ -175,28 +175,33 @@ func (jm *JobManager) CompleteJob(jobID string, err string) error {
 		record = &recordValue
 	}
 
+	fmt.Printf("[temp-debug][job-complete] begin job=%s hadActive=%t prevStatus=%s progress=%d err=%q\n", jobID, ok, record.Status, record.Progress, err)
+
+	updatedRecord := *record
 	now := time.Now()
-	record.Finished = &now
+	updatedRecord.Finished = &now
 
 	if err != "" {
-		record.Status = JobStatusFailed
-		record.ErrorMessage = err
+		updatedRecord.Status = JobStatusFailed
+		updatedRecord.ErrorMessage = err
 		// Progress stays at current value
-		record.SummaryMessage = "Job failed"
+		updatedRecord.SummaryMessage = "Job failed"
 	} else {
-		record.Status = JobStatusCompleted
-		record.Progress = 100
-		record.SummaryMessage = "Job completed successfully"
+		updatedRecord.Status = JobStatusCompleted
+		updatedRecord.Progress = 100
+		updatedRecord.SummaryMessage = "Job completed successfully"
 	}
 
-	// Remove from active jobs
+	// Persist the terminal state before removing the runtime-active entry.
+	if storeErr := jm.store.Set(updatedRecord.ID, updatedRecord); storeErr != nil {
+		fmt.Printf("[temp-debug][job-complete] persist-failed job=%s finalStatus=%s err=%v\n", jobID, updatedRecord.Status, storeErr)
+		return fmt.Errorf("failed to persist completed job %s: %w", jobID, storeErr)
+	}
+
+	fmt.Printf("[temp-debug][job-complete] persisted job=%s finalStatus=%s finished=%s\n", jobID, updatedRecord.Status, updatedRecord.Finished.Format(time.RFC3339Nano))
+
 	delete(jm.activeJobs, jobID)
-
-	// Persist to database
-	storeErr := jm.store.Set(record.ID, *record)
-	if storeErr != nil {
-		return storeErr
-	}
+	fmt.Printf("[temp-debug][job-complete] removed-active job=%s remainingActive=%d\n", jobID, len(jm.activeJobs))
 
 	// Emit WebSocket event for job completion
 	if jm.dbx != nil {
@@ -204,7 +209,7 @@ func (jm *JobManager) CompleteJob(jobID string, err string) error {
 		if err != "" {
 			eventType = "job:failed"
 		}
-		jm.dbx.sendChange(Change{ID: "internal", Type: eventType, Update: record})
+		jm.dbx.sendChange(Change{ID: "internal", Type: eventType, Update: &updatedRecord})
 	}
 
 	return nil

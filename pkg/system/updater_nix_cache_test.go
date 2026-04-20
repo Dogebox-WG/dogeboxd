@@ -12,8 +12,10 @@ import (
 )
 
 type testNixManager struct {
-	calls   []string
-	blockOn string
+	calls            []string
+	blockOn          string
+	sleepOn          map[string]time.Duration
+	requireRemaining map[string]time.Duration
 }
 
 func (t *testNixManager) InitSystem(patch dogeboxd.NixPatch, dbxState dogeboxd.DogeboxState) {}
@@ -46,6 +48,18 @@ func (t *testNixManager) GetConfigValue(configItem string) (string, error) {
 
 func (t *testNixManager) GetConfigValueContext(ctx context.Context, configItem string) (string, error) {
 	t.calls = append(t.calls, configItem)
+	if delay := t.sleepOn[configItem]; delay > 0 {
+		time.Sleep(delay)
+	}
+	if minRemaining := t.requireRemaining[configItem]; minRemaining > 0 {
+		deadline, ok := ctx.Deadline()
+		if !ok {
+			return "", fmt.Errorf("missing deadline for %q", configItem)
+		}
+		if time.Until(deadline) < minRemaining {
+			return "", fmt.Errorf("remaining timeout for %q too short", configItem)
+		}
+	}
 	if configItem == t.blockOn {
 		<-ctx.Done()
 		return "", fmt.Errorf("timed out waiting for nix config %q: %w", configItem, ctx.Err())
@@ -62,7 +76,7 @@ func TestUpdateNixCacheWarmsExpectedConfigSections(t *testing.T) {
 	err := updater.updateNixCache(testNixCacheJob())
 
 	require.NoError(t, err)
-	assert.Equal(t, []string{"console", "time"}, updater.nix.(*testNixManager).calls)
+	assert.Equal(t, []string{"console.keyMap", "time.timeZone"}, updater.nix.(*testNixManager).calls)
 }
 
 func TestUpdateNixCacheTimesOut(t *testing.T) {
@@ -72,7 +86,7 @@ func TestUpdateNixCacheTimesOut(t *testing.T) {
 		nixCacheUpdateTimeout = originalTimeout
 	})
 
-	fakeNix := &testNixManager{blockOn: "console"}
+	fakeNix := &testNixManager{blockOn: "console.keyMap"}
 	updater := SystemUpdater{
 		nix: fakeNix,
 	}
@@ -81,7 +95,32 @@ func TestUpdateNixCacheTimesOut(t *testing.T) {
 
 	require.Error(t, err)
 	assert.ErrorIs(t, err, context.DeadlineExceeded)
-	assert.Equal(t, []string{"console"}, fakeNix.calls)
+	assert.Equal(t, []string{"console.keyMap"}, fakeNix.calls)
+}
+
+func TestUpdateNixCacheUsesIndependentTimeoutsPerConfigItem(t *testing.T) {
+	originalTimeout := nixCacheUpdateTimeout
+	nixCacheUpdateTimeout = 20 * time.Millisecond
+	t.Cleanup(func() {
+		nixCacheUpdateTimeout = originalTimeout
+	})
+
+	fakeNix := &testNixManager{
+		sleepOn: map[string]time.Duration{
+			"console.keyMap": 15 * time.Millisecond,
+		},
+		requireRemaining: map[string]time.Duration{
+			"time.timeZone": 10 * time.Millisecond,
+		},
+	}
+	updater := SystemUpdater{
+		nix: fakeNix,
+	}
+
+	err := updater.updateNixCache(testNixCacheJob())
+
+	require.NoError(t, err)
+	assert.Equal(t, []string{"console.keyMap", "time.timeZone"}, fakeNix.calls)
 }
 
 func testNixCacheJob() dogeboxd.Job {
