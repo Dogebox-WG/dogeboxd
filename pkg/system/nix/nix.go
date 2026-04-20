@@ -9,6 +9,7 @@ import (
 	"path/filepath"
 	"strconv"
 	"strings"
+	"time"
 
 	dogeboxd "github.com/Dogebox-WG/dogeboxd/pkg"
 )
@@ -394,6 +395,15 @@ func (nm nixManager) GetConfigValue(configItem string) (string, error) {
 	return nm.GetConfigValueContext(context.Background(), configItem)
 }
 
+func debugContextRemaining(ctx context.Context) string {
+	deadline, ok := ctx.Deadline()
+	if !ok {
+		return "none"
+	}
+
+	return time.Until(deadline).Round(time.Millisecond).String()
+}
+
 func (nm nixManager) GetConfigValueContext(ctx context.Context, configItem string) (string, error) {
 	flakePath, err := GetRunningFlakePath()
 	if err != nil {
@@ -402,6 +412,8 @@ func (nm nixManager) GetConfigValueContext(ctx context.Context, configItem strin
 
 	expr := flakePath + ".config." + configItem
 	cmdEnv := append(os.Environ(), "NIX_CACHE_HOME="+nm.config.TmpDir+"/nix-cache")
+	callStart := time.Now()
+	fmt.Printf("[temp-debug][nix-config] start item=%s expr=%q remaining=%s\n", configItem, expr, debugContextRemaining(ctx))
 
 	// Special case, if configItem doesn't contain a dot, it's a section root
 	// and we're only trying to preload the cache. Because the config may
@@ -413,11 +425,13 @@ func (nm nixManager) GetConfigValueContext(ctx context.Context, configItem strin
 		cmd.Env = cmdEnv
 		err := cmd.Run()
 		if err != nil {
+			fmt.Printf("[temp-debug][nix-config] section-eval-failed item=%s elapsed=%s remaining=%s err=%v\n", configItem, time.Since(callStart).Round(time.Millisecond), debugContextRemaining(ctx), err)
 			if ctx.Err() != nil {
 				return "", fmt.Errorf("timed out waiting for nix config %q: %w", configItem, ctx.Err())
 			}
 			return "", err
 		}
+		fmt.Printf("[temp-debug][nix-config] section-eval-success item=%s elapsed=%s\n", configItem, time.Since(callStart).Round(time.Millisecond))
 		return "", nil
 	}
 
@@ -426,11 +440,15 @@ func (nm nixManager) GetConfigValueContext(ctx context.Context, configItem strin
 	cmd.Env = cmdEnv
 	stdout, rawErr := cmd.Output()
 	if rawErr == nil {
-		return strings.TrimSpace(string(stdout)), nil
+		value := strings.TrimSpace(string(stdout))
+		fmt.Printf("[temp-debug][nix-config] raw-success item=%s elapsed=%s bytes=%d\n", configItem, time.Since(callStart).Round(time.Millisecond), len(stdout))
+		return value, nil
 	}
 	if ctx.Err() != nil {
+		fmt.Printf("[temp-debug][nix-config] raw-timeout item=%s elapsed=%s err=%v\n", configItem, time.Since(callStart).Round(time.Millisecond), ctx.Err())
 		return "", fmt.Errorf("timed out waiting for nix config %q: %w", configItem, ctx.Err())
 	}
+	fmt.Printf("[temp-debug][nix-config] raw-failed item=%s elapsed=%s err=%v; falling back to json\n", configItem, time.Since(callStart).Round(time.Millisecond), rawErr)
 
 	// Fallback: evaluate as JSON, then only return the string if the evaluated
 	// value is actually a string.
@@ -438,6 +456,7 @@ func (nm nixManager) GetConfigValueContext(ctx context.Context, configItem strin
 	cmd.Env = cmdEnv
 	stdout, jsonErr := cmd.Output()
 	if jsonErr != nil {
+		fmt.Printf("[temp-debug][nix-config] json-failed item=%s elapsed=%s remaining=%s err=%v\n", configItem, time.Since(callStart).Round(time.Millisecond), debugContextRemaining(ctx), jsonErr)
 		if ctx.Err() != nil {
 			return "", fmt.Errorf("timed out waiting for nix config %q: %w", configItem, ctx.Err())
 		}
@@ -446,17 +465,22 @@ func (nm nixManager) GetConfigValueContext(ctx context.Context, configItem strin
 
 	var v any
 	if err := json.Unmarshal(stdout, &v); err != nil {
+		fmt.Printf("[temp-debug][nix-config] json-parse-failed item=%s elapsed=%s err=%v\n", configItem, time.Since(callStart).Round(time.Millisecond), err)
 		return "", fmt.Errorf("failed to parse nix json for %q: %w", configItem, err)
 	}
 
 	if v == nil {
 		// `nullOr` evaluated to null.
+		fmt.Printf("[temp-debug][nix-config] json-null item=%s elapsed=%s\n", configItem, time.Since(callStart).Round(time.Millisecond))
 		return "", nil
 	}
 	s, ok := v.(string)
 	if ok {
-		return strings.TrimSpace(s), nil
+		value := strings.TrimSpace(s)
+		fmt.Printf("[temp-debug][nix-config] json-success item=%s elapsed=%s type=%T\n", configItem, time.Since(callStart).Round(time.Millisecond), v)
+		return value, nil
 	}
 
+	fmt.Printf("[temp-debug][nix-config] json-non-string item=%s elapsed=%s type=%T\n", configItem, time.Since(callStart).Round(time.Millisecond), v)
 	return "", fmt.Errorf("nix config %q did not evaluate to a string (got %T)", configItem, v)
 }
