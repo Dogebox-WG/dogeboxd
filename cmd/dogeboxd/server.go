@@ -56,6 +56,10 @@ func (t server) Start() {
 		if atomic.LoadUint32(&dbxReady) == 0 {
 			return
 		}
+		if !t.sm.Get().Dogebox.InitialState.HasFullyConfigured {
+			log.Printf("Skipping post-rebuild nix cache update because initial bootstrap will reboot shortly and would interrupt the cache warm") // Instead, we'll warm the cache on setup.
+			return
+		}
 		go dbx.AddAction(dogeboxd.UpdateNixCache{})
 	}
 
@@ -97,6 +101,11 @@ func (t server) Start() {
 	jobManager := dogeboxd.NewJobManager(t.store, &dbx)
 	dbx.SetJobManager(jobManager)
 	atomic.StoreUint32(&dbxReady, 1)
+
+	if t.sm.Get().Dogebox.InitialState.HasFullyConfigured {
+		jobID := dbx.AddAction(dogeboxd.UpdateNixCache{})
+		log.Printf("Queued startup nix cache update job: %s", jobID)
+	}
 
 	// Clean up any orphaned jobs from previous runs (stuck in queued/in_progress)
 	// Jobs older than 30 minutes are considered orphaned on startup
