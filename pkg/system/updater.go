@@ -54,10 +54,6 @@ type SystemUpdater struct {
 }
 
 var nixCacheUpdateTimeout = 60 * time.Second
-var nixCacheWarmConfigItems = []string{
-	"console.keyMap",
-	"time.timeZone",
-}
 
 func (t SystemUpdater) Run(started, stopped chan bool, stop chan context.Context) error {
 	go func() {
@@ -745,24 +741,21 @@ func (t SystemUpdater) updateKeymap(a dogeboxd.UpdateKeymap, log dogeboxd.SubLog
 func (t SystemUpdater) updateNixCache(j dogeboxd.Job) error {
 	log := j.Logger.Step("update nix cache")
 	log.Log("Updating nix cache...")
-	// Warm the specific config values the UI reads, rather than entire sections.
-	// Each lookup gets its own timeout so one slow eval doesn't consume the whole
-	// budget for the next one.
-	for _, configItem := range nixCacheWarmConfigItems {
-		itemStart := time.Now()
-		log.Logf("[temp-debug] warming nix config %s with timeout %s", configItem, nixCacheUpdateTimeout)
-		ctx, cancel := context.WithTimeout(context.Background(), nixCacheUpdateTimeout)
-		_, err := t.nix.GetConfigValueContext(ctx, configItem)
-		cancel()
-		if err != nil {
-			log.Errf("[temp-debug] failed warming %s after %.2fs: %v", configItem, time.Since(itemStart).Seconds(), err)
-			log.Errf("Failed to warm %s from nix config: %v", configItem, err)
-			return err
-		}
-		log.Logf("[temp-debug] warmed nix config %s in %.2fs", configItem, time.Since(itemStart).Seconds())
+	ctx, cancel := context.WithTimeout(context.Background(), nixCacheUpdateTimeout)
+	defer cancel()
+
+	// These two sections should be a balance between pre-populating what
+	// we need and not eating too many resources to fetch.
+	if _, err := t.nix.GetConfigValueContext(ctx, "console"); err != nil {
+		log.Errf("Failed to get console section from nix config: %v", err)
+		return err
 	}
 
-	log.Log("[temp-debug] nix cache warm-up finished successfully")
+	if _, err := t.nix.GetConfigValueContext(ctx, "time"); err != nil {
+		log.Errf("Failed to get time section from nix config: %v", err)
+		return err
+	}
+
 	return nil
 }
 
