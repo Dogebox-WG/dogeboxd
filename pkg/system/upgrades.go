@@ -143,7 +143,7 @@ func GetUpgradableReleasesWithFetcher(includePreReleases bool, fetcher RepoTagsF
 }
 
 func DoSystemUpdate(pkg string, updateVersion string) error {
-	upgradableReleases, err := GetUpgradableReleases(false)
+	upgradableReleases, err := GetUpgradableReleases(true)
 	if err != nil {
 		return err
 	}
