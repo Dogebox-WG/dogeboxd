@@ -6,9 +6,9 @@ import (
 	"io"
 	"net/http"
 	"os"
-	"path/filepath"
 
 	dogeboxd "github.com/Dogebox-WG/dogeboxd/pkg"
+	"github.com/Dogebox-WG/dogeboxd/pkg/system"
 )
 
 //go:embed custom.nix.default
@@ -33,7 +33,12 @@ type ValidateCustomNixResponse struct {
 }
 
 func (t api) getCustomNix(w http.ResponseWriter, r *http.Request) {
-	customNixPath := filepath.Join(t.config.NixDir, "custom.nix")
+	if err := system.MigrateLegacyCustomNix(t.config); err != nil {
+		sendErrorResponse(w, http.StatusInternalServerError, "Failed to migrate custom.nix")
+		return
+	}
+
+	customNixPath := system.GetCustomNixPath(t.config)
 
 	data, err := os.ReadFile(customNixPath)
 	if err != nil {

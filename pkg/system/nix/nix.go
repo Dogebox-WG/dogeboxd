@@ -59,8 +59,9 @@ func (nm nixManager) UpdateIncludesFile(patch dogeboxd.NixPatch, pups dogeboxd.P
 	}
 
 	values := dogeboxd.NixIncludesFileTemplateValues{
-		PUP_IDS: pupIDs,
-		NIX_DIR: nm.config.NixDir,
+		PUP_IDS:  pupIDs,
+		NIX_DIR:  nm.config.NixDir,
+		DATA_DIR: nm.config.DataDir,
 	}
 
 	patch.UpdateIncludesFile(values)

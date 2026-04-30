@@ -10,12 +10,13 @@ import (
 )
 
 var nixRSSetRelease string
+var nixRSFlakeDir string
 
 var rsCmd = &cobra.Command{
 	Use:   "rs",
 	Short: "Executes nixos-rebuild switch",
 	Run: func(cmd *cobra.Command, args []string) {
-		rebuildCommand, rebuildArgs, err := utils.GetRebuildCommand("switch", nixRSSetRelease)
+		rebuildCommand, rebuildArgs, err := utils.GetRebuildCommand("switch", nixRSSetRelease, nixRSFlakeDir)
 		if err != nil {
 			fmt.Fprintf(os.Stderr, "Error getting rebuild command: %v\n", err)
 			os.Exit(1)
@@ -25,8 +26,8 @@ var rsCmd = &cobra.Command{
 		execCmd.Stdout = os.Stdout
 		execCmd.Stderr = os.Stderr
 
-		if nixRSSetRelease != "" {
-			execCmd.Env = append(os.Environ(), "DBX_RELEASE="+nixRSSetRelease)
+		if nixRSFlakeDir != "" {
+			execCmd.Env = append(os.Environ(), "DBX_UPGRADE_FLAKE_DIR="+nixRSFlakeDir)
 		}
 
 		err = execCmd.Run()
@@ -39,5 +40,6 @@ var rsCmd = &cobra.Command{
 
 func init() {
 	rsCmd.Flags().StringVarP(&nixRSSetRelease, "set-release", "s", "", "rebuild with specific release (used for upgrades)")
+	rsCmd.Flags().StringVar(&nixRSFlakeDir, "flake-dir", "", "rebuild from a specific flake directory")
 	nixCmd.AddCommand(rsCmd)
 }
