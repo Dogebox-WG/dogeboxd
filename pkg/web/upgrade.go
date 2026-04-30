@@ -13,6 +13,7 @@ import (
 type CommenceUpdateRequest struct {
 	Package string `json:"package"`
 	Version string `json:"version"`
+	OSRef   string `json:"osRef,omitempty"`
 }
 
 type UpgradableRelease struct {
@@ -104,7 +105,11 @@ func (t api) commenceUpdate(w http.ResponseWriter, r *http.Request) {
 		packageName = "os"
 	}
 
-	id := t.dbx.AddAction(dogeboxd.SystemUpdate{Package: packageName, Version: req.Version})
+	id := t.dbx.AddAction(dogeboxd.SystemUpdate{
+		Package: packageName,
+		Version: req.Version,
+		OSRef:   req.OSRef,
+	})
 
 	sendResponse(w, map[string]any{
 		"success": true,
