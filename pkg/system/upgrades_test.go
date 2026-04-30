@@ -416,6 +416,36 @@ func TestDoSystemUpdate_ErrorFromGetUpgradableReleases(t *testing.T) {
 	}
 }
 
+func TestDoSystemUpdateWithOSRefSkipsReleaseLookupErrors(t *testing.T) {
+	originalFetcher := repoTagsFetcher
+	defer func() {
+		repoTagsFetcher = originalFetcher
+	}()
+
+	repoTagsFetcher = &MockRepoTagsFetcher{
+		tags: nil,
+		err:  fmt.Errorf("network error"),
+	}
+
+	var capturedCloneOSRef string
+	cloneFunc := func(destination, version string, osRef string) error {
+		capturedCloneOSRef = osRef
+		return createTestReleaseRepo(t, destination, osRef)
+	}
+
+	execCommand := func(name string, args ...string) *exec.Cmd {
+		return exec.Command("sh", "-c", "exit 0")
+	}
+
+	if err := doSystemUpdateWithDependencies("os", "v1.2.0-osref.deadbeef", "deadbeef", t.TempDir(), nil, cloneFunc, execCommand); err != nil {
+		t.Fatalf("expected no error, got %v", err)
+	}
+
+	if capturedCloneOSRef != "deadbeef" {
+		t.Fatalf("expected osRef %q, got %q", "deadbeef", capturedCloneOSRef)
+	}
+}
+
 func TestStageReleaseFlakeCreatesCloneInConfiguredTempDir(t *testing.T) {
 	tmpDir := t.TempDir()
 	cloneFunc := func(destination, version string, osRef string) error {
@@ -610,18 +640,18 @@ func TestSystemUpdaterDoSystemUpdateUsesOSRefOnlyForClone(t *testing.T) {
 		return exec.Command("sh", "-c", "exit 0")
 	}
 
-	if err := doSystemUpdateWithDependencies("os", "v1.2.0", "deadbeef", updateTmpDir, nil, cloneFunc, execCommand); err != nil {
+	if err := doSystemUpdateWithDependencies("os", "v1.1.0-osref.deadbeef", "deadbeef", updateTmpDir, nil, cloneFunc, execCommand); err != nil {
 		t.Fatalf("expected no error, got %v", err)
 	}
 
-	if capturedCloneVersion != "v1.2.0" {
-		t.Fatalf("expected clone version %q, got %q", "v1.2.0", capturedCloneVersion)
+	if capturedCloneVersion != "v1.1.0-osref.deadbeef" {
+		t.Fatalf("expected clone version %q, got %q", "v1.1.0-osref.deadbeef", capturedCloneVersion)
 	}
 	if capturedCloneOSRef != "deadbeef" {
 		t.Fatalf("expected osRef %q, got %q", "deadbeef", capturedCloneOSRef)
 	}
 
-	expectedArgs := []string{"_dbxroot", "nix", "rs", "--flake-dir", stagedPath, "--set-release", "v1.2.0"}
+	expectedArgs := []string{"_dbxroot", "nix", "rs", "--flake-dir", stagedPath, "--set-release", "v1.1.0"}
 	if len(capturedArgs) != len(expectedArgs) {
 		t.Fatalf("expected args %v, got %v", expectedArgs, capturedArgs)
 	}

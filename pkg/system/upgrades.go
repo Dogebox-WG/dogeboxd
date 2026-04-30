@@ -295,26 +295,33 @@ func doSystemUpdateWithDependencies(
 	cloneFunc func(string, string, string) error,
 	execCommand func(string, ...string) *exec.Cmd,
 ) error {
-	upgradableReleases, err := GetUpgradableReleases(true)
-	if err != nil {
-		return err
-	}
-
 	// We _only_ support the "os" package for now.
 	if pkg != "os" {
 		return InvalidUpdatePackageError{Package: pkg}
 	}
 
-	ok := false
-	for _, release := range upgradableReleases {
-		if release.Version == updateVersion {
-			ok = true
-			break
+	rebuildRelease := updateVersion
+	if osRef == "" {
+		upgradableReleases, err := GetUpgradableReleases(true)
+		if err != nil {
+			return err
 		}
-	}
 
-	if !ok {
-		return UpdateVersionUnavailableError{Package: pkg, Version: updateVersion}
+		ok := false
+		for _, release := range upgradableReleases {
+			if release.Version == updateVersion {
+				ok = true
+				break
+			}
+		}
+
+		if !ok {
+			return UpdateVersionUnavailableError{Package: pkg, Version: updateVersion}
+		}
+	} else {
+		// Direct OS ref upgrades are dev-only and intentionally keep the
+		// existing package override release while swapping only the OS flake.
+		rebuildRelease = version.GetDBXRelease().Release
 	}
 
 	stagedFlakeDir, err := stageReleaseFlakeWithClone(tmpDir, updateVersion, osRef, logger, cloneFunc)
@@ -327,7 +334,7 @@ func doSystemUpdateWithDependencies(
 		}
 	}()
 
-	cmd := execCommand(SUDO_COMMAND, "_dbxroot", "nix", "rs", "--flake-dir", stagedFlakeDir, "--set-release", updateVersion)
+	cmd := execCommand(SUDO_COMMAND, "_dbxroot", "nix", "rs", "--flake-dir", stagedFlakeDir, "--set-release", rebuildRelease)
 	if logger != nil {
 		logger.Logf("Running command: %s %s", cmd.Path, strings.Join(cmd.Args[1:], " "))
 		cmd.Stdout = io.MultiWriter(os.Stdout, dogeboxd.NewLineWriter(func(s string) {
