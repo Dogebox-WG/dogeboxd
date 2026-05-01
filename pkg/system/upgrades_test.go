@@ -349,7 +349,7 @@ func TestDoSystemUpdate_InvalidPackage(t *testing.T) {
 	tempDir := setupMockVersioning(t, "v1.1.0")
 	defer os.RemoveAll(tempDir)
 
-	err := DoSystemUpdate("invalid-package", "v1.2.0", "", nil)
+	err := DoSystemUpdate("invalid-package", "v1.2.0", nil)
 	if err == nil {
 		t.Fatal("expected error for invalid package, got nil")
 	}
@@ -381,7 +381,7 @@ func TestDoSystemUpdate_UnavailableVersion(t *testing.T) {
 	defer os.RemoveAll(tempDir)
 
 	// Try to upgrade to a version that doesn't exist in upgradable releases
-	err := DoSystemUpdate("os", "v2.0.0", "", nil)
+	err := DoSystemUpdate("os", "v2.0.0", nil)
 	if err == nil {
 		t.Fatal("expected error for unavailable version, got nil")
 	}
@@ -406,7 +406,7 @@ func TestDoSystemUpdate_ErrorFromGetUpgradableReleases(t *testing.T) {
 		err:  fmt.Errorf("network error"),
 	}
 
-	err := DoSystemUpdate("os", "v1.2.0", "", nil)
+	err := DoSystemUpdate("os", "v1.2.0", nil)
 	if err == nil {
 		t.Fatal("expected error from GetUpgradableReleases, got nil")
 	}
@@ -416,43 +416,13 @@ func TestDoSystemUpdate_ErrorFromGetUpgradableReleases(t *testing.T) {
 	}
 }
 
-func TestDoSystemUpdateWithOSRefSkipsReleaseLookupErrors(t *testing.T) {
-	originalFetcher := repoTagsFetcher
-	defer func() {
-		repoTagsFetcher = originalFetcher
-	}()
-
-	repoTagsFetcher = &MockRepoTagsFetcher{
-		tags: nil,
-		err:  fmt.Errorf("network error"),
-	}
-
-	var capturedCloneOSRef string
-	cloneFunc := func(destination, version string, osRef string) error {
-		capturedCloneOSRef = osRef
-		return createTestReleaseRepo(t, destination, osRef)
-	}
-
-	execCommand := func(name string, args ...string) *exec.Cmd {
-		return exec.Command("sh", "-c", "exit 0")
-	}
-
-	if err := doSystemUpdateWithDependencies("os", "v1.2.0-osref.deadbeef", "deadbeef", t.TempDir(), nil, cloneFunc, execCommand); err != nil {
-		t.Fatalf("expected no error, got %v", err)
-	}
-
-	if capturedCloneOSRef != "deadbeef" {
-		t.Fatalf("expected osRef %q, got %q", "deadbeef", capturedCloneOSRef)
-	}
-}
-
 func TestStageReleaseFlakeCreatesCloneInConfiguredTempDir(t *testing.T) {
 	tmpDir := t.TempDir()
-	cloneFunc := func(destination, version string, osRef string) error {
+	cloneFunc := func(destination, version string) error {
 		return createTestReleaseRepo(t, destination, version)
 	}
 
-	stagedPath, err := stageReleaseFlakeWithClone(tmpDir, "v1.2.3", "", nil, cloneFunc)
+	stagedPath, err := stageReleaseFlakeWithClone(tmpDir, "v1.2.3", nil, cloneFunc)
 	if err != nil {
 		t.Fatalf("expected no error, got %v", err)
 	}
@@ -474,11 +444,11 @@ func TestStageReleaseFlakeCreatesCloneInConfiguredTempDir(t *testing.T) {
 
 func TestStageReleaseFlakeReplacesExistingHashNamedDir(t *testing.T) {
 	tmpDir := t.TempDir()
-	cloneFunc := func(destination, version string, osRef string) error {
+	cloneFunc := func(destination, version string) error {
 		return createTestReleaseRepo(t, destination, version)
 	}
 
-	firstStagedPath, err := stageReleaseFlakeWithClone(tmpDir, "v1.2.3", "", nil, cloneFunc)
+	firstStagedPath, err := stageReleaseFlakeWithClone(tmpDir, "v1.2.3", nil, cloneFunc)
 	if err != nil {
 		t.Fatalf("expected first staging run to succeed, got %v", err)
 	}
@@ -488,7 +458,7 @@ func TestStageReleaseFlakeReplacesExistingHashNamedDir(t *testing.T) {
 		t.Fatalf("failed to create sentinel file: %v", err)
 	}
 
-	stagedPath, err := stageReleaseFlakeWithClone(tmpDir, "v1.2.3", "", nil, cloneFunc)
+	stagedPath, err := stageReleaseFlakeWithClone(tmpDir, "v1.2.3", nil, cloneFunc)
 	if err != nil {
 		t.Fatalf("expected no error, got %v", err)
 	}
@@ -498,28 +468,6 @@ func TestStageReleaseFlakeReplacesExistingHashNamedDir(t *testing.T) {
 	}
 	if _, err := os.Stat(sentinelPath); !os.IsNotExist(err) {
 		t.Fatalf("expected sentinel file to be removed, stat err: %v", err)
-	}
-}
-
-func TestStageReleaseFlakeUsesActualHeadHashWhenOSRefProvided(t *testing.T) {
-	tmpDir := t.TempDir()
-	cloneFunc := func(destination, version string, osRef string) error {
-		return createTestReleaseRepo(t, destination, osRef)
-	}
-
-	stagedPath, err := stageReleaseFlakeWithClone(tmpDir, "v1.2.3", "deadbeef", nil, cloneFunc)
-	if err != nil {
-		t.Fatalf("expected no error, got %v", err)
-	}
-
-	headHash, err := getRepositoryHeadHash(stagedPath)
-	if err != nil {
-		t.Fatalf("expected staged repository hash, got %v", err)
-	}
-
-	expectedPath := buildStagedReleaseDirPath(tmpDir, "v1.2.3", headHash)
-	if stagedPath != expectedPath {
-		t.Fatalf("expected staged path %q, got %q", expectedPath, stagedPath)
 	}
 }
 
@@ -540,10 +488,8 @@ func TestSystemUpdaterDoSystemUpdateUsesStagedFlakeDir(t *testing.T) {
 	updateTmpDir := t.TempDir()
 	var stagedPath string
 	var capturedCloneVersion string
-	var capturedCloneOSRef string
-	cloneFunc := func(destination, version string, osRef string) error {
+	cloneFunc := func(destination, version string) error {
 		capturedCloneVersion = version
-		capturedCloneOSRef = osRef
 		if err := createTestReleaseRepo(t, destination, version); err != nil {
 			return err
 		}
@@ -570,15 +516,12 @@ func TestSystemUpdaterDoSystemUpdateUsesStagedFlakeDir(t *testing.T) {
 		},
 	}
 
-	if err := doSystemUpdateWithDependencies("os", "v1.2.0", "", updater.config.TmpDir, nil, cloneFunc, execCommand); err != nil {
+	if err := doSystemUpdateWithDependencies("os", "v1.2.0", updater.config.TmpDir, nil, cloneFunc, execCommand); err != nil {
 		t.Fatalf("expected no error, got %v", err)
 	}
 
 	if capturedCloneVersion != "v1.2.0" {
 		t.Fatalf("expected clone version %q, got %q", "v1.2.0", capturedCloneVersion)
-	}
-	if capturedCloneOSRef != "" {
-		t.Fatalf("expected empty osRef for normal upgrade path, got %q", capturedCloneOSRef)
 	}
 
 	if capturedName != SUDO_COMMAND {
@@ -597,68 +540,6 @@ func TestSystemUpdaterDoSystemUpdateUsesStagedFlakeDir(t *testing.T) {
 
 	if _, err := os.Stat(stagedPath); !os.IsNotExist(err) {
 		t.Fatalf("expected staged flake dir %q to be cleaned up, stat err: %v", stagedPath, err)
-	}
-}
-
-func TestSystemUpdaterDoSystemUpdateUsesOSRefOnlyForClone(t *testing.T) {
-	originalFetcher := repoTagsFetcher
-	defer func() {
-		repoTagsFetcher = originalFetcher
-	}()
-
-	repoTagsFetcher = &MockRepoTagsFetcher{
-		tags: []RepositoryTag{{Tag: "v1.2.0"}},
-		err:  nil,
-	}
-
-	tempDir := setupMockVersioning(t, "v1.1.0")
-	defer os.RemoveAll(tempDir)
-
-	updateTmpDir := t.TempDir()
-	var capturedCloneVersion string
-	var capturedCloneOSRef string
-	var stagedPath string
-	cloneFunc := func(destination, version string, osRef string) error {
-		capturedCloneVersion = version
-		capturedCloneOSRef = osRef
-
-		if err := createTestReleaseRepo(t, destination, osRef); err != nil {
-			return err
-		}
-
-		headHash, err := getRepositoryHeadHash(destination)
-		if err != nil {
-			return err
-		}
-		stagedPath = buildStagedReleaseDirPath(updateTmpDir, version, headHash)
-		return nil
-	}
-
-	var capturedArgs []string
-	execCommand := func(name string, args ...string) *exec.Cmd {
-		capturedArgs = append([]string{}, args...)
-		return exec.Command("sh", "-c", "exit 0")
-	}
-
-	if err := doSystemUpdateWithDependencies("os", "v1.1.0-osref.deadbeef", "deadbeef", updateTmpDir, nil, cloneFunc, execCommand); err != nil {
-		t.Fatalf("expected no error, got %v", err)
-	}
-
-	if capturedCloneVersion != "v1.1.0-osref.deadbeef" {
-		t.Fatalf("expected clone version %q, got %q", "v1.1.0-osref.deadbeef", capturedCloneVersion)
-	}
-	if capturedCloneOSRef != "deadbeef" {
-		t.Fatalf("expected osRef %q, got %q", "deadbeef", capturedCloneOSRef)
-	}
-
-	expectedArgs := []string{"_dbxroot", "nix", "rs", "--flake-dir", stagedPath, "--set-release", "v1.1.0"}
-	if len(capturedArgs) != len(expectedArgs) {
-		t.Fatalf("expected args %v, got %v", expectedArgs, capturedArgs)
-	}
-	for i, expected := range expectedArgs {
-		if capturedArgs[i] != expected {
-			t.Fatalf("expected capturedArgs[%d] to be %q, got %q", i, expected, capturedArgs[i])
-		}
 	}
 }
 

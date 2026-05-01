@@ -148,64 +148,14 @@ func GetUpgradableReleasesWithFetcher(includePreReleases bool, fetcher RepoTagsF
 }
 
 func cloneReleaseRepository(destination, version string) error {
-	return cloneReleaseRepositoryAtRef(destination, version, "")
-}
-
-func resolveRepositoryRevision(repo *git.Repository, ref string) (*plumbing.Hash, error) {
-	candidates := []plumbing.Revision{
-		plumbing.Revision(ref),
-		plumbing.Revision("refs/heads/" + ref),
-		plumbing.Revision("refs/tags/" + ref),
-		plumbing.Revision("refs/remotes/origin/" + ref),
-	}
-
-	for _, candidate := range candidates {
-		hash, err := repo.ResolveRevision(candidate)
-		if err == nil {
-			return hash, nil
-		}
-	}
-
-	return nil, fmt.Errorf("failed to resolve OS ref %s", ref)
-}
-
-func cloneReleaseRepositoryAtRef(destination, version string, osRef string) error {
-	if osRef == "" {
-		_, err := git.PlainClone(destination, false, &git.CloneOptions{
-			URL:           RELEASE_REPOSITORY,
-			ReferenceName: plumbing.NewTagReferenceName(version),
-			SingleBranch:  true,
-			Depth:         1,
-		})
-		if err != nil {
-			return fmt.Errorf("failed to clone OS release %s: %w", version, err)
-		}
-
-		return nil
-	}
-
-	repo, err := git.PlainClone(destination, false, &git.CloneOptions{
-		URL: RELEASE_REPOSITORY,
+	_, err := git.PlainClone(destination, false, &git.CloneOptions{
+		URL:           RELEASE_REPOSITORY,
+		ReferenceName: plumbing.NewTagReferenceName(version),
+		SingleBranch:  true,
+		Depth:         1,
 	})
 	if err != nil {
-		return fmt.Errorf("failed to clone OS repository for ref %s: %w", osRef, err)
-	}
-
-	hash, err := resolveRepositoryRevision(repo, osRef)
-	if err != nil {
-		return err
-	}
-
-	worktree, err := repo.Worktree()
-	if err != nil {
-		return fmt.Errorf("failed to open OS repository worktree: %w", err)
-	}
-
-	if err := worktree.Checkout(&git.CheckoutOptions{
-		Hash:  *hash,
-		Force: true,
-	}); err != nil {
-		return fmt.Errorf("failed to checkout OS ref %s: %w", osRef, err)
+		return fmt.Errorf("failed to clone OS release %s: %w", version, err)
 	}
 
 	return nil
@@ -229,11 +179,11 @@ func buildStagedReleaseDirPath(tmpDir string, updateVersion string, commitHash s
 	return filepath.Join(tmpDir, fmt.Sprintf("os-upgrade-%s-%s", updateVersion, commitHash))
 }
 
-func stageReleaseFlake(tmpDir, updateVersion string, osRef string, logger dogeboxd.SubLogger) (string, error) {
-	return stageReleaseFlakeWithClone(tmpDir, updateVersion, osRef, logger, cloneReleaseRepositoryAtRef)
+func stageReleaseFlake(tmpDir, updateVersion string, logger dogeboxd.SubLogger) (string, error) {
+	return stageReleaseFlakeWithClone(tmpDir, updateVersion, logger, cloneReleaseRepository)
 }
 
-func stageReleaseFlakeWithClone(tmpDir, updateVersion string, osRef string, logger dogeboxd.SubLogger, cloneFunc func(string, string, string) error) (string, error) {
+func stageReleaseFlakeWithClone(tmpDir, updateVersion string, logger dogeboxd.SubLogger, cloneFunc func(string, string) error) (string, error) {
 	if tmpDir == "" {
 		tmpDir = os.TempDir()
 	}
@@ -244,14 +194,10 @@ func stageReleaseFlakeWithClone(tmpDir, updateVersion string, osRef string, logg
 	}
 
 	if logger != nil {
-		if osRef != "" {
-			logger.Logf("Cloning OS release %s from ref %s into %s", updateVersion, osRef, cloneDir)
-		} else {
-			logger.Logf("Cloning OS release %s into %s", updateVersion, cloneDir)
-		}
+		logger.Logf("Cloning OS release %s into %s", updateVersion, cloneDir)
 	}
 
-	if err := cloneFunc(cloneDir, updateVersion, osRef); err != nil {
+	if err := cloneFunc(cloneDir, updateVersion); err != nil {
 		_ = os.RemoveAll(cloneDir)
 		return "", err
 	}
@@ -282,49 +228,41 @@ func stageReleaseFlakeWithClone(tmpDir, updateVersion string, osRef string, logg
 	return finalDir, nil
 }
 
-func doSystemUpdate(pkg string, updateVersion string, osRef string, tmpDir string, logger dogeboxd.SubLogger) error {
-	return doSystemUpdateWithDependencies(pkg, updateVersion, osRef, tmpDir, logger, cloneReleaseRepositoryAtRef, exec.Command)
+func doSystemUpdate(pkg string, updateVersion string, tmpDir string, logger dogeboxd.SubLogger) error {
+	return doSystemUpdateWithDependencies(pkg, updateVersion, tmpDir, logger, cloneReleaseRepository, exec.Command)
 }
 
 func doSystemUpdateWithDependencies(
 	pkg string,
 	updateVersion string,
-	osRef string,
 	tmpDir string,
 	logger dogeboxd.SubLogger,
-	cloneFunc func(string, string, string) error,
+	cloneFunc func(string, string) error,
 	execCommand func(string, ...string) *exec.Cmd,
 ) error {
+	upgradableReleases, err := GetUpgradableReleases(true)
+	if err != nil {
+		return err
+	}
+
 	// We _only_ support the "os" package for now.
 	if pkg != "os" {
 		return InvalidUpdatePackageError{Package: pkg}
 	}
 
-	rebuildRelease := updateVersion
-	if osRef == "" {
-		upgradableReleases, err := GetUpgradableReleases(true)
-		if err != nil {
-			return err
+	ok := false
+	for _, release := range upgradableReleases {
+		if release.Version == updateVersion {
+			ok = true
+			break
 		}
-
-		ok := false
-		for _, release := range upgradableReleases {
-			if release.Version == updateVersion {
-				ok = true
-				break
-			}
-		}
-
-		if !ok {
-			return UpdateVersionUnavailableError{Package: pkg, Version: updateVersion}
-		}
-	} else {
-		// Direct OS ref upgrades are dev-only and intentionally keep the
-		// existing package override release while swapping only the OS flake.
-		rebuildRelease = version.GetDBXRelease().Release
 	}
 
-	stagedFlakeDir, err := stageReleaseFlakeWithClone(tmpDir, updateVersion, osRef, logger, cloneFunc)
+	if !ok {
+		return UpdateVersionUnavailableError{Package: pkg, Version: updateVersion}
+	}
+
+	stagedFlakeDir, err := stageReleaseFlakeWithClone(tmpDir, updateVersion, logger, cloneFunc)
 	if err != nil {
 		return err
 	}
@@ -334,7 +272,7 @@ func doSystemUpdateWithDependencies(
 		}
 	}()
 
-	cmd := execCommand(SUDO_COMMAND, "_dbxroot", "nix", "rs", "--flake-dir", stagedFlakeDir, "--set-release", rebuildRelease)
+	cmd := execCommand(SUDO_COMMAND, "_dbxroot", "nix", "rs", "--flake-dir", stagedFlakeDir, "--set-release", updateVersion)
 	if logger != nil {
 		logger.Logf("Running command: %s %s", cmd.Path, strings.Join(cmd.Args[1:], " "))
 		cmd.Stdout = io.MultiWriter(os.Stdout, dogeboxd.NewLineWriter(func(s string) {
@@ -355,10 +293,10 @@ func doSystemUpdateWithDependencies(
 	return err
 }
 
-func (t SystemUpdater) DoSystemUpdate(pkg string, updateVersion string, osRef string, logger dogeboxd.SubLogger) error {
-	return doSystemUpdate(pkg, updateVersion, osRef, t.config.TmpDir, logger)
+func (t SystemUpdater) DoSystemUpdate(pkg string, updateVersion string, logger dogeboxd.SubLogger) error {
+	return doSystemUpdate(pkg, updateVersion, t.config.TmpDir, logger)
 }
 
-func DoSystemUpdate(pkg string, updateVersion string, osRef string, logger dogeboxd.SubLogger) error {
-	return doSystemUpdate(pkg, updateVersion, osRef, "", logger)
+func DoSystemUpdate(pkg string, updateVersion string, logger dogeboxd.SubLogger) error {
+	return doSystemUpdate(pkg, updateVersion, "", logger)
 }

@@ -2,10 +2,8 @@ package web
 
 import (
 	"encoding/json"
-	"fmt"
 	"io"
 	"net/http"
-	"strings"
 
 	dogeboxd "github.com/Dogebox-WG/dogeboxd/pkg"
 	"github.com/Dogebox-WG/dogeboxd/pkg/system"
@@ -15,7 +13,6 @@ import (
 type CommenceUpdateRequest struct {
 	Package string `json:"package"`
 	Version string `json:"version"`
-	OSRef   string `json:"osRef,omitempty"`
 }
 
 type UpgradableRelease struct {
@@ -53,41 +50,12 @@ func buildPackageInfo(currentVersion string, releases []system.UpgradableRelease
 	}
 }
 
-func buildSyntheticOSRefUpdate(currentVersion string, osRef string) PackageInfo {
-	shortRef := osRef
-	if len(shortRef) > 12 {
-		shortRef = shortRef[:12]
-	}
-	shortRef = strings.NewReplacer("/", "-", " ", "-").Replace(shortRef)
-	syntheticVersion := fmt.Sprintf("%s-osref.%s", currentVersion, shortRef)
-
-	return PackageInfo{
-		Name:           "Dogebox",
-		CurrentVersion: currentVersion,
-		LatestUpdate:   syntheticVersion,
-		Updates: []UpgradableRelease{
-			{
-				Version:    syntheticVersion,
-				ReleaseURL: fmt.Sprintf("https://github.com/dogebox-wg/os/commit/%s", osRef),
-				Summary:    fmt.Sprintf("Developer OS upgrade from ref %s", osRef),
-			},
-		},
-	}
-}
-
 func (t api) checkForUpdates(w http.ResponseWriter, r *http.Request) {
 	// Parse query parameter for including pre-releases
 	includePreReleases := r.URL.Query().Get("includePreReleases") == "true"
-	osRef := strings.TrimSpace(r.URL.Query().Get("osRef"))
 	currentVersion := version.GetDBXRelease().Release
 
 	packages := make(map[string]PackageInfo)
-
-	if osRef != "" {
-		packages["dogebox"] = buildSyntheticOSRefUpdate(currentVersion, osRef)
-		sendResponse(w, UpdatesResponse{Packages: packages})
-		return
-	}
 
 	releases, err := system.GetUpgradableReleases(includePreReleases)
 	if err != nil {
@@ -138,7 +106,6 @@ func (t api) commenceUpdate(w http.ResponseWriter, r *http.Request) {
 	id := t.dbx.AddAction(dogeboxd.SystemUpdate{
 		Package: packageName,
 		Version: req.Version,
-		OSRef:   req.OSRef,
 	})
 
 	sendResponse(w, map[string]any{

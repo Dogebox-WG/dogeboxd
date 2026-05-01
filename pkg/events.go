@@ -217,7 +217,6 @@ func (UpdateKeymap) ActionName() string { return "update-keymap" }
 type SystemUpdate struct {
 	Package string
 	Version string
-	OSRef   string
 }
 
 func (SystemUpdate) ActionName() string { return "system-update" }
