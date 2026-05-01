@@ -1,6 +1,9 @@
 package system
 
 import (
+	"crypto/sha256"
+	"errors"
+	"io"
 	"os"
 	"os/exec"
 	"path/filepath"
@@ -14,6 +17,70 @@ func GetCustomNixPath(config dogeboxd.ServerConfig) string {
 
 func getLegacyCustomNixPath(config dogeboxd.ServerConfig) string {
 	return filepath.Join(config.NixDir, "custom.nix")
+}
+
+func hashFile(path string) ([sha256.Size]byte, error) {
+	var hash [sha256.Size]byte
+
+	file, err := os.Open(path)
+	if err != nil {
+		return hash, err
+	}
+	defer file.Close()
+
+	hasher := sha256.New()
+	if _, err := io.Copy(hasher, file); err != nil {
+		return hash, err
+	}
+
+	copy(hash[:], hasher.Sum(nil))
+	return hash, nil
+}
+
+func moveFileWithVerification(sourcePath, destinationPath string) error {
+	sourceHash, err := hashFile(sourcePath)
+	if err != nil {
+		return err
+	}
+
+	sourceFile, err := os.Open(sourcePath)
+	if err != nil {
+		return err
+	}
+	defer sourceFile.Close()
+
+	sourceInfo, err := sourceFile.Stat()
+	if err != nil {
+		return err
+	}
+
+	destinationFile, err := os.OpenFile(destinationPath, os.O_CREATE|os.O_WRONLY|os.O_TRUNC, sourceInfo.Mode().Perm())
+	if err != nil {
+		return err
+	}
+
+	if _, err := io.Copy(destinationFile, sourceFile); err != nil {
+		destinationFile.Close()
+		_ = os.Remove(destinationPath)
+		return err
+	}
+
+	if err := destinationFile.Close(); err != nil {
+		_ = os.Remove(destinationPath)
+		return err
+	}
+
+	destinationHash, err := hashFile(destinationPath)
+	if err != nil {
+		_ = os.Remove(destinationPath)
+		return err
+	}
+	if sourceHash != destinationHash {
+		_ = os.Remove(destinationPath)
+		return errors.New("copied custom.nix hash mismatch")
+	}
+
+	return os.Remove(sourcePath)
 }
 
 func MigrateLegacyCustomNix(config dogeboxd.ServerConfig) error {
@@ -38,7 +105,7 @@ func MigrateLegacyCustomNix(config dogeboxd.ServerConfig) error {
 		return err
 	}
 
-	return os.Rename(legacyCustomNixPath, customNixPath)
+	return moveFileWithVerification(legacyCustomNixPath, customNixPath)
 }
 
 // ValidateNix validates nix content using nix-instantiate --parse.
