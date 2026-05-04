@@ -2,8 +2,10 @@ package web
 
 import (
 	"encoding/json"
+	"fmt"
 	"io"
 	"net/http"
+	"strings"
 
 	dogeboxd "github.com/Dogebox-WG/dogeboxd/pkg"
 	"github.com/Dogebox-WG/dogeboxd/pkg/system"
@@ -13,6 +15,7 @@ import (
 type CommenceUpdateRequest struct {
 	Package string `json:"package"`
 	Version string `json:"version"`
+	OSRef   string `json:"osRef,omitempty"`
 }
 
 type UpgradableRelease struct {
@@ -35,6 +38,35 @@ type UpdatesResponse struct {
 func (t api) checkForUpdates(w http.ResponseWriter, r *http.Request) {
 	// Parse query parameter for including pre-releases
 	includePreReleases := r.URL.Query().Get("includePreReleases") == "true"
+	osRef := strings.TrimSpace(r.URL.Query().Get("osRef"))
+
+	if osRef != "" {
+		currentVersion := version.GetDBXRelease().Release
+		shortRef := osRef
+		if len(shortRef) > 12 {
+			shortRef = shortRef[:12]
+		}
+		shortRef = strings.NewReplacer("/", "-", " ", "-").Replace(shortRef)
+		syntheticVersion := fmt.Sprintf("%s-osref.%s", currentVersion, shortRef)
+
+		sendResponse(w, UpdatesResponse{
+			Packages: map[string]PackageInfo{
+				"dogebox": {
+					Name:           "Dogebox",
+					CurrentVersion: currentVersion,
+					LatestUpdate:   syntheticVersion,
+					Updates: []UpgradableRelease{
+						{
+							Version:    syntheticVersion,
+							ReleaseURL: fmt.Sprintf("https://github.com/dogebox-wg/os/commit/%s", osRef),
+							Summary:    fmt.Sprintf("Developer OS upgrade from ref %s", osRef),
+						},
+					},
+				},
+			},
+		})
+		return
+	}
 
 	releases, err := system.GetUpgradableReleases(includePreReleases)
 	if err != nil {
@@ -104,7 +136,7 @@ func (t api) commenceUpdate(w http.ResponseWriter, r *http.Request) {
 		packageName = "os"
 	}
 
-	id := t.dbx.AddAction(dogeboxd.SystemUpdate{Package: packageName, Version: req.Version})
+	id := t.dbx.AddAction(dogeboxd.SystemUpdate{Package: packageName, Version: req.Version, OSRef: req.OSRef})
 
 	sendResponse(w, map[string]any{
 		"success": true,
