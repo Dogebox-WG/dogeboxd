@@ -32,30 +32,9 @@ type UpdatesResponse struct {
 	Packages map[string]PackageInfo `json:"packages"`
 }
 
-func buildPackageInfo(currentVersion string, releases []system.UpgradableRelease) PackageInfo {
-	updates := make([]UpgradableRelease, len(releases))
-	for i, release := range releases {
-		updates[i] = UpgradableRelease{
-			Version:    release.Version,
-			ReleaseURL: release.ReleaseURL,
-			Summary:    release.Summary,
-		}
-	}
-
-	return PackageInfo{
-		Name:           "Dogebox",
-		CurrentVersion: currentVersion,
-		LatestUpdate:   releases[0].Version,
-		Updates:        updates,
-	}
-}
-
 func (t api) checkForUpdates(w http.ResponseWriter, r *http.Request) {
 	// Parse query parameter for including pre-releases
 	includePreReleases := r.URL.Query().Get("includePreReleases") == "true"
-	currentVersion := version.GetDBXRelease().Release
-
-	packages := make(map[string]PackageInfo)
 
 	releases, err := system.GetUpgradableReleases(includePreReleases)
 	if err != nil {
@@ -63,8 +42,30 @@ func (t api) checkForUpdates(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
+	// Convert to the expected format
+	packages := make(map[string]PackageInfo)
+
 	if len(releases) > 0 {
-		packages["dogebox"] = buildPackageInfo(currentVersion, releases)
+		// Get current version from the system
+		currentVersion := version.GetDBXRelease().Release
+		latestVersion := releases[0].Version
+
+		// Convert system.UpgradableRelease to our local UpgradableRelease
+		updates := make([]UpgradableRelease, len(releases))
+		for i, release := range releases {
+			updates[i] = UpgradableRelease{
+				Version:    release.Version,
+				ReleaseURL: release.ReleaseURL,
+				Summary:    release.Summary,
+			}
+		}
+
+		packages["dogebox"] = PackageInfo{
+			Name:           "Dogebox",
+			CurrentVersion: currentVersion,
+			LatestUpdate:   latestVersion,
+			Updates:        updates,
+		}
 	}
 
 	response := UpdatesResponse{
@@ -103,10 +104,7 @@ func (t api) commenceUpdate(w http.ResponseWriter, r *http.Request) {
 		packageName = "os"
 	}
 
-	id := t.dbx.AddAction(dogeboxd.SystemUpdate{
-		Package: packageName,
-		Version: req.Version,
-	})
+	id := t.dbx.AddAction(dogeboxd.SystemUpdate{Package: packageName, Version: req.Version})
 
 	sendResponse(w, map[string]any{
 		"success": true,
