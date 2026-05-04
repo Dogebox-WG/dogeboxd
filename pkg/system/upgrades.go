@@ -294,6 +294,10 @@ func doSystemUpdateWithDependencies(
 }
 
 func (t SystemUpdater) DoSystemUpdate(pkg string, updateVersion string, logger dogeboxd.SubLogger) error {
+	if err := MigrateLegacyCustomNix(t.config); err != nil {
+		return err
+	}
+
 	return doSystemUpdate(pkg, updateVersion, t.config.TmpDir, logger)
 }
 

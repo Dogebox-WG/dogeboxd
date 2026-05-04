@@ -87,24 +87,26 @@ func MigrateLegacyCustomNix(config dogeboxd.ServerConfig) error {
 	customNixPath := GetCustomNixPath(config)
 	legacyCustomNixPath := getLegacyCustomNixPath(config)
 
-	// Keep the user's existing custom.nix when moving it from the generated
-	// nix directory into the persistent data directory.
+	// If the new persistent file already exists, there is nothing to migrate.
 	if _, err := os.Stat(customNixPath); err == nil {
 		return nil
 	}
 
-	_, err := os.Stat(legacyCustomNixPath)
-	if err != nil {
-		if os.IsNotExist(err) {
-			return nil
-		}
+	// If the legacy file does not exist either, there is also nothing to migrate.
+	// Any other stat error should still stop the request.
+	if _, err := os.Stat(legacyCustomNixPath); os.IsNotExist(err) {
+		return nil
+	} else if err != nil {
 		return err
 	}
 
+	// Ensure the persistent parent directory exists before copying the file.
 	if err := os.MkdirAll(filepath.Dir(customNixPath), 0755); err != nil {
 		return err
 	}
 
+	// Copy the legacy file into its persistent location, verify the copied
+	// contents match, and only then remove the old file.
 	return moveFileWithVerification(legacyCustomNixPath, customNixPath)
 }
 
@@ -157,11 +159,6 @@ func (t SystemUpdater) SaveCustomNix(content string, l dogeboxd.SubLogger) error
 	l.Logf("Validation passed, saving configuration...")
 
 	// Save the file
-	if err := MigrateLegacyCustomNix(t.config); err != nil {
-		l.Errf("Failed to migrate custom.nix: %v", err)
-		return err
-	}
-
 	customNixPath := GetCustomNixPath(t.config)
 	if err := os.MkdirAll(filepath.Dir(customNixPath), 0755); err != nil {
 		l.Errf("Failed to create custom.nix directory: %v", err)

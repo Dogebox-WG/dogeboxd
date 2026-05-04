@@ -6,6 +6,7 @@ import (
 	"io"
 	"net/http"
 	"os"
+	"path/filepath"
 
 	dogeboxd "github.com/Dogebox-WG/dogeboxd/pkg"
 	"github.com/Dogebox-WG/dogeboxd/pkg/system"
@@ -33,21 +34,29 @@ type ValidateCustomNixResponse struct {
 }
 
 func (t api) getCustomNix(w http.ResponseWriter, r *http.Request) {
-	if err := system.MigrateLegacyCustomNix(t.config); err != nil {
-		sendErrorResponse(w, http.StatusInternalServerError, "Failed to migrate custom.nix")
-		return
-	}
-
 	customNixPath := system.GetCustomNixPath(t.config)
 
 	data, err := os.ReadFile(customNixPath)
 	if err != nil {
 		if os.IsNotExist(err) {
-			// File doesn't exist, return default template
-			sendResponse(w, GetCustomNixResponse{
-				Content: string(defaultCustomNix),
-				Exists:  false,
-			})
+			legacyCustomNixPath := filepath.Join(t.config.NixDir, "custom.nix")
+			legacyData, legacyErr := os.ReadFile(legacyCustomNixPath)
+			if legacyErr == nil {
+				sendResponse(w, GetCustomNixResponse{
+					Content: string(legacyData),
+					Exists:  true,
+				})
+				return
+			}
+			if os.IsNotExist(legacyErr) {
+				// File doesn't exist in either location, return default template.
+				sendResponse(w, GetCustomNixResponse{
+					Content: string(defaultCustomNix),
+					Exists:  false,
+				})
+				return
+			}
+			sendErrorResponse(w, http.StatusInternalServerError, "Failed to read legacy custom.nix")
 			return
 		}
 		sendErrorResponse(w, http.StatusInternalServerError, "Failed to read custom.nix")
