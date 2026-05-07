@@ -1,6 +1,7 @@
 package dogeboxd
 
 import (
+	"encoding/json"
 	"fmt"
 	"reflect"
 	"sync"

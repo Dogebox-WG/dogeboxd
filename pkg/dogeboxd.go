@@ -167,6 +167,12 @@ func (t Dogeboxd) Run(started, stopped chan bool, stop chan context.Context) err
 					if !ok {
 						break dance
 					}
+					// Queue management: skip a nix cache update if the next queued
+					// job is already a nix cache update.
+					if t.shouldSkipJob(j) {
+						break dance
+					}
+
 					j.Start = time.Now() // start the job timer
 
 					// Register tracked jobs in runtime state before persisting them so
@@ -393,6 +399,14 @@ func (t *Dogeboxd) RemoveFromQueue(jobID string) bool {
 	return false
 }
 
+func (t Dogeboxd) shouldSkipJob(j Job) bool {
+	if _, ok := j.A.(UpdateNixCache); ok {
+		return t.shouldSkipQueuedNixCacheJob()
+	}
+
+	return false
+}
+
 // DetectAndMarkOrphanedJobs reconciles persisted active jobs against runtime state.
 // It is used on the periodic orphan scan and during WS bootstrap.
 func (t *Dogeboxd) DetectAndMarkOrphanedJobs() ([]string, error) {
@@ -423,6 +437,24 @@ func (t *Dogeboxd) DetectAndMarkOrphanedJobs() ([]string, error) {
 	}
 
 	return orphaned, nil
+}
+
+func (t Dogeboxd) shouldSkipQueuedNixCacheJob() bool {
+	t.queue.jobQLock.Lock()
+	defer t.queue.jobQLock.Unlock()
+
+	if len(t.queue.jobQueue) == 0 {
+		return false
+	}
+
+	lastQueued := t.queue.jobQueue[len(t.queue.jobQueue)-1]
+	if _, ok := lastQueued.A.(UpdateNixCache); !ok {
+		return false
+	}
+
+	// Intentionally ignore the currently running job. Only skip when the
+	// next queued job is already a nix cache update.
+	return true
 }
 
 // Add an Action to the Action queue, returns a unique ID
