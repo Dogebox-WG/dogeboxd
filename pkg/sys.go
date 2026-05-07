@@ -392,6 +392,7 @@ type NixManager interface {
 
 	NewPatch(log SubLogger) NixPatch
 
+	GetConfigValueContext(ctx context.Context, configItem string) (string, error)
 	GetConfigValue(configItem string) (string, error)
 }
 

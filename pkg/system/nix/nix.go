@@ -1,6 +1,7 @@
 package nix
 
 import (
+	"context"
 	"encoding/json"
 	"fmt"
 	"os"
@@ -390,6 +391,10 @@ func GetRunningFlakePath() (string, error) {
 }
 
 func (nm nixManager) GetConfigValue(configItem string) (string, error) {
+	return nm.GetConfigValueContext(context.Background(), configItem)
+}
+
+func (nm nixManager) GetConfigValueContext(ctx context.Context, configItem string) (string, error) {
 	flakePath, err := GetRunningFlakePath()
 	if err != nil {
 		return "", err
@@ -404,29 +409,38 @@ func (nm nixManager) GetConfigValue(configItem string) (string, error) {
 	// rather than raw or JSON, as this stringifies the errors rather than
 	// failing the command.
 	if !strings.Contains(configItem, ".") {
-		cmd := exec.Command("nix", "eval", expr, "--impure")
+		cmd := exec.CommandContext(ctx, "nix", "eval", expr, "--impure")
 		cmd.Env = cmdEnv
 		err := cmd.Run()
 		if err != nil {
+			if ctx.Err() != nil {
+				return "", fmt.Errorf("timed out waiting for nix config %q: %w", configItem, ctx.Err())
+			}
 			return "", err
 		}
 		return "", nil
 	}
 
 	// Fast path: try `--raw` first (works when the option evaluates to a string).
-	cmd := exec.Command("nix", "eval", "--raw", expr, "--impure")
+	cmd := exec.CommandContext(ctx, "nix", "eval", "--raw", expr, "--impure")
 	cmd.Env = cmdEnv
 	stdout, rawErr := cmd.Output()
 	if rawErr == nil {
 		return strings.TrimSpace(string(stdout)), nil
 	}
+	if ctx.Err() != nil {
+		return "", fmt.Errorf("timed out waiting for nix config %q: %w", configItem, ctx.Err())
+	}
 
 	// Fallback: evaluate as JSON, then only return the string if the evaluated
 	// value is actually a string.
-	cmd = exec.Command("nix", "eval", "--json", expr, "--impure")
+	cmd = exec.CommandContext(ctx, "nix", "eval", "--json", expr, "--impure")
 	cmd.Env = cmdEnv
 	stdout, jsonErr := cmd.Output()
 	if jsonErr != nil {
+		if ctx.Err() != nil {
+			return "", fmt.Errorf("timed out waiting for nix config %q: %w", configItem, ctx.Err())
+		}
 		return "", fmt.Errorf("nix eval for %q failed (raw error: %w, json error: %v)", configItem, rawErr, jsonErr)
 	}
 
