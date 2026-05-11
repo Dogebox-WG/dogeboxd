@@ -9,6 +9,11 @@ import (
 	"github.com/coreos/go-systemd/sdjournal"
 )
 
+type journalEntry struct {
+	message string
+	cursor  string
+}
+
 func NewJournalReader(config dogeboxd.ServerConfig) JournalReader {
 	return JournalReader{
 		config: config,
@@ -104,37 +109,75 @@ func (t JournalReader) getJournalChannel(service string, cursor *string) (contex
 }
 
 func (t JournalReader) GetJournalTail(service string, limit int) ([]string, *string, error) {
+	page, err := t.GetJournalPage(service, nil, limit)
+	if err != nil {
+		return nil, nil, err
+	}
+
+	return page.Lines, page.ResumeToken, nil
+}
+
+func (t JournalReader) GetJournalPage(service string, before *string, limit int) (dogeboxd.LogPage, error) {
 	if limit <= 0 {
-		return nil, nil, fmt.Errorf("Log tail limit must be greater than zero")
+		return dogeboxd.LogPage{}, fmt.Errorf("Log tail limit must be greater than zero")
 	}
 
 	j, err := sdjournal.NewJournal()
 	if err != nil {
-		return nil, nil, err
+		return dogeboxd.LogPage{}, err
 	}
 	defer j.Close()
 
 	err = j.AddMatch(fmt.Sprintf("_SYSTEMD_UNIT=%s", service))
 	if err != nil {
-		return nil, nil, err
+		return dogeboxd.LogPage{}, err
 	}
 
-	err = j.SeekTail()
+	if before != nil {
+		err = j.SeekCursor(*before)
+	} else {
+		err = j.SeekTail()
+	}
 	if err != nil {
-		return nil, nil, err
+		return dogeboxd.LogPage{}, err
 	}
 
-	_, err = j.PreviousSkip(uint64(limit))
+	entries, hasMoreOlder, err := collectJournalEntriesBackward(j, limit)
 	if err != nil {
-		return nil, nil, err
+		return dogeboxd.LogPage{}, err
 	}
 
-	lines := []string{}
-	var lastCursor *string
-	for {
-		n, err := j.Next()
+	page := dogeboxd.LogPage{
+		Lines:        make([]string, len(entries)),
+		HasMoreOlder: hasMoreOlder,
+	}
+	for i, entry := range entries {
+		page.Lines[i] = entry.message
+	}
+	if len(entries) > 0 {
+		resumeToken := entries[len(entries)-1].cursor
+		page.ResumeToken = &resumeToken
+	}
+	if hasMoreOlder && len(entries) > 0 {
+		olderCursor := entries[0].cursor
+		page.OlderCursor = &olderCursor
+	}
+
+	return page, nil
+}
+
+type journalNavigator interface {
+	Previous() (uint64, error)
+	GetEntry() (*sdjournal.JournalEntry, error)
+	GetCursor() (string, error)
+}
+
+func collectJournalEntriesBackward(j journalNavigator, limit int) ([]journalEntry, bool, error) {
+	entriesNewestFirst := make([]journalEntry, 0, limit+1)
+	for len(entriesNewestFirst) < limit+1 {
+		n, err := j.Previous()
 		if err != nil {
-			return nil, nil, err
+			return nil, false, err
 		}
 		if n == 0 {
 			break
@@ -142,17 +185,29 @@ func (t JournalReader) GetJournalTail(service string, limit int) ([]string, *str
 
 		entry, err := j.GetEntry()
 		if err != nil {
-			return nil, nil, err
+			return nil, false, err
 		}
 
 		cursor, err := j.GetCursor()
 		if err != nil {
-			return nil, nil, err
+			return nil, false, err
 		}
 
-		lastCursor = &cursor
-		lines = append(lines, entry.Fields["MESSAGE"])
+		entriesNewestFirst = append(entriesNewestFirst, journalEntry{
+			message: entry.Fields["MESSAGE"],
+			cursor:  cursor,
+		})
 	}
 
-	return lines, lastCursor, nil
+	hasMoreOlder := len(entriesNewestFirst) > limit
+	if hasMoreOlder {
+		entriesNewestFirst = entriesNewestFirst[:limit]
+	}
+
+	entries := make([]journalEntry, len(entriesNewestFirst))
+	for i := range entriesNewestFirst {
+		entries[i] = entriesNewestFirst[len(entriesNewestFirst)-1-i]
+	}
+
+	return entries, hasMoreOlder, nil
 }

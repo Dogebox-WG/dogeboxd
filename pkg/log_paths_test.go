@@ -14,6 +14,9 @@ type stubLogTailer struct {
 	lastChannelOffset int64
 	lastTailPath      string
 	lastTailLimit     int
+	lastPagePath      string
+	lastPageLimit     int
+	lastPageBefore    *int64
 }
 
 func (t *stubLogTailer) GetChannel(path string) (context.CancelFunc, chan string, error) {
@@ -33,11 +36,26 @@ func (t *stubLogTailer) GetTail(path string, limit int) ([]string, int64, error)
 	return []string{filepath.Base(path)}, 42, nil
 }
 
+func (t *stubLogTailer) GetPage(path string, before *int64, limit int) (LogPage, error) {
+	t.lastPagePath = path
+	t.lastPageBefore = before
+	t.lastPageLimit = limit
+
+	resumeToken := "42"
+	return LogPage{
+		Lines:       []string{filepath.Base(path)},
+		ResumeToken: &resumeToken,
+	}, nil
+}
+
 type stubJournalReader struct {
 	lastChannelService string
 	lastChannelCursor  string
 	lastTailService    string
 	lastTailLimit      int
+	lastPageService    string
+	lastPageBefore     *string
+	lastPageLimit      int
 }
 
 func (t *stubJournalReader) GetJournalChannel(service string) (context.CancelFunc, chan string, error) {
@@ -56,6 +74,18 @@ func (t *stubJournalReader) GetJournalTail(service string, limit int) ([]string,
 	t.lastTailLimit = limit
 	resumeToken := "journal-cursor"
 	return []string{service}, &resumeToken, nil
+}
+
+func (t *stubJournalReader) GetJournalPage(service string, before *string, limit int) (LogPage, error) {
+	t.lastPageService = service
+	t.lastPageBefore = before
+	t.lastPageLimit = limit
+
+	resumeToken := "journal-cursor"
+	return LogPage{
+		Lines:       []string{service},
+		ResumeToken: &resumeToken,
+	}, nil
 }
 
 func TestDogeboxdGetJobLogTailUsesJobPath(t *testing.T) {
@@ -79,8 +109,9 @@ func TestDogeboxdGetJobLogTailUsesJobPath(t *testing.T) {
 	require.NoError(t, err)
 	require.NotNil(t, resumeToken)
 	assert.Equal(t, []string{filepath.Base(config.JobLogPath(job.ID))}, lines)
-	assert.Equal(t, config.JobLogPath(job.ID), logtailer.lastTailPath)
-	assert.Equal(t, 10, logtailer.lastTailLimit)
+	assert.Equal(t, config.JobLogPath(job.ID), logtailer.lastPagePath)
+	assert.Equal(t, 10, logtailer.lastPageLimit)
+	assert.Nil(t, logtailer.lastPageBefore)
 }
 
 func TestDogeboxdGetJobLogChannelUsesJobPath(t *testing.T) {
@@ -163,8 +194,9 @@ func TestDogeboxdGetLogTailUsesJournalSource(t *testing.T) {
 	require.NoError(t, err)
 	require.NotNil(t, resumeToken)
 	assert.Equal(t, []string{"dogeboxd.service"}, lines)
-	assert.Equal(t, "dogeboxd.service", journalReader.lastTailService)
-	assert.Equal(t, 25, journalReader.lastTailLimit)
+	assert.Equal(t, "dogeboxd.service", journalReader.lastPageService)
+	assert.Equal(t, 25, journalReader.lastPageLimit)
+	assert.Nil(t, journalReader.lastPageBefore)
 	assert.Equal(t, "", logtailer.lastTailPath)
 }
 
