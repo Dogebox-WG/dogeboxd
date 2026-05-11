@@ -7,7 +7,6 @@ import (
 	"log"
 	"net/http"
 	"os"
-	"path/filepath"
 	"strconv"
 )
 
@@ -35,7 +34,7 @@ func (t api) downloadPupLog(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	t.streamLogDownload(w, "pup-"+pupID, "pup-"+pupID+".log")
+	t.streamLogDownload(w, t.config.PupLogPath(pupID), t.config.PupLogFileName(pupID)+".log")
 }
 
 func (t api) downloadJobLog(w http.ResponseWriter, r *http.Request) {
@@ -50,7 +49,7 @@ func (t api) downloadJobLog(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	t.streamLogDownload(w, "pup-"+jobID, "job-"+jobID+".log")
+	t.streamLogDownload(w, t.config.JobLogPath(jobID), t.config.JobLogFileName(jobID)+".log")
 }
 
 func (t api) getPupLogTail(w http.ResponseWriter, r *http.Request) {
@@ -103,8 +102,7 @@ func parseLogTailLimit(r *http.Request) (int, error) {
 	return limit, nil
 }
 
-func (t api) streamLogDownload(w http.ResponseWriter, logFileName string, downloadName string) {
-	logPath := filepath.Join(t.config.ContainerLogDir, logFileName)
+func (t api) streamLogDownload(w http.ResponseWriter, logPath string, downloadName string) {
 	logFile, err := os.Open(logPath)
 	if err != nil {
 		if os.IsNotExist(err) {
@@ -121,6 +119,6 @@ func (t api) streamLogDownload(w http.ResponseWriter, logFileName string, downlo
 	w.Header().Set("Cache-Control", "no-store")
 
 	if _, err := io.Copy(w, logFile); err != nil {
-		log.Printf("Error streaming log file %s: %v", logFileName, err)
+		log.Printf("Error streaming log file %s: %v", logPath, err)
 	}
 }

@@ -71,7 +71,7 @@ func (t server) Start() {
 
 	systemUpdater := system.NewSystemUpdater(t.config, networkManager, nixManager, sourceManager, pups, t.sm, lifecycleManager, dkm)
 	journalReader := system.NewJournalReader(t.config)
-	logtailer := system.NewLogTailer(t.config)
+	logtailer := system.NewLogTailer()
 
 	/* ----------------------------------------------------------------------- */
 	// Set up PupManager and load the state for all installed pups
