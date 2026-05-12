@@ -1,4 +1,4 @@
-package system
+package migrations
 
 import (
 	"os"
@@ -6,7 +6,57 @@ import (
 	"testing"
 
 	dogeboxd "github.com/Dogebox-WG/dogeboxd/pkg"
+	"github.com/Dogebox-WG/dogeboxd/pkg/system"
 )
+
+type mockRepoTagsFetcher struct {
+	tags []system.RepositoryTag
+	err  error
+}
+
+func (m mockRepoTagsFetcher) GetRepoTags(string) ([]system.RepositoryTag, error) {
+	return m.tags, m.err
+}
+
+func setupMockVersioning(t *testing.T, release string, dogeboxdRev string) {
+	t.Helper()
+
+	tempDir := t.TempDir()
+	versionDir := filepath.Join(tempDir, "versioning")
+	if err := os.MkdirAll(versionDir, 0755); err != nil {
+		t.Fatalf("failed to create version dir: %v", err)
+	}
+
+	if err := os.WriteFile(filepath.Join(versionDir, "dbx"), []byte(release), 0644); err != nil {
+		t.Fatalf("failed to write dbx release: %v", err)
+	}
+
+	if dogeboxdRev != "" {
+		pkgDir := filepath.Join(versionDir, "dogeboxd")
+		if err := os.MkdirAll(pkgDir, 0755); err != nil {
+			t.Fatalf("failed to create dogeboxd version dir: %v", err)
+		}
+		if err := os.WriteFile(filepath.Join(pkgDir, "rev"), []byte(dogeboxdRev), 0644); err != nil {
+			t.Fatalf("failed to write dogeboxd rev: %v", err)
+		}
+		if err := os.WriteFile(filepath.Join(pkgDir, "hash"), []byte("hash"), 0644); err != nil {
+			t.Fatalf("failed to write dogeboxd hash: %v", err)
+		}
+	}
+
+	originalOverride := os.Getenv("VERSION_PATH_OVERRIDE")
+	if err := os.Setenv("VERSION_PATH_OVERRIDE", versionDir); err != nil {
+		t.Fatalf("failed to set VERSION_PATH_OVERRIDE: %v", err)
+	}
+
+	t.Cleanup(func() {
+		if originalOverride == "" {
+			os.Unsetenv("VERSION_PATH_OVERRIDE")
+			return
+		}
+		_ = os.Setenv("VERSION_PATH_OVERRIDE", originalOverride)
+	})
+}
 
 func TestOSFlakeNeedsMigration(t *testing.T) {
 	testCases := []struct {
@@ -30,7 +80,7 @@ func TestOSFlakeNeedsMigration(t *testing.T) {
 }
 
 func TestInferTargetReleaseForDogeboxdRevision(t *testing.T) {
-	releases := []UpgradableRelease{
+	releases := []system.UpgradableRelease{
 		{Version: "v1.3.0"},
 		{Version: "v1.2.0"},
 	}
@@ -54,29 +104,8 @@ func TestInferTargetReleaseForDogeboxdRevision(t *testing.T) {
 	}
 }
 
-func writeDogeboxdRevisionForTest(t *testing.T, rev string) {
-	t.Helper()
-
-	versionDir := os.Getenv("VERSION_PATH_OVERRIDE")
-	if versionDir == "" {
-		t.Fatal("VERSION_PATH_OVERRIDE is not set")
-	}
-
-	pkgDir := filepath.Join(versionDir, "dogeboxd")
-	if err := os.MkdirAll(pkgDir, 0755); err != nil {
-		t.Fatalf("failed to create dogeboxd version dir: %v", err)
-	}
-	if err := os.WriteFile(filepath.Join(pkgDir, "rev"), []byte(rev), 0644); err != nil {
-		t.Fatalf("failed to write dogeboxd rev: %v", err)
-	}
-	if err := os.WriteFile(filepath.Join(pkgDir, "hash"), []byte("hash"), 0644); err != nil {
-		t.Fatalf("failed to write dogeboxd hash: %v", err)
-	}
-}
-
 func TestQueueOSFlakeMigratorIfNeededQueuesOneUpdateAndWritesMarker(t *testing.T) {
-	setupMockVersioning(t, "v0.8.1")
-	writeDogeboxdRevisionForTest(t, "target-rev")
+	setupMockVersioning(t, "v0.8.1", "target-rev")
 
 	config := dogeboxd.ServerConfig{
 		DataDir: t.TempDir(),
@@ -96,10 +125,12 @@ func TestQueueOSFlakeMigratorIfNeededQueuesOneUpdateAndWritesMarker(t *testing.T
   defaultDbxRelease = "v0.8.1";
 }`), nil
 		},
-		CreateSuccessMock([]RepositoryTag{
-			{Tag: "v1.2.0"},
-			{Tag: "v1.1.0"},
-		}),
+		mockRepoTagsFetcher{
+			tags: []system.RepositoryTag{
+				{Tag: "v1.2.0"},
+				{Tag: "v1.1.0"},
+			},
+		},
 		func(_ string, releaseVersion string) (string, error) {
 			if releaseVersion == "v1.2.0" {
 				return "target-rev", nil
@@ -138,7 +169,7 @@ func TestQueueOSFlakeMigratorIfNeededQueuesOneUpdateAndWritesMarker(t *testing.T
 }
 
 func TestQueueOSFlakeMigratorIfNeededSkipsWhenMarkerExists(t *testing.T) {
-	setupMockVersioning(t, "v0.8.1")
+	setupMockVersioning(t, "v0.8.1", "")
 
 	config := dogeboxd.ServerConfig{
 		DataDir: t.TempDir(),
@@ -161,9 +192,11 @@ func TestQueueOSFlakeMigratorIfNeededSkipsWhenMarkerExists(t *testing.T) {
   defaultDbxRelease = "v0.8.1";
 }`), nil
 		},
-		CreateSuccessMock([]RepositoryTag{
-			{Tag: "v1.2.0"},
-		}),
+		mockRepoTagsFetcher{
+			tags: []system.RepositoryTag{
+				{Tag: "v1.2.0"},
+			},
+		},
 		func(_ string, releaseVersion string) (string, error) {
 			if releaseVersion == "v1.2.0" {
 				return "target-rev", nil

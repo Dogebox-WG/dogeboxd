@@ -104,16 +104,11 @@ func (t server) Start() {
 
 	if t.sm.Get().Dogebox.InitialState.HasFullyConfigured {
 		go func() {
-			jobID, queuedSelfHeal, err := system.QueueOSFlakeMigratorIfNeeded(t.config, dbx.AddAction)
-			if err != nil {
-				log.Printf("OS flake migrator check failed: %v", err)
-			}
-			if queuedSelfHeal {
-				log.Printf("Queued startup OS flake migrator job: %s", jobID)
+			if t.checkAndPerformPostUpgradeMigrations(dbx) {
 				return
 			}
 
-			jobID = dbx.AddAction(dogeboxd.UpdateNixCache{})
+			jobID := dbx.AddAction(dogeboxd.UpdateNixCache{})
 			log.Printf("Queued startup nix cache update job: %s", jobID)
 		}()
 	}
