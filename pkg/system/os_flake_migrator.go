@@ -1,0 +1,238 @@
+package system
+
+import (
+	"encoding/json"
+	"errors"
+	"fmt"
+	"log"
+	"os"
+	"path/filepath"
+	"regexp"
+
+	dogeboxd "github.com/Dogebox-WG/dogeboxd/pkg"
+	"github.com/Dogebox-WG/dogeboxd/pkg/version"
+	"golang.org/x/mod/semver"
+)
+
+const installedOSFlakePath = "/etc/nixos/flake.nix"
+const osFlakeMigratorMarkerFilename = "os_flake_migrator_attempted"
+const osFlakeMigratorCutoverVersion = "v0.9.0"
+
+var ErrNoMatchingOSFlakeRelease = errors.New("no matching os release found for current dogeboxd revision")
+
+// This file implements a one-shot startup migrator for systems that upgraded
+// from pre-0.9 releases. Those systems may boot into a new dogeboxd package
+// while still running an older /etc/nixos flake, because the old updater did
+// not pass a staged flake directory into the rebuild step.
+//
+// The migrator repairs that state by:
+// 1. reading the installed OS flake version from /etc/nixos/flake.nix,
+// 2. detecting whether it predates the 0.9 generation,
+// 3. inferring which OS tag the user picked by matching the running dogeboxd
+//    revision against OS release flake locks,
+// 4. queueing the normal SystemUpdate path once, and
+// 5. writing a marker file so startup does not loop on repeated failures.
+//
+// The migrator intentionally does not contain OS upgrade logic itself. Once it
+// has decided that a migration is needed, it reuses the existing SystemUpdate
+// path so the new system handles cloning, staging, and calling _dbxroot with
+// the staged flake directory.
+func getOSFlakeMigratorMarkerPath(config dogeboxd.ServerConfig) string {
+	return filepath.Join(config.DataDir, osFlakeMigratorMarkerFilename)
+}
+
+var osFlakeVersionPatterns = []*regexp.Regexp{
+	regexp.MustCompile(`(?m)^\s*defaultDbxRelease\s*=\s*"(v[^"]+)"`),
+	regexp.MustCompile(`(?m)^\s*dbxRelease\s*=\s*"(v[^"]+)"`),
+}
+
+// getInstalledOSFlakeVersion reads the release declared by the installed flake
+// itself. That keeps the migrator anchored to the OS flake generation.
+func getInstalledOSFlakeVersion(readFile func(string) ([]byte, error), flakePath string) (string, error) {
+	flakeContents, err := readFile(flakePath)
+	if err != nil {
+		return "", err
+	}
+
+	content := string(flakeContents)
+	for _, pattern := range osFlakeVersionPatterns {
+		match := pattern.FindStringSubmatch(content)
+		if len(match) < 2 {
+			continue
+		}
+		if !semver.IsValid(match[1]) {
+			return "", fmt.Errorf("installed os flake version %q is not valid semver", match[1])
+		}
+		return match[1], nil
+	}
+
+	return "", fmt.Errorf("installed os flake version not found in %s", flakePath)
+}
+
+func osFlakeNeedsMigration(installedFlakeVersion string) bool {
+	return semver.Compare(semver.MajorMinor(installedFlakeVersion), osFlakeMigratorCutoverVersion) < 0
+}
+
+func shouldSkipOSFlakeMigrator(config dogeboxd.ServerConfig) (bool, error) {
+	_, err := os.Stat(getOSFlakeMigratorMarkerPath(config))
+	if err == nil {
+		return true, nil
+	}
+	if os.IsNotExist(err) {
+		return false, nil
+	}
+	return false, err
+}
+
+func writeOSFlakeMigratorMarker(config dogeboxd.ServerConfig) error {
+	markerPath := getOSFlakeMigratorMarkerPath(config)
+	if err := os.MkdirAll(filepath.Dir(markerPath), 0755); err != nil {
+		return err
+	}
+
+	file, err := os.Create(markerPath)
+	if err != nil {
+		return err
+	}
+	return file.Close()
+}
+
+// Each OS release pins a specific dogeboxd revision in its flake.lock. The
+// migrator uses that to recover the release the user originally selected.
+func getDogeboxdRevisionFromReleaseFlake(tmpDir string, releaseVersion string) (string, error) {
+	if tmpDir == "" {
+		tmpDir = os.TempDir()
+	}
+
+	cloneDir, err := os.MkdirTemp(tmpDir, "os-release-match-*")
+	if err != nil {
+		return "", err
+	}
+	defer os.RemoveAll(cloneDir)
+
+	if err := cloneReleaseRepository(cloneDir, releaseVersion); err != nil {
+		return "", err
+	}
+
+	flakeLockContents, err := os.ReadFile(filepath.Join(cloneDir, "flake.lock"))
+	if err != nil {
+		return "", err
+	}
+
+	var flakeLock struct {
+		Nodes map[string]struct {
+			Locked struct {
+				Rev string `json:"rev"`
+			} `json:"locked"`
+		} `json:"nodes"`
+	}
+	if err := json.Unmarshal(flakeLockContents, &flakeLock); err != nil {
+		return "", err
+	}
+
+	dogeboxdNode, ok := flakeLock.Nodes["dogeboxd"]
+	if !ok || dogeboxdNode.Locked.Rev == "" {
+		return "", fmt.Errorf("release %s does not define a dogeboxd revision in flake.lock", releaseVersion)
+	}
+
+	return dogeboxdNode.Locked.Rev, nil
+}
+
+func inferTargetReleaseForDogeboxdRevision(
+	releases []UpgradableRelease,
+	currentDogeboxdRevision string,
+	releaseDogeboxdRevision func(string, string) (string, error),
+	tmpDir string,
+) (string, error) {
+	if currentDogeboxdRevision == "" || currentDogeboxdRevision == "unknown" {
+		return "", fmt.Errorf("current dogeboxd revision is unknown")
+	}
+
+	for _, release := range releases {
+		releaseRevision, err := releaseDogeboxdRevision(tmpDir, release.Version)
+		if err != nil {
+			return "", err
+		}
+
+		if releaseRevision == currentDogeboxdRevision {
+			return release.Version, nil
+		}
+	}
+
+	return "", ErrNoMatchingOSFlakeRelease
+}
+
+// queueOSFlakeMigratorIfNeeded runs during startup after the queue exists. If
+// the installed flake is still from the legacy generation, it queues the same
+// normal SystemUpdate path the UI would have triggered and records that
+// attempt before returning.
+func queueOSFlakeMigratorIfNeeded(
+	config dogeboxd.ServerConfig,
+	enqueue func(dogeboxd.Action) string,
+	readFile func(string) ([]byte, error),
+	fetcher RepoTagsFetcher,
+	releaseDogeboxdRevision func(string, string) (string, error),
+) (string, bool, error) {
+	if config.Recovery {
+		log.Printf("Skipping OS flake migrator in recovery mode")
+		return "", false, nil
+	}
+
+	// Step 1: detect whether /etc/nixos is still on the legacy flake generation.
+	installedFlakeVersion, err := getInstalledOSFlakeVersion(readFile, installedOSFlakePath)
+	if err != nil {
+		return "", false, err
+	}
+	if !osFlakeNeedsMigration(installedFlakeVersion) {
+		log.Printf("Skipping OS flake migrator because installed OS flake version %s is already on the %s generation", installedFlakeVersion, osFlakeMigratorCutoverVersion)
+		return "", false, nil
+	}
+
+	skip, err := shouldSkipOSFlakeMigrator(config)
+	if err != nil {
+		return "", false, err
+	}
+	if skip {
+		log.Printf("Skipping OS flake migrator because it was already attempted")
+		return "", false, nil
+	}
+
+	// Step 2: recover the release the user selected by matching the running
+	// dogeboxd revision against OS release flake locks.
+	currentDogeboxdRevision := version.GetDBXRelease().Packages["dogeboxd"].Rev
+	releases, err := GetUpgradableReleasesWithFetcher(true, fetcher)
+	if err != nil {
+		return "", false, err
+	}
+
+	targetVersion, err := inferTargetReleaseForDogeboxdRevision(releases, currentDogeboxdRevision, releaseDogeboxdRevision, config.TmpDir)
+	if err != nil {
+		if errors.Is(err, ErrNoMatchingOSFlakeRelease) {
+			log.Printf("Skipping OS flake migrator because no OS release matches dogeboxd revision %s", currentDogeboxdRevision)
+			return "", false, nil
+		}
+		return "", false, err
+	}
+
+	if semver.Compare(targetVersion, installedFlakeVersion) <= 0 {
+		log.Printf("Skipping OS flake migrator because installed OS flake version %s is not older than inferred target %s", installedFlakeVersion, targetVersion)
+		return "", false, nil
+	}
+
+	// Step 3: queue the normal OS upgrade path once and record that we tried.
+	jobID := enqueue(dogeboxd.SystemUpdate{
+		Package: "os",
+		Version: targetVersion,
+	})
+	log.Printf("Queueing OS flake migrator for target %s", targetVersion)
+
+	if err := writeOSFlakeMigratorMarker(config); err != nil {
+		return jobID, true, err
+	}
+
+	return jobID, true, nil
+}
+
+func QueueOSFlakeMigratorIfNeeded(config dogeboxd.ServerConfig, enqueue func(dogeboxd.Action) string) (string, bool, error) {
+	return queueOSFlakeMigratorIfNeeded(config, enqueue, os.ReadFile, repoTagsFetcher, getDogeboxdRevisionFromReleaseFlake)
+}

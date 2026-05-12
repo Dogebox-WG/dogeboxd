@@ -103,8 +103,19 @@ func (t server) Start() {
 	atomic.StoreUint32(&dbxReady, 1)
 
 	if t.sm.Get().Dogebox.InitialState.HasFullyConfigured {
-		jobID := dbx.AddAction(dogeboxd.UpdateNixCache{})
-		log.Printf("Queued startup nix cache update job: %s", jobID)
+		go func() {
+			jobID, queuedSelfHeal, err := system.QueueOSFlakeMigratorIfNeeded(t.config, dbx.AddAction)
+			if err != nil {
+				log.Printf("OS flake migrator check failed: %v", err)
+			}
+			if queuedSelfHeal {
+				log.Printf("Queued startup OS flake migrator job: %s", jobID)
+				return
+			}
+
+			jobID = dbx.AddAction(dogeboxd.UpdateNixCache{})
+			log.Printf("Queued startup nix cache update job: %s", jobID)
+		}()
 	}
 
 	// Clean up any orphaned jobs from previous runs (stuck in queued/in_progress)
