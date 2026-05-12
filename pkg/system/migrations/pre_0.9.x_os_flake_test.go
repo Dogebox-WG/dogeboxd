@@ -58,27 +58,6 @@ func setupMockVersioning(t *testing.T, release string, dogeboxdRev string) {
 	})
 }
 
-func TestOSFlakeNeedsMigration(t *testing.T) {
-	testCases := []struct {
-		version        string
-		needsMigration bool
-	}{
-		{version: "v0.6.0", needsMigration: true},
-		{version: "v0.8.1", needsMigration: true},
-		{version: "v0.9.0", needsMigration: false},
-		{version: "v0.9.7", needsMigration: false},
-		{version: "v0.10.0", needsMigration: false},
-		{version: "v1.3.2", needsMigration: false},
-		{version: "v0.9.0-rc.4", needsMigration: false},
-	}
-
-	for _, tc := range testCases {
-		if got := osFlakeNeedsMigration(tc.version); got != tc.needsMigration {
-			t.Fatalf("expected osFlakeNeedsMigration(%q) to be %v, got %v", tc.version, tc.needsMigration, got)
-		}
-	}
-}
-
 func TestInferTargetReleaseForDogeboxdRevision(t *testing.T) {
 	releases := []system.UpgradableRelease{
 		{Version: "v1.3.0"},

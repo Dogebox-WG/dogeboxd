@@ -14,7 +14,6 @@ import (
 	"github.com/Dogebox-WG/dogeboxd/pkg/version"
 	"github.com/go-git/go-git/v5"
 	"github.com/go-git/go-git/v5/plumbing"
-	"golang.org/x/mod/semver"
 )
 
 const installedOSFlakePath = "/etc/nixos/flake.nix"
@@ -29,12 +28,12 @@ var errNoMatchingOSFlakeRelease = errors.New("no matching os release found for c
 // directory into the rebuild step.
 //
 // The migration keeps its job small:
-// 1. read the installed OS flake version from /etc/nixos/flake.nix,
-// 2. detect whether it predates the 0.9 generation,
-// 3. infer which OS tag the user picked by matching the running dogeboxd
-//    revision against OS release flake locks,
-// 4. queue the normal SystemUpdate path once, and
-// 5. write a marker file so startup does not loop on repeated failures.
+//  1. read the installed OS flake version from /etc/nixos/flake.nix,
+//  2. detect whether it predates the 0.9 generation,
+//  3. infer which OS tag the user picked by matching the running dogeboxd
+//     revision against OS release flake locks,
+//  4. queue the normal SystemUpdate path once, and
+//  5. write a marker file so startup does not loop on repeated failures.
 func getOSFlakeMigratorMarkerPath(config dogeboxd.ServerConfig) string {
 	return filepath.Join(config.DataDir, osFlakeMigratorMarkerFilename)
 }
@@ -56,17 +55,13 @@ func getInstalledOSFlakeVersion(readFile func(string) ([]byte, error), flakePath
 		if len(match) < 2 {
 			continue
 		}
-		if !semver.IsValid(match[1]) {
+		if err := validateSemverVersion(match[1], "installed os flake"); err != nil {
 			return "", fmt.Errorf("installed os flake version %q is not valid semver", match[1])
 		}
 		return match[1], nil
 	}
 
 	return "", fmt.Errorf("installed os flake version not found in %s", flakePath)
-}
-
-func osFlakeNeedsMigration(installedFlakeVersion string) bool {
-	return semver.Compare(semver.MajorMinor(installedFlakeVersion), osFlakeMigratorCutoverVersion) < 0
 }
 
 func shouldSkipOSFlakeMigrator(config dogeboxd.ServerConfig) (bool, error) {
@@ -187,7 +182,11 @@ func queueOSFlakeMigratorIfNeeded(
 	if err != nil {
 		return "", false, err
 	}
-	if !osFlakeNeedsMigration(installedFlakeVersion) {
+	requiresMigration, err := semverCheck(installedFlakeVersion, osFlakeMigratorCutoverVersion)
+	if err != nil {
+		return "", false, err
+	}
+	if !requiresMigration {
 		log.Printf("Skipping OS flake migrator because installed OS flake version %s is already on the %s generation", installedFlakeVersion, osFlakeMigratorCutoverVersion)
 		return "", false, nil
 	}
@@ -216,7 +215,11 @@ func queueOSFlakeMigratorIfNeeded(
 		return "", false, err
 	}
 
-	if semver.Compare(targetVersion, installedFlakeVersion) <= 0 {
+	targetIsNotNewer, err := semverCheck(installedFlakeVersion, targetVersion)
+	if err != nil {
+		return "", false, err
+	}
+	if !targetIsNotNewer {
 		log.Printf("Skipping OS flake migrator because installed OS flake version %s is not older than inferred target %s", installedFlakeVersion, targetVersion)
 		return "", false, nil
 	}
