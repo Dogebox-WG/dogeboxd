@@ -11,7 +11,9 @@ func TestSemverCheck(t *testing.T) {
 	}{
 		{name: "older than cutover", current: "v0.8.1", cutover: "v0.9.0", expected: true},
 		{name: "equal stable release", current: "v0.9.0", cutover: "v0.9.0", expected: false},
-		{name: "same release rc", current: "v0.9.0-rc.4", cutover: "v0.9.0", expected: false},
+		{name: "same release rc before stable", current: "v0.9.0-rc.4", cutover: "v0.9.0", expected: true},
+		{name: "earlier rc before later rc", current: "v0.9.0-rc.3", cutover: "v0.9.0-rc.4", expected: true},
+		{name: "later rc after earlier rc", current: "v0.9.0-rc.5", cutover: "v0.9.0-rc.4", expected: false},
 		{name: "future release", current: "v0.10.0", cutover: "v0.9.0", expected: false},
 	}
 

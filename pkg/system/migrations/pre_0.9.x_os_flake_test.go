@@ -101,7 +101,7 @@ func TestQueueOSFlakeMigratorIfNeededQueuesOneUpdateAndWritesMarker(t *testing.T
 		},
 		func(string) ([]byte, error) {
 			return []byte(`{
-  defaultDbxRelease = "v0.8.1";
+  dbxRelease = "v0.8.1";
 }`), nil
 		},
 		mockRepoTagsFetcher{
@@ -168,7 +168,7 @@ func TestQueueOSFlakeMigratorIfNeededSkipsWhenMarkerExists(t *testing.T) {
 		},
 		func(string) ([]byte, error) {
 			return []byte(`{
-  defaultDbxRelease = "v0.8.1";
+  dbxRelease = "v0.8.1";
 }`), nil
 		},
 		mockRepoTagsFetcher{

@@ -38,10 +38,7 @@ func getOSFlakeMigratorMarkerPath(config dogeboxd.ServerConfig) string {
 	return filepath.Join(config.DataDir, osFlakeMigratorMarkerFilename)
 }
 
-var osFlakeVersionPatterns = []*regexp.Regexp{
-	regexp.MustCompile(`(?m)^\s*defaultDbxRelease\s*=\s*"(v[^"]+)"`),
-	regexp.MustCompile(`(?m)^\s*dbxRelease\s*=\s*"(v[^"]+)"`),
-}
+var osFlakeVersionPattern = regexp.MustCompile(`(?m)^\s*dbxRelease\s*=\s*"(v[^"]+)"`)
 
 func getInstalledOSFlakeVersion(readFile func(string) ([]byte, error), flakePath string) (string, error) {
 	flakeContents, err := readFile(flakePath)
@@ -49,19 +46,14 @@ func getInstalledOSFlakeVersion(readFile func(string) ([]byte, error), flakePath
 		return "", err
 	}
 
-	content := string(flakeContents)
-	for _, pattern := range osFlakeVersionPatterns {
-		match := pattern.FindStringSubmatch(content)
-		if len(match) < 2 {
-			continue
-		}
-		if err := validateSemverVersion(match[1], "installed os flake"); err != nil {
-			return "", fmt.Errorf("installed os flake version %q is not valid semver", match[1])
-		}
-		return match[1], nil
+	match := osFlakeVersionPattern.FindStringSubmatch(string(flakeContents))
+	if len(match) != 2 {
+		return "", fmt.Errorf("installed os flake version not found in %s", flakePath)
 	}
-
-	return "", fmt.Errorf("installed os flake version not found in %s", flakePath)
+	if err := validateSemverVersion(match[1], "installed os flake"); err != nil {
+		return "", fmt.Errorf("installed os flake version %q is not valid semver", match[1])
+	}
+	return match[1], nil
 }
 
 func shouldSkipOSFlakeMigrator(config dogeboxd.ServerConfig) (bool, error) {
