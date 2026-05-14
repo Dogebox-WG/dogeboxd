@@ -203,6 +203,8 @@ func GetSystemDisks() ([]dogeboxd.SystemDisk, error) {
 		return []dogeboxd.SystemDisk{}, err
 	}
 
+	log.Printf("GetSystemDisks: discovered %d raw block devices", len(devices))
+
 	disks := []dogeboxd.SystemDisk{}
 
 	for _, device := range devices {
@@ -286,8 +288,34 @@ func GetSystemDisks() ([]dogeboxd.SystemDisk, error) {
 			IsAlreadyUsed: isAlreadyUsed,
 		}
 
+		childNames := make([]string, 0, len(disk.Children))
+		for _, child := range disk.Children {
+			childNames = append(childNames, child.Name)
+		}
+
+		log.Printf(
+			"GetSystemDisks: rawDevice name=%s type=%s sizeBytes=%d rawMountPoint=%q rawChildren=%d diskPath=%s label=%s mountPoints=%v childNames=%v bootMedia=%t installUsable=%t installSizeOK=%t storageUsable=%t storageSizeOK=%t alreadyUsed=%t",
+			device.Name,
+			device.Type,
+			device.Size.Int64,
+			device.MountPoint,
+			len(device.Children),
+			disk.Path,
+			disk.Label,
+			disk.MountPoints,
+			childNames,
+			disk.BootMedia,
+			disk.Suitability.Install.Usable,
+			disk.Suitability.Install.SizeOK,
+			disk.Suitability.Storage.Usable,
+			disk.Suitability.Storage.SizeOK,
+			disk.Suitability.IsAlreadyUsed,
+		)
+
 		disks = append(disks, disk)
 	}
+
+	log.Printf("GetSystemDisks: returning %d processed disks", len(disks))
 
 	return disks, nil
 }
@@ -300,10 +328,47 @@ func GetInstallTargetDisks() ([]dogeboxd.SystemDisk, error) {
 
 	installDisks := make([]dogeboxd.SystemDisk, 0, len(disks))
 	for _, disk := range disks {
-		if IsInstallTargetDisk(disk) {
-			installDisks = append(installDisks, disk)
+		reasons := make([]string, 0, 3)
+		if !disk.Suitability.Install.Usable {
+			reasons = append(reasons, "install.usable=false")
 		}
+		if !disk.Suitability.Install.SizeOK {
+			reasons = append(reasons, "install.sizeOK=false")
+		}
+		if disk.BootMedia {
+			reasons = append(reasons, "bootMedia=true")
+		}
+		if len(reasons) == 0 {
+			log.Printf(
+				"GetInstallTargetDisks: including disk name=%s path=%s sizeBytes=%d mountPoints=%v bootMedia=%t installUsable=%t installSizeOK=%t alreadyUsed=%t",
+				disk.Name,
+				disk.Path,
+				disk.Size,
+				disk.MountPoints,
+				disk.BootMedia,
+				disk.Suitability.Install.Usable,
+				disk.Suitability.Install.SizeOK,
+				disk.Suitability.IsAlreadyUsed,
+			)
+			installDisks = append(installDisks, disk)
+			continue
+		}
+
+		log.Printf(
+			"GetInstallTargetDisks: excluding disk name=%s path=%s sizeBytes=%d mountPoints=%v bootMedia=%t installUsable=%t installSizeOK=%t alreadyUsed=%t reasons=%s",
+			disk.Name,
+			disk.Path,
+			disk.Size,
+			disk.MountPoints,
+			disk.BootMedia,
+			disk.Suitability.Install.Usable,
+			disk.Suitability.Install.SizeOK,
+			disk.Suitability.IsAlreadyUsed,
+			strings.Join(reasons, ","),
+		)
 	}
+
+	log.Printf("GetInstallTargetDisks: returning %d install targets from %d system disks", len(installDisks), len(disks))
 
 	return installDisks, nil
 }
@@ -412,7 +477,9 @@ func InstallToDisk(t dogeboxd.Dogeboxd, config dogeboxd.ServerConfig, dbxState d
 		return err
 	}
 
-	// Check if the specified disk name exists in possibleDisks
+	log.Printf("InstallToDisk: requested disk=%s availableInstallTargets=%d", name, len(disks))
+
+	// Check if the specified disk name exists in the filtered list of install target disks
 	diskExists := false
 	for _, disk := range disks {
 		if disk.Name == name {
@@ -422,6 +489,11 @@ func InstallToDisk(t dogeboxd.Dogeboxd, config dogeboxd.ServerConfig, dbxState d
 	}
 
 	if !diskExists {
+		availableDisks := make([]string, 0, len(disks))
+		for _, disk := range disks {
+			availableDisks = append(availableDisks, disk.Name)
+		}
+		log.Printf("InstallToDisk: requested disk=%s was not found in install target list=%v", name, availableDisks)
 		return fmt.Errorf("specified disk '%s' not found in list of install target disks", name)
 	}
 

@@ -132,8 +132,15 @@ func authReq(dbx dogeboxd.Dogeboxd, sm dogeboxd.StateManager, route string, next
 		_, ok := getSession(r, tokenExtractor)
 
 		if !ok {
+			if route == "GET /system/install-disks" || route == "GET /system/disks" {
+				log.Printf("authReq: rejecting %s remote=%s authHeaderPresent=%t", route, r.RemoteAddr, r.Header.Get("Authorization") != "")
+			}
 			w.WriteHeader(401)
 			return
+		}
+
+		if route == "GET /system/install-disks" || route == "GET /system/disks" {
+			log.Printf("authReq: authorised %s remote=%s authHeaderPresent=%t", route, r.RemoteAddr, r.Header.Get("Authorization") != "")
 		}
 
 		next.ServeHTTP(w, r)
@@ -144,9 +151,16 @@ func authReq(dbx dogeboxd.Dogeboxd, sm dogeboxd.StateManager, route string, next
 		dbxis := sm.Get().Dogebox.InitialState
 
 		if !dbxis.HasFullyConfigured {
+			if route == "GET /system/install-disks" || route == "GET /system/disks" {
+				log.Printf("authReq: allowing %s without auth because system is not fully configured", route)
+			}
 			// We good.
 			next.ServeHTTP(w, r)
 			return
+		}
+
+		if route == "GET /system/install-disks" || route == "GET /system/disks" {
+			log.Printf("authReq: system is fully configured, requiring auth for %s", route)
 		}
 
 		// Still check authentication if system is configured
