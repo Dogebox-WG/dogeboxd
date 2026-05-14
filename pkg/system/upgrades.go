@@ -226,6 +226,17 @@ func buildSystemUpdateCommandArgs(stagedFlakeDir string, updateVersion string, u
 	return args
 }
 
+func redactGitHubTokenInArgs(args []string) []string {
+	out := make([]string, len(args))
+	copy(out, args)
+	for i := 0; i < len(out)-1; i++ {
+		if out[i] == "--github-token" {
+			out[i+1] = "[REDACTED]"
+		}
+	}
+	return out
+}
+
 func stageReleaseFlake(tmpDir, updateVersion string, logger dogeboxd.SubLogger) (string, string, error) {
 	return stageReleaseFlakeWithClone(tmpDir, updateVersion, logger, cloneReleaseRepository)
 }
@@ -321,7 +332,7 @@ func doSystemUpdateWithDependencies(
 
 	cmd := execCommand(SUDO_COMMAND, buildSystemUpdateCommandArgs(stagedFlakeDir, updateVersion, buildSystemUpdateUnitName(updateVersion, commitHash))...)
 	if logger != nil {
-		logger.Logf("Running command: %s %s", cmd.Path, strings.Join(cmd.Args[1:], " "))
+		logger.Logf("Running command: %s %s", cmd.Path, strings.Join(redactGitHubTokenInArgs(cmd.Args[1:]), " "))
 		cmd.Stdout = io.MultiWriter(os.Stdout, dogeboxd.NewLineWriter(func(s string) {
 			logger.Log(s)
 		}))
