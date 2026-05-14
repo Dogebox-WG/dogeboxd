@@ -179,6 +179,7 @@ func authReq(dbx dogeboxd.Dogeboxd, sm dogeboxd.StateManager, route string, next
 		route == "GET /system/recovery-bootstrap" ||
 		route == "POST /system/bootstrap" ||
 		route == "GET /system/disks" ||
+		route == "GET /system/install-disks" ||
 		route == "GET /system/keymaps" ||
 		route == "POST /system/keymap" ||
 		route == "GET /system/timezones" ||
