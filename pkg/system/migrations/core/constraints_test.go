@@ -57,6 +57,18 @@ func TestVersionConstraintCheck(t *testing.T) {
 			constraint: ">v0.9.0",
 			expected:   false,
 		},
+		{
+			name:       "greater than comparator matches next major release",
+			current:    "v1.0.0",
+			constraint: ">v0.9.0",
+			expected:   true,
+		},
+		{
+			name:       "greater than comparator excludes later patch in same minor line",
+			current:    "v0.9.1",
+			constraint: ">v0.9.0",
+			expected:   false,
+		},
 	}
 
 	for _, tc := range testCases {
