@@ -38,7 +38,7 @@ var OSFlakeMigration = core.Migration{
 //
 // The migration process:
 //  1. read the installed OS flake version from /etc/nixos/flake.nix,
-//  2. require an installed OS flake version matching >=v0.9.0-rc.1,
+//  2. require an installed OS flake version matching <=v0.9.0-rc.1,
 //  3. select the latest eligible OS release,
 //  4. compare that target against the installed OS flake version,
 //  5. queue the normal SystemUpdate path once, and
@@ -101,12 +101,12 @@ func determineOSFlakeMigrationTarget(ctx core.Context, record core.MigrationReco
 		return "", "", false, "", err
 	}
 
-	matchesInstalledVersionConstraint, err := core.VersionConstraintCheck(installedFlakeVersion, ">="+osFlakeMigrationMetadata.Version)
+	matchesInstalledVersionConstraint, err := core.VersionConstraintCheck(installedFlakeVersion, "<="+osFlakeMigrationMetadata.Version)
 	if err != nil {
 		return "", "", false, "", err
 	}
 	if !matchesInstalledVersionConstraint {
-		return installedFlakeVersion, "", false, fmt.Sprintf("installed OS flake version %s is older than %s", installedFlakeVersion, osFlakeMigrationMetadata.Version), nil
+		return installedFlakeVersion, "", false, fmt.Sprintf("installed OS flake version %s is newer than %s", installedFlakeVersion, osFlakeMigrationMetadata.Version), nil
 	}
 
 	releases, err := system.GetUpgradableReleasesWithFetcher(record.BoolConfig(osFlakeIncludePreReleasesConfigKey), ctx.RepoTagsFetcherOrDefault())

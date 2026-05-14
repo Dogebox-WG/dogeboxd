@@ -77,6 +77,7 @@ func RunMigrations(ctx Context, migrations []Migration) (string, bool, error) {
 			}
 		}
 
+		log.Printf("Running %s", migration.DisplayName)
 		jobID, queued, err := migration.Run(ctx, record)
 		if err != nil {
 			log.Printf("%s failed: %v", migration.DisplayName, err)

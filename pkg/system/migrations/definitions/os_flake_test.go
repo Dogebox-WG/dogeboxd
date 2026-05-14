@@ -32,8 +32,8 @@ func TestOSFlakeMigrationRequirementsAllowEligibleInstalledVersions(t *testing.T
 		installedFlakeVersion string
 	}{
 		{
-			name:                  "0.9 stable installed flake",
-			installedFlakeVersion: "v0.9.0",
+			name:                  "pre 0.9 installed flake",
+			installedFlakeVersion: "v0.8.1",
 		},
 		{
 			name:                  "0.9 prerelease installed flake",
@@ -69,13 +69,13 @@ func TestOSFlakeMigrationRequirementsAllowEligibleInstalledVersions(t *testing.T
 	}
 }
 
-func TestOSFlakeMigrationRequirementsSkipWhenInstalledVersionIsBeforeConstraint(t *testing.T) {
+func TestOSFlakeMigrationRequirementsSkipWhenInstalledVersionIsAfterConstraint(t *testing.T) {
 	ctx := core.Context{
 		Config: dogeboxd.ServerConfig{
 			DataDir: t.TempDir(),
 			TmpDir:  t.TempDir(),
 		},
-		ReadFile: testOSFlakeReadFile("v0.8.1"),
+		ReadFile: testOSFlakeReadFile("v0.9.0"),
 		RepoTagsFetcher: mockRepoTagsFetcher{
 			tags: []system.RepositoryTag{
 				{Tag: "v1.2.0"},
@@ -88,7 +88,7 @@ func TestOSFlakeMigrationRequirementsSkipWhenInstalledVersionIsBeforeConstraint(
 		t.Fatalf("expected no error, got %v", err)
 	}
 	if applies {
-		t.Fatal("expected installed version constraint to skip migration")
+		t.Fatal("expected installed version after constraint to skip migration")
 	}
 	if reason == "" {
 		t.Fatal("expected skip reason")
@@ -101,7 +101,7 @@ func TestOSFlakeMigrationRequirementsSkipWhenNoStableReleaseAvailable(t *testing
 			DataDir: t.TempDir(),
 			TmpDir:  t.TempDir(),
 		},
-		ReadFile: testOSFlakeReadFile("v0.9.0"),
+		ReadFile: testOSFlakeReadFile("v0.9.0-rc.1"),
 		RepoTagsFetcher: mockRepoTagsFetcher{
 			tags: []system.RepositoryTag{
 				{Tag: "v1.2.0-rc.1"},
@@ -127,7 +127,7 @@ func TestRunOSFlakeMigrationQueuesLatestStableUpdate(t *testing.T) {
 			DataDir: t.TempDir(),
 			TmpDir:  t.TempDir(),
 		},
-		ReadFile: testOSFlakeReadFile("v0.9.0"),
+		ReadFile: testOSFlakeReadFile("v0.8.1"),
 		RepoTagsFetcher: mockRepoTagsFetcher{
 			tags: []system.RepositoryTag{
 				{Tag: "v1.2.0-rc.1"},
