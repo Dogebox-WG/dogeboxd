@@ -2,12 +2,14 @@ package definitions
 
 import (
 	"fmt"
+	"log"
 	"os"
 	"regexp"
 
 	dogeboxd "github.com/Dogebox-WG/dogeboxd/pkg"
 	"github.com/Dogebox-WG/dogeboxd/pkg/system"
 	"github.com/Dogebox-WG/dogeboxd/pkg/system/migrations/core"
+	"github.com/Dogebox-WG/dogeboxd/pkg/version"
 )
 
 const installedOSFlakePath = "/etc/nixos/flake.nix"
@@ -67,7 +69,7 @@ func osFlakeMigrationRequirements(ctx core.Context, record core.MigrationRecord)
 		return false, "running in recovery mode", nil
 	}
 
-	_, _, applies, reason, err := determineOSFlakeMigrationTarget(ctx, record)
+	_, _, applies, reason, err := determineOSFlakeMigrationTarget(ctx, record, true)
 	if err != nil {
 		return false, "", err
 	}
@@ -79,7 +81,7 @@ func osFlakeMigrationRequirements(ctx core.Context, record core.MigrationRecord)
 }
 
 func runOSFlakeMigration(ctx core.Context, record core.MigrationRecord) (string, bool, error) {
-	_, targetVersion, applies, _, err := determineOSFlakeMigrationTarget(ctx, record)
+	_, targetVersion, applies, _, err := determineOSFlakeMigrationTarget(ctx, record, false)
 	if err != nil {
 		return "", false, err
 	}
@@ -95,7 +97,7 @@ func runOSFlakeMigration(ctx core.Context, record core.MigrationRecord) (string,
 	return jobID, true, nil
 }
 
-func determineOSFlakeMigrationTarget(ctx core.Context, record core.MigrationRecord) (string, string, bool, string, error) {
+func determineOSFlakeMigrationTarget(ctx core.Context, record core.MigrationRecord, logDiscovery bool) (string, string, bool, string, error) {
 	installedFlakeVersion, err := getInstalledOSFlakeVersion(ctx.ReadFileOrDefault(), installedOSFlakePath)
 	if err != nil {
 		return "", "", false, "", err
@@ -109,12 +111,31 @@ func determineOSFlakeMigrationTarget(ctx core.Context, record core.MigrationReco
 		return installedFlakeVersion, "", false, fmt.Sprintf("installed OS flake version %s is newer than %s", installedFlakeVersion, osFlakeMigrationMetadata.Version), nil
 	}
 
-	releases, err := system.GetUpgradableReleasesWithFetcher(record.BoolConfig(osFlakeIncludePreReleasesConfigKey), ctx.RepoTagsFetcherOrDefault())
+	currentDBXRelease := version.GetDBXRelease().Release
+	includePreReleases := record.BoolConfig(osFlakeIncludePreReleasesConfigKey)
+	releases, err := system.GetUpgradableReleasesForVersionWithFetcher(currentDBXRelease, includePreReleases, ctx.RepoTagsFetcherOrDefault())
 	if err != nil {
 		return installedFlakeVersion, "", false, "", err
 	}
+	if logDiscovery {
+		latestEligibleRelease := "none"
+		if len(releases) > 0 {
+			latestEligibleRelease = releases[0].Version
+		}
+		log.Printf(
+			"OS flake migrator release discovery: installed OS flake=%s, current DBX release=%s, includePreReleases=%t, latest eligible OS release=%s",
+			installedFlakeVersion,
+			currentDBXRelease,
+			includePreReleases,
+			latestEligibleRelease,
+		)
+	}
 	if len(releases) == 0 {
-		return installedFlakeVersion, "", false, fmt.Sprintf("no eligible OS releases are available for %s", osFlakeMigrationMetadata.Version), nil
+		preReleasePolicy := "pre-releases excluded"
+		if includePreReleases {
+			preReleasePolicy = "pre-releases included"
+		}
+		return installedFlakeVersion, "", false, fmt.Sprintf("no eligible OS releases are available newer than current DBX release %s (%s)", currentDBXRelease, preReleasePolicy), nil
 	}
 
 	targetVersion := releases[0].Version

@@ -119,7 +119,10 @@ func GetUpgradableReleases(includePreReleases bool) ([]UpgradableRelease, error)
 
 func GetUpgradableReleasesWithFetcher(includePreReleases bool, fetcher RepoTagsFetcher) ([]UpgradableRelease, error) {
 	dbxRelease := version.GetDBXRelease()
+	return GetUpgradableReleasesForVersionWithFetcher(dbxRelease.Release, includePreReleases, fetcher)
+}
 
+func GetUpgradableReleasesForVersionWithFetcher(currentRelease string, includePreReleases bool, fetcher RepoTagsFetcher) ([]UpgradableRelease, error) {
 	tags, err := fetcher.GetRepoTags(RELEASE_REPOSITORY)
 	if err != nil {
 		return []UpgradableRelease{}, err
@@ -133,7 +136,7 @@ func GetUpgradableReleasesWithFetcher(includePreReleases bool, fetcher RepoTagsF
 			Summary:    "Update for Dogeboxd / DKM / DPanel",
 		}
 
-		if semver.Compare(tag.Tag, dbxRelease.Release) > 0 {
+		if semver.Compare(tag.Tag, currentRelease) > 0 {
 			// If not including pre-releases, filter out pre-release versions
 			if !includePreReleases && semver.Prerelease(tag.Tag) != "" {
 				continue

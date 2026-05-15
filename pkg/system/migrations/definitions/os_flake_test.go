@@ -2,6 +2,9 @@ package definitions
 
 import (
 	"fmt"
+	"os"
+	"path/filepath"
+	"strings"
 	"testing"
 
 	dogeboxd "github.com/Dogebox-WG/dogeboxd/pkg"
@@ -24,6 +27,16 @@ func testOSFlakeReadFile(version string) func(string) ([]byte, error) {
   dbxRelease = %q;
 }`, version)), nil
 	}
+}
+
+func setupTestDBXRelease(t *testing.T, currentRelease string) {
+	t.Helper()
+
+	versionDir := t.TempDir()
+	if err := os.WriteFile(filepath.Join(versionDir, "dbx"), []byte(currentRelease+"\n"), 0644); err != nil {
+		t.Fatalf("failed to write test dbx release: %v", err)
+	}
+	t.Setenv("VERSION_PATH_OVERRIDE", versionDir)
 }
 
 func TestOSFlakeMigrationRequirementsAllowEligibleInstalledVersions(t *testing.T) {
@@ -96,6 +109,8 @@ func TestOSFlakeMigrationRequirementsSkipWhenInstalledVersionIsAfterConstraint(t
 }
 
 func TestOSFlakeMigrationRequirementsSkipWhenNoStableReleaseAvailable(t *testing.T) {
+	setupTestDBXRelease(t, "v0.8.1")
+
 	ctx := core.Context{
 		Config: dogeboxd.ServerConfig{
 			DataDir: t.TempDir(),
@@ -118,6 +133,12 @@ func TestOSFlakeMigrationRequirementsSkipWhenNoStableReleaseAvailable(t *testing
 	}
 	if reason == "" {
 		t.Fatal("expected skip reason")
+	}
+	if !strings.Contains(reason, "newer than current DBX release v0.8.1") {
+		t.Fatalf("expected skip reason to reference current DBX release, got %q", reason)
+	}
+	if !strings.Contains(reason, "pre-releases excluded") {
+		t.Fatalf("expected skip reason to mention pre-release policy, got %q", reason)
 	}
 }
 
