@@ -207,6 +207,15 @@ func determineOSFlakeMigrationDecision(ctx core.Context, record core.MigrationRe
 		return decision, nil
 	}
 
+	currentReleaseInMigrationRange, err := semverIsAtOrAbove(currentDBXRelease, osFlakeMigrationMetadata.Version)
+	if err != nil {
+		return osFlakeMigrationDecision{}, err
+	}
+	if currentReleaseInMigrationRange {
+		decision.targetVersion = currentDBXRelease
+		return decision, nil
+	}
+
 	if len(releases) == 0 {
 		preReleasePolicy := "pre-releases excluded"
 		if includePreReleases {

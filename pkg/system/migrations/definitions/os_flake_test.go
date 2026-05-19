@@ -262,6 +262,51 @@ func TestRunOSFlakeMigrationQueuesLatestPrereleaseWhenEnabled(t *testing.T) {
 	}
 }
 
+func TestRunOSFlakeMigrationQueuesCurrentReleaseWhenDBXUpdatedButFlakeIsStale(t *testing.T) {
+	setupTestDBXRelease(t, "v0.9.0-rc.8")
+
+	ctx := core.Context{
+		Config: dogeboxd.ServerConfig{
+			DataDir: t.TempDir(),
+			TmpDir:  t.TempDir(),
+		},
+		ReadFile:        testOSFlakeReadFiles(testOSFlakeFiles("v0.8.2")),
+		RepoTagsFetcher: mockRepoTagsFetcher{},
+	}
+
+	var queuedActions []dogeboxd.Action
+	ctx.Enqueue = func(action dogeboxd.Action) string {
+		queuedActions = append(queuedActions, action)
+		return "job-current-release"
+	}
+
+	jobID, queued, err := OSFlakeMigration.Run(ctx, core.MigrationRecord{
+		Config: map[string]any{
+			osFlakeIncludePreReleasesConfigKey: true,
+		},
+	})
+	if err != nil {
+		t.Fatalf("expected no error, got %v", err)
+	}
+	if !queued {
+		t.Fatal("expected migration to queue a current-release repair update")
+	}
+	if jobID != "job-current-release" {
+		t.Fatalf("expected job-current-release, got %s", jobID)
+	}
+	if len(queuedActions) != 1 {
+		t.Fatalf("expected exactly one queued action, got %d", len(queuedActions))
+	}
+
+	update, ok := queuedActions[0].(dogeboxd.SystemUpdate)
+	if !ok {
+		t.Fatalf("expected SystemUpdate action, got %T", queuedActions[0])
+	}
+	if update.Package != "os" || update.Version != "v0.9.0-rc.8" {
+		t.Fatalf("unexpected queued update: %+v", update)
+	}
+}
+
 func TestRunOSFlakeMigrationSkipsWhenSystemJobAlreadyActive(t *testing.T) {
 	setupTestDBXRelease(t, "v0.8.1")
 
