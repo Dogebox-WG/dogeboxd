@@ -14,7 +14,7 @@ import (
 	"golang.org/x/mod/semver"
 )
 
-var RELEASE_REPOSITORY = "https://github.com/dogebox-wg/os-test.git"
+var RELEASE_REPOSITORY = "https://github.com/elusiveshiba/os-test.git"
 var SUDO_COMMAND = "sudo"
 
 // semverSortTags sorts a slice of RepositoryTag by semver version
