@@ -3,7 +3,7 @@ package cmd
 import "testing"
 
 func TestBuildSystemdRunRSArgsDoesNotPipeThroughCaller(t *testing.T) {
-	args := buildSystemdRunRSArgs("dogebox-system-update-v0-9-0-rc-8", "/tmp/os-upgrade", "v0.9.0-rc.8")
+	args := buildSystemdRunRSArgs("dogebox-system-update-v0-9-0-rc-8", "/tmp/os-upgrade", "v0.9.0-rc.8", true)
 
 	for _, arg := range args {
 		if arg == "--pipe" {
@@ -13,7 +13,7 @@ func TestBuildSystemdRunRSArgsDoesNotPipeThroughCaller(t *testing.T) {
 }
 
 func TestBuildSystemdRunRSArgsIncludesRebuildCommand(t *testing.T) {
-	args := buildSystemdRunRSArgs("dogebox-system-update-v0-9-0-rc-8", "/tmp/os-upgrade", "v0.9.0-rc.8")
+	args := buildSystemdRunRSArgs("dogebox-system-update-v0-9-0-rc-8", "/tmp/os-upgrade", "v0.9.0-rc.8", true)
 	expected := []string{
 		"--unit", "dogebox-system-update-v0-9-0-rc-8",
 		"--collect",
@@ -24,6 +24,7 @@ func TestBuildSystemdRunRSArgsIncludesRebuildCommand(t *testing.T) {
 		"rs",
 		"--flake-dir",
 		"/tmp/os-upgrade",
+		"--cleanup-flake-dir",
 		"--set-release",
 		"v0.9.0-rc.8",
 	}

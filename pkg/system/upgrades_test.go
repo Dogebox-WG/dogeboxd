@@ -564,6 +564,7 @@ func TestSystemUpdaterDoSystemUpdateUsesStagedFlakeDir(t *testing.T) {
 		buildSystemUpdateUnitName("v1.2.0", stagedCommitHash(t, cloneFunc, "v1.2.0")),
 		"--flake-dir",
 		stagedPath,
+		"--cleanup-flake-dir",
 		"--set-release",
 		"v1.2.0",
 	}
@@ -576,8 +577,8 @@ func TestSystemUpdaterDoSystemUpdateUsesStagedFlakeDir(t *testing.T) {
 		}
 	}
 
-	if _, err := os.Stat(stagedPath); !os.IsNotExist(err) {
-		t.Fatalf("expected staged flake dir %q to be cleaned up, stat err: %v", stagedPath, err)
+	if _, err := os.Stat(stagedPath); err != nil {
+		t.Fatalf("expected staged flake dir %q to remain available for transient unit cleanup, stat err: %v", stagedPath, err)
 	}
 }
 

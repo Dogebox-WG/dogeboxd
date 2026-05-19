@@ -235,6 +235,7 @@ func buildSystemUpdateCommandArgs(stagedFlakeDir string, updateVersion string, u
 		unitName,
 		"--flake-dir",
 		stagedFlakeDir,
+		"--cleanup-flake-dir",
 		"--set-release",
 		updateVersion,
 	}
@@ -332,11 +333,6 @@ func doSystemUpdateWithDependencies(
 	if err != nil {
 		return err
 	}
-	defer func() {
-		if err := os.RemoveAll(stagedFlakeDir); err != nil && logger != nil {
-			logger.Errf("Failed to clean up staged flake %s: %v", stagedFlakeDir, err)
-		}
-	}()
 
 	cmd := execCommand(SUDO_COMMAND, buildSystemUpdateCommandArgs(stagedFlakeDir, updateVersion, buildSystemUpdateUnitName(updateVersion, commitHash))...)
 	if logger != nil {

@@ -13,6 +13,7 @@ var nixRSSetRelease string
 var nixRSFlakeDir string
 var nixRSSystemdRun bool
 var nixRSSystemdUnit string
+var nixRSCleanupFlakeDir bool
 
 func runCurrentSystemActivation() error {
 	execCmd := exec.Command("/nix/var/nix/profiles/system/bin/switch-to-configuration", "switch")
@@ -27,13 +28,13 @@ func runSystemdWrappedRS() error {
 		unitName = "dogebox-system-update"
 	}
 
-	execCmd := exec.Command("/run/current-system/sw/bin/systemd-run", buildSystemdRunRSArgs(unitName, nixRSFlakeDir, nixRSSetRelease)...)
+	execCmd := exec.Command("/run/current-system/sw/bin/systemd-run", buildSystemdRunRSArgs(unitName, nixRSFlakeDir, nixRSSetRelease, nixRSCleanupFlakeDir)...)
 	execCmd.Stdout = os.Stdout
 	execCmd.Stderr = os.Stderr
 	return execCmd.Run()
 }
 
-func buildSystemdRunRSArgs(unitName string, flakeDir string, setRelease string) []string {
+func buildSystemdRunRSArgs(unitName string, flakeDir string, setRelease string, cleanupFlakeDir bool) []string {
 	systemdArgs := []string{
 		"--unit", unitName,
 		"--collect",
@@ -45,6 +46,9 @@ func buildSystemdRunRSArgs(unitName string, flakeDir string, setRelease string) 
 	}
 	if flakeDir != "" {
 		systemdArgs = append(systemdArgs, "--flake-dir", flakeDir)
+	}
+	if cleanupFlakeDir {
+		systemdArgs = append(systemdArgs, "--cleanup-flake-dir")
 	}
 	if setRelease != "" {
 		systemdArgs = append(systemdArgs, "--set-release", setRelease)
@@ -91,6 +95,12 @@ var rsCmd = &cobra.Command{
 				os.Exit(1)
 			}
 		}
+		if nixRSCleanupFlakeDir && nixRSFlakeDir != "" {
+			if err := os.RemoveAll(nixRSFlakeDir); err != nil {
+				fmt.Fprintf(os.Stderr, "Error cleaning staged flake directory %s: %v\n", nixRSFlakeDir, err)
+				os.Exit(1)
+			}
+		}
 	},
 }
 
@@ -99,5 +109,6 @@ func init() {
 	rsCmd.Flags().StringVar(&nixRSFlakeDir, "flake-dir", "", "rebuild from a specific flake directory")
 	rsCmd.Flags().BoolVar(&nixRSSystemdRun, "systemd-run", false, "run rebuild inside a transient systemd unit")
 	rsCmd.Flags().StringVar(&nixRSSystemdUnit, "systemd-unit", "", "transient systemd unit name")
+	rsCmd.Flags().BoolVar(&nixRSCleanupFlakeDir, "cleanup-flake-dir", false, "remove the flake directory after a successful rebuild")
 	nixCmd.AddCommand(rsCmd)
 }
