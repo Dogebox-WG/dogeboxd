@@ -55,12 +55,12 @@ func connect(iface string, ssid string, password string) error {
 			if password == "" {
 				err = wifiClient.Connect(ifi, ssid)
 				if err != nil {
-					log.Fatalf("Failed to connect to network: %s on %s.", ssid, ifi.Name)
+					log.Fatalf("Failed to connect to network: %s on %s.\nerr: %v", ssid, ifi.Name, err)
 				}
 			} else {
 				err = wifiClient.ConnectWPAPSK(ifi, ssid, password)
 				if err != nil {
-					log.Fatalf("Failed to connect to network: %s on %s.", ssid, ifi.Name)
+					log.Fatalf("Failed to connect to network: %s on %s.\nerr: %v", ssid, ifi.Name, err)
 				}
 			}
 			break
