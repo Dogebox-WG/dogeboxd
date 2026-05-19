@@ -27,27 +27,30 @@ func runSystemdWrappedRS() error {
 		unitName = "dogebox-system-update"
 	}
 
+	execCmd := exec.Command("/run/current-system/sw/bin/systemd-run", buildSystemdRunRSArgs(unitName, nixRSFlakeDir, nixRSSetRelease)...)
+	execCmd.Stdout = os.Stdout
+	execCmd.Stderr = os.Stderr
+	return execCmd.Run()
+}
+
+func buildSystemdRunRSArgs(unitName string, flakeDir string, setRelease string) []string {
 	systemdArgs := []string{
 		"--unit", unitName,
 		"--collect",
 		"--wait",
-		"--pipe",
 		"--setenv=PATH=/run/current-system/sw/bin:/run/wrappers/bin",
 		"/run/wrappers/bin/_dbxroot",
 		"nix",
 		"rs",
 	}
-	if nixRSFlakeDir != "" {
-		systemdArgs = append(systemdArgs, "--flake-dir", nixRSFlakeDir)
+	if flakeDir != "" {
+		systemdArgs = append(systemdArgs, "--flake-dir", flakeDir)
 	}
-	if nixRSSetRelease != "" {
-		systemdArgs = append(systemdArgs, "--set-release", nixRSSetRelease)
+	if setRelease != "" {
+		systemdArgs = append(systemdArgs, "--set-release", setRelease)
 	}
 
-	execCmd := exec.Command("/run/current-system/sw/bin/systemd-run", systemdArgs...)
-	execCmd.Stdout = os.Stdout
-	execCmd.Stderr = os.Stderr
-	return execCmd.Run()
+	return systemdArgs
 }
 
 var rsCmd = &cobra.Command{

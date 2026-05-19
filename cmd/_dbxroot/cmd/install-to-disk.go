@@ -108,7 +108,7 @@ Example:
 			os.Exit(1)
 		}
 
-		log.Printf("Using %s as source boot media", bootMediaDisk)
+		log.Printf("Using %s as source boot media", bootMediaDisk.Name)
 		log.Printf("Installing to target disk: %s", disk)
 
 		hasPartitionPrefix := strings.HasPrefix(disk, "/dev/nvme") || strings.HasPrefix(disk, "/dev/mmcblk")
@@ -139,7 +139,7 @@ Example:
 		utils.RunCommand("touch", "/mnt/opt/dbx-installed")
 		utils.RunCommand("chown", "dogeboxd:dogebox", "/mnt/opt/dbx-installed")
 
-		systemClosure := utils.RunCommand("readlink", "-f", "/run/current-system");
+		systemClosure := utils.RunCommand("readlink", "-f", "/run/current-system")
 
 		// Install
 		utils.RunCommand("nixos-install", "--system", strings.TrimSpace(systemClosure), "--no-root-passwd", "--root", "/mnt")
