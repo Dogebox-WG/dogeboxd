@@ -14,6 +14,13 @@ var nixRSFlakeDir string
 var nixRSSystemdRun bool
 var nixRSSystemdUnit string
 
+func runCurrentSystemActivation() error {
+	execCmd := exec.Command("/nix/var/nix/profiles/system/bin/switch-to-configuration", "switch")
+	execCmd.Stdout = os.Stdout
+	execCmd.Stderr = os.Stderr
+	return execCmd.Run()
+}
+
 var rsCmd = &cobra.Command{
 	Use:   "rs",
 	Short: "Executes nixos-rebuild switch",
@@ -69,6 +76,13 @@ var rsCmd = &cobra.Command{
 		if err != nil {
 			fmt.Fprintf(os.Stderr, "Error executing nixos-rebuild switch: %v\n", err)
 			os.Exit(1)
+		}
+
+		if nixRSFlakeDir != "" {
+			if err := runCurrentSystemActivation(); err != nil {
+				fmt.Fprintf(os.Stderr, "Error activating rebuilt system profile: %v\n", err)
+				os.Exit(1)
+			}
 		}
 	},
 }
