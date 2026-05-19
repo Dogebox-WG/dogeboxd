@@ -184,6 +184,29 @@ func TestGetUpgradableReleases_UpgradesAvailable(t *testing.T) {
 	}
 }
 
+func TestGetUpgradableReleasesUsesRepositoryOverrideForReleaseURLs(t *testing.T) {
+	mockTags := []RepositoryTag{
+		{Tag: "v1.2.0"},
+	}
+	mockFetcher := &MockRepoTagsFetcher{tags: mockTags, err: nil}
+
+	tempDir := setupMockVersioning(t, "v1.1.0")
+	defer os.RemoveAll(tempDir)
+
+	t.Setenv(releaseRepositoryEnvVar, "https://github.com/elusiveshiba/os-test.git")
+
+	releases, err := GetUpgradableReleasesWithFetcher(true, mockFetcher)
+	if err != nil {
+		t.Fatalf("Expected no error, got: %v", err)
+	}
+	if len(releases) != 1 {
+		t.Fatalf("expected one upgradable release, got %d", len(releases))
+	}
+	if releases[0].ReleaseURL != "https://github.com/elusiveshiba/os-test/releases/tag/v1.2.0" {
+		t.Fatalf("expected os-test release URL, got %q", releases[0].ReleaseURL)
+	}
+}
+
 // GetUpgradableReleasesWithFetcher with getRepoTags mocked,
 // normal case with no upgrade versions available
 func TestGetUpgradableReleases_NoUpgrades(t *testing.T) {
@@ -422,7 +445,7 @@ func TestStageReleaseFlakeCreatesCloneInConfiguredTempDir(t *testing.T) {
 		return createTestReleaseRepo(t, destination, version)
 	}
 
-	stagedPath, err := stageReleaseFlakeWithClone(tmpDir, "v1.2.3", nil, cloneFunc)
+	stagedPath, commitHash, err := stageReleaseFlakeWithClone(tmpDir, "v1.2.3", nil, cloneFunc)
 	if err != nil {
 		t.Fatalf("expected no error, got %v", err)
 	}
@@ -432,9 +455,13 @@ func TestStageReleaseFlakeCreatesCloneInConfiguredTempDir(t *testing.T) {
 		t.Fatalf("expected staged release to be a plain path, got readable Git hash %s", headHash)
 	}
 
-	expectedPath := buildStagedReleaseDirPath(tmpDir, "v1.2.3", stagedCommitHash(t, cloneFunc, "v1.2.3"))
+	expectedCommitHash := stagedCommitHash(t, cloneFunc, "v1.2.3")
+	expectedPath := buildStagedReleaseDirPath(tmpDir, "v1.2.3", expectedCommitHash)
 	if stagedPath != expectedPath {
 		t.Fatalf("expected staged path %q, got %q", expectedPath, stagedPath)
+	}
+	if commitHash != expectedCommitHash {
+		t.Fatalf("expected commit hash %q, got %q", expectedCommitHash, commitHash)
 	}
 
 	if _, err := os.Stat(filepath.Join(stagedPath, "flake.nix")); err != nil {
@@ -448,7 +475,7 @@ func TestStageReleaseFlakeReplacesExistingHashNamedDir(t *testing.T) {
 		return createTestReleaseRepo(t, destination, version)
 	}
 
-	firstStagedPath, err := stageReleaseFlakeWithClone(tmpDir, "v1.2.3", nil, cloneFunc)
+	firstStagedPath, _, err := stageReleaseFlakeWithClone(tmpDir, "v1.2.3", nil, cloneFunc)
 	if err != nil {
 		t.Fatalf("expected first staging run to succeed, got %v", err)
 	}
@@ -458,7 +485,7 @@ func TestStageReleaseFlakeReplacesExistingHashNamedDir(t *testing.T) {
 		t.Fatalf("failed to create sentinel file: %v", err)
 	}
 
-	stagedPath, err := stageReleaseFlakeWithClone(tmpDir, "v1.2.3", nil, cloneFunc)
+	stagedPath, _, err := stageReleaseFlakeWithClone(tmpDir, "v1.2.3", nil, cloneFunc)
 	if err != nil {
 		t.Fatalf("expected no error, got %v", err)
 	}
@@ -534,7 +561,7 @@ func TestSystemUpdaterDoSystemUpdateUsesStagedFlakeDir(t *testing.T) {
 		"rs",
 		"--systemd-run",
 		"--systemd-unit",
-		buildSystemUpdateUnitName("v1.2.0"),
+		buildSystemUpdateUnitName("v1.2.0", stagedCommitHash(t, cloneFunc, "v1.2.0")),
 		"--flake-dir",
 		stagedPath,
 		"--set-release",
@@ -551,6 +578,42 @@ func TestSystemUpdaterDoSystemUpdateUsesStagedFlakeDir(t *testing.T) {
 
 	if _, err := os.Stat(stagedPath); !os.IsNotExist(err) {
 		t.Fatalf("expected staged flake dir %q to be cleaned up, stat err: %v", stagedPath, err)
+	}
+}
+
+func TestRepairSystemActivationUsesDbxrootSystemdUnit(t *testing.T) {
+	var capturedName string
+	var capturedArgs []string
+	execCommand := func(name string, args ...string) *exec.Cmd {
+		capturedName = name
+		capturedArgs = append([]string{}, args...)
+		return exec.Command("sh", "-c", "exit 0")
+	}
+
+	if err := repairSystemActivation(execCommand, nil, "v0.9.0-rc.8"); err != nil {
+		t.Fatalf("expected no error, got %v", err)
+	}
+
+	if capturedName != SUDO_COMMAND {
+		t.Fatalf("expected command %q, got %q", SUDO_COMMAND, capturedName)
+	}
+
+	expectedArgs := []string{
+		DBXROOT_WRAPPER_COMMAND,
+		"nix",
+		"rs",
+		"--activate-current-profile",
+		"--systemd-run",
+		"--systemd-unit",
+		buildSystemRepairUnitName("v0.9.0-rc.8"),
+	}
+	if len(capturedArgs) != len(expectedArgs) {
+		t.Fatalf("expected args %v, got %v", expectedArgs, capturedArgs)
+	}
+	for i, expected := range expectedArgs {
+		if capturedArgs[i] != expected {
+			t.Fatalf("expected capturedArgs[%d] to be %q, got %q", i, expected, capturedArgs[i])
+		}
 	}
 }
 

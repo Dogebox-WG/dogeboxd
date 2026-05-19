@@ -400,6 +400,8 @@ func (jm *JobManager) getDisplayName(j Job) string {
 		return "Remove Binary Cache"
 	case SystemUpdate:
 		return "System Update"
+	case RepairSystemActivation:
+		return "Repair System Activation"
 	case UpdateMetrics:
 		return "Update Metrics"
 	case UpdateTimezone:

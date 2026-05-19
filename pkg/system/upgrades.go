@@ -19,9 +19,11 @@ import (
 	"golang.org/x/mod/semver"
 )
 
-var RELEASE_REPOSITORY = "https://github.com/elusiveshiba/os-test.git"
+var RELEASE_REPOSITORY = "https://github.com/dogebox-wg/os.git"
 var SUDO_COMMAND = "sudo"
 var DBXROOT_WRAPPER_COMMAND = "/run/wrappers/bin/_dbxroot"
+
+const releaseRepositoryEnvVar = "DOGEBOX_RELEASE_REPOSITORY"
 
 // semverSortTags sorts a slice of RepositoryTag by semver version
 // direction: "desc" for descending (highest first), "asc" for ascending (lowest first)
@@ -82,6 +84,24 @@ type UpgradableRelease struct {
 	Summary    string
 }
 
+func getReleaseRepository() string {
+	if override := strings.TrimSpace(os.Getenv(releaseRepositoryEnvVar)); override != "" {
+		return override
+	}
+
+	return RELEASE_REPOSITORY
+}
+
+func buildReleaseTagURL(repository string, version string) string {
+	base := strings.TrimSuffix(strings.TrimSpace(repository), ".git")
+	base = strings.TrimSuffix(base, "/")
+	if base == "" {
+		base = strings.TrimSuffix(RELEASE_REPOSITORY, ".git")
+	}
+
+	return fmt.Sprintf("%s/releases/tag/%s", base, version)
+}
+
 type InvalidUpdatePackageError struct {
 	Package string
 }
@@ -124,7 +144,8 @@ func GetUpgradableReleasesWithFetcher(includePreReleases bool, fetcher RepoTagsF
 }
 
 func GetUpgradableReleasesForVersionWithFetcher(currentRelease string, includePreReleases bool, fetcher RepoTagsFetcher) ([]UpgradableRelease, error) {
-	tags, err := fetcher.GetRepoTags(RELEASE_REPOSITORY)
+	releaseRepository := getReleaseRepository()
+	tags, err := fetcher.GetRepoTags(releaseRepository)
 	if err != nil {
 		return []UpgradableRelease{}, err
 	}
@@ -133,7 +154,7 @@ func GetUpgradableReleasesForVersionWithFetcher(currentRelease string, includePr
 	for _, tag := range tags {
 		release := UpgradableRelease{
 			Version:    tag.Tag,
-			ReleaseURL: fmt.Sprintf("https://github.com/dogebox-wg/os/releases/tag/%s", tag.Tag),
+			ReleaseURL: buildReleaseTagURL(releaseRepository, tag.Tag),
 			Summary:    "Update for Dogeboxd / DKM / DPanel",
 		}
 
@@ -153,7 +174,7 @@ func GetUpgradableReleasesForVersionWithFetcher(currentRelease string, includePr
 
 func cloneReleaseRepository(destination, version string) error {
 	_, err := git.PlainClone(destination, false, &git.CloneOptions{
-		URL:           RELEASE_REPOSITORY,
+		URL:           getReleaseRepository(),
 		ReferenceName: plumbing.NewTagReferenceName(version),
 		SingleBranch:  true,
 		Depth:         1,
@@ -183,19 +204,43 @@ func buildStagedReleaseDirPath(tmpDir string, updateVersion string, commitHash s
 	return filepath.Join(tmpDir, fmt.Sprintf("os-upgrade-%s-%s", updateVersion, commitHash))
 }
 
-func buildSystemUpdateUnitName(updateVersion string) string {
+func sanitizeSystemdUnitComponent(value string) string {
 	sanitizer := strings.NewReplacer(".", "-", "/", "-", " ", "-", ":", "-", "@", "-", "+", "-", "=", "-")
-	return fmt.Sprintf("dogebox-system-update-%s", sanitizer.Replace(updateVersion))
+	return sanitizer.Replace(value)
 }
 
-func buildSystemUpdateCommandArgs(stagedFlakeDir string, updateVersion string) []string {
+func shortCommitHash(commitHash string) string {
+	if len(commitHash) <= 8 {
+		return commitHash
+	}
+
+	return commitHash[:8]
+}
+
+func buildSystemUpdateUnitName(updateVersion string, commitHash string) string {
+	unitName := fmt.Sprintf("dogebox-system-update-%s", sanitizeSystemdUnitComponent(updateVersion))
+	if commitHash != "" {
+		unitName = fmt.Sprintf("%s-%s", unitName, sanitizeSystemdUnitComponent(shortCommitHash(commitHash)))
+	}
+	return unitName
+}
+
+func buildSystemRepairUnitName(targetVersion string) string {
+	if targetVersion == "" {
+		targetVersion = "current"
+	}
+
+	return fmt.Sprintf("dogebox-system-repair-%s", sanitizeSystemdUnitComponent(targetVersion))
+}
+
+func buildSystemUpdateCommandArgs(stagedFlakeDir string, updateVersion string, unitName string) []string {
 	return []string{
 		DBXROOT_WRAPPER_COMMAND,
 		"nix",
 		"rs",
 		"--systemd-run",
 		"--systemd-unit",
-		buildSystemUpdateUnitName(updateVersion),
+		unitName,
 		"--flake-dir",
 		stagedFlakeDir,
 		"--set-release",
@@ -203,18 +248,30 @@ func buildSystemUpdateCommandArgs(stagedFlakeDir string, updateVersion string) [
 	}
 }
 
-func stageReleaseFlake(tmpDir, updateVersion string, logger dogeboxd.SubLogger) (string, error) {
+func buildSystemActivationRepairCommandArgs(targetVersion string) []string {
+	return []string{
+		DBXROOT_WRAPPER_COMMAND,
+		"nix",
+		"rs",
+		"--activate-current-profile",
+		"--systemd-run",
+		"--systemd-unit",
+		buildSystemRepairUnitName(targetVersion),
+	}
+}
+
+func stageReleaseFlake(tmpDir, updateVersion string, logger dogeboxd.SubLogger) (string, string, error) {
 	return stageReleaseFlakeWithClone(tmpDir, updateVersion, logger, cloneReleaseRepository)
 }
 
-func stageReleaseFlakeWithClone(tmpDir, updateVersion string, logger dogeboxd.SubLogger, cloneFunc func(string, string) error) (string, error) {
+func stageReleaseFlakeWithClone(tmpDir, updateVersion string, logger dogeboxd.SubLogger, cloneFunc func(string, string) error) (string, string, error) {
 	if tmpDir == "" {
 		tmpDir = os.TempDir()
 	}
 
 	cloneDir, err := os.MkdirTemp(tmpDir, "os-upgrade-*")
 	if err != nil {
-		return "", fmt.Errorf("failed to create temp dir for OS release %s: %w", updateVersion, err)
+		return "", "", fmt.Errorf("failed to create temp dir for OS release %s: %w", updateVersion, err)
 	}
 
 	if logger != nil {
@@ -223,38 +280,38 @@ func stageReleaseFlakeWithClone(tmpDir, updateVersion string, logger dogeboxd.Su
 
 	if err := cloneFunc(cloneDir, updateVersion); err != nil {
 		_ = os.RemoveAll(cloneDir)
-		return "", err
+		return "", "", err
 	}
 
 	flakePath := filepath.Join(cloneDir, "flake.nix")
 	if _, err := os.Stat(flakePath); err != nil {
 		_ = os.RemoveAll(cloneDir)
-		return "", fmt.Errorf("staged OS release %s is missing flake.nix: %w", updateVersion, err)
+		return "", "", fmt.Errorf("staged OS release %s is missing flake.nix: %w", updateVersion, err)
 	}
 
 	commitHash, err := getRepositoryHeadHash(cloneDir)
 	if err != nil {
 		_ = os.RemoveAll(cloneDir)
-		return "", err
+		return "", "", err
 	}
 
 	if err := os.RemoveAll(filepath.Join(cloneDir, ".git")); err != nil {
 		_ = os.RemoveAll(cloneDir)
-		return "", fmt.Errorf("failed to strip Git metadata from staged OS release: %w", err)
+		return "", "", fmt.Errorf("failed to strip Git metadata from staged OS release: %w", err)
 	}
 
 	finalDir := buildStagedReleaseDirPath(tmpDir, updateVersion, commitHash)
 	if err := os.RemoveAll(finalDir); err != nil {
 		_ = os.RemoveAll(cloneDir)
-		return "", fmt.Errorf("failed to clear existing staged OS release dir %s: %w", finalDir, err)
+		return "", "", fmt.Errorf("failed to clear existing staged OS release dir %s: %w", finalDir, err)
 	}
 
 	if err := os.Rename(cloneDir, finalDir); err != nil {
 		_ = os.RemoveAll(cloneDir)
-		return "", fmt.Errorf("failed to move staged OS release into %s: %w", finalDir, err)
+		return "", "", fmt.Errorf("failed to move staged OS release into %s: %w", finalDir, err)
 	}
 
-	return finalDir, nil
+	return finalDir, commitHash, nil
 }
 
 func doSystemUpdate(pkg string, updateVersion string, tmpDir string, logger dogeboxd.SubLogger) error {
@@ -291,7 +348,7 @@ func doSystemUpdateWithDependencies(
 		return UpdateVersionUnavailableError{Package: pkg, Version: updateVersion}
 	}
 
-	stagedFlakeDir, err := stageReleaseFlakeWithClone(tmpDir, updateVersion, logger, cloneFunc)
+	stagedFlakeDir, commitHash, err := stageReleaseFlakeWithClone(tmpDir, updateVersion, logger, cloneFunc)
 	if err != nil {
 		return err
 	}
@@ -301,7 +358,7 @@ func doSystemUpdateWithDependencies(
 		}
 	}()
 
-	cmd := execCommand(SUDO_COMMAND, buildSystemUpdateCommandArgs(stagedFlakeDir, updateVersion)...)
+	cmd := execCommand(SUDO_COMMAND, buildSystemUpdateCommandArgs(stagedFlakeDir, updateVersion, buildSystemUpdateUnitName(updateVersion, commitHash))...)
 	if logger != nil {
 		logger.Logf("Running command: %s %s", cmd.Path, strings.Join(cmd.Args[1:], " "))
 		cmd.Stdout = io.MultiWriter(os.Stdout, dogeboxd.NewLineWriter(func(s string) {
@@ -328,6 +385,31 @@ func (t SystemUpdater) DoSystemUpdate(pkg string, updateVersion string, logger d
 	}
 
 	return doSystemUpdate(pkg, updateVersion, t.config.TmpDir, logger)
+}
+
+func repairSystemActivation(execCommand func(string, ...string) *exec.Cmd, logger dogeboxd.SubLogger, targetVersion string) error {
+	cmd := execCommand(SUDO_COMMAND, buildSystemActivationRepairCommandArgs(targetVersion)...)
+	if logger != nil {
+		logger.Logf("Running command: %s %s", cmd.Path, strings.Join(cmd.Args[1:], " "))
+		cmd.Stdout = io.MultiWriter(os.Stdout, dogeboxd.NewLineWriter(func(s string) {
+			logger.Log(s)
+		}))
+		cmd.Stderr = io.MultiWriter(os.Stderr, dogeboxd.NewLineWriter(func(s string) {
+			logger.Log(s)
+		}))
+	} else {
+		cmd.Stdout = os.Stdout
+		cmd.Stderr = os.Stderr
+	}
+	if err := cmd.Run(); err != nil {
+		return fmt.Errorf("failed to repair current system activation: %w", err)
+	}
+
+	return nil
+}
+
+func (t SystemUpdater) RepairSystemActivation(targetVersion string, logger dogeboxd.SubLogger) error {
+	return repairSystemActivation(exec.Command, logger, targetVersion)
 }
 
 func DoSystemUpdate(pkg string, updateVersion string, logger dogeboxd.SubLogger) error {

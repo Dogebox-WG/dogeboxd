@@ -221,6 +221,13 @@ type SystemUpdate struct {
 
 func (SystemUpdate) ActionName() string { return "system-update" }
 
+type RepairSystemActivation struct {
+	TargetVersion string
+	Reason        string
+}
+
+func (RepairSystemActivation) ActionName() string { return "repair-system-activation" }
+
 type UpdateNixCache struct {
 }
 

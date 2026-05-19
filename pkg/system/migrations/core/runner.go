@@ -11,6 +11,7 @@ import (
 type Context struct {
 	Config          dogeboxd.ServerConfig
 	Enqueue         func(dogeboxd.Action) string
+	ActiveJobs      func() ([]dogeboxd.JobRecord, error)
 	ReadFile        func(string) ([]byte, error)
 	RepoTagsFetcher system.RepoTagsFetcher
 }
@@ -50,6 +51,16 @@ func (c Context) RepoTagsFetcherOrDefault() system.RepoTagsFetcher {
 	return &system.DefaultRepoTagsFetcher{}
 }
 
+func (c Context) ActiveJobsOrDefault() func() ([]dogeboxd.JobRecord, error) {
+	if c.ActiveJobs != nil {
+		return c.ActiveJobs
+	}
+
+	return func() ([]dogeboxd.JobRecord, error) {
+		return nil, nil
+	}
+}
+
 func RunMigrations(ctx Context, migrations []Migration) (string, bool, error) {
 	for _, migration := range migrations {
 		decision, err := EvaluateRunDecision(ctx.Config, migration.Name, migration.RunPolicy)
@@ -85,10 +96,6 @@ func RunMigrations(ctx Context, migrations []Migration) (string, bool, error) {
 		}
 		if !queued {
 			continue
-		}
-
-		if err := RecordRun(ctx.Config, migration.Name); err != nil {
-			return jobID, true, err
 		}
 
 		log.Printf("Queued startup %s job: %s", migration.DisplayName, jobID)

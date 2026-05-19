@@ -190,6 +190,21 @@ func (t SystemUpdater) Run(started, stopped chan bool, stop chan context.Context
 						}
 						t.done <- j
 
+					case dogeboxd.RepairSystemActivation:
+						logger := j.Logger.Step("repair system activation")
+						if a.Reason != "" {
+							logger.Progress(5).Logf("Repairing current system activation because %s", a.Reason)
+						} else {
+							logger.Progress(5).Logf("Repairing current system activation")
+						}
+						if err := t.RepairSystemActivation(a.TargetVersion, logger); err != nil {
+							logger.Errf("System activation repair failed: %v", err)
+							j.Err = err.Error()
+						} else {
+							logger.Progress(100).Logf("System activation repair completed")
+						}
+						t.done <- j
+
 					case dogeboxd.UpdateTimezone:
 						err := t.updateTimezone(a, j.Logger.Step("update timezone"))
 						if err != nil {

@@ -136,7 +136,7 @@ func TestRunMigrationsSkipsWhenMaxRunsReached(t *testing.T) {
 	}
 }
 
-func TestRunMigrationsRecordsRunOnlyWhenQueued(t *testing.T) {
+func TestRunMigrationsDoesNotRecordRunWhenQueued(t *testing.T) {
 	ctx := testMigrationContext(t)
 
 	jobID, queued, err := RunMigrations(ctx, []Migration{
@@ -160,8 +160,8 @@ func TestRunMigrationsRecordsRunOnlyWhenQueued(t *testing.T) {
 	if err != nil {
 		t.Fatalf("expected load to succeed, got %v", err)
 	}
-	if state["records_run"].Runs != 1 {
-		t.Fatalf("expected run count of 1, got %+v", state["records_run"])
+	if state["records_run"].Runs != 0 {
+		t.Fatalf("expected queued migration to leave run count unchanged, got %+v", state["records_run"])
 	}
 }
 

@@ -4,7 +4,6 @@ import (
 	"fmt"
 	"os"
 	"path/filepath"
-	"strings"
 	"testing"
 
 	dogeboxd "github.com/Dogebox-WG/dogeboxd/pkg"
@@ -21,11 +20,13 @@ func (m mockRepoTagsFetcher) GetRepoTags(string) ([]system.RepositoryTag, error)
 	return m.tags, m.err
 }
 
-func testOSFlakeReadFile(version string) func(string) ([]byte, error) {
-	return func(string) ([]byte, error) {
-		return []byte(fmt.Sprintf(`{
-  dbxRelease = %q;
-}`, version)), nil
+func testOSFlakeReadFiles(files map[string]string) func(string) ([]byte, error) {
+	return func(path string) ([]byte, error) {
+		content, ok := files[path]
+		if !ok {
+			return nil, os.ErrNotExist
+		}
+		return []byte(content), nil
 	}
 }
 
@@ -37,6 +38,29 @@ func setupTestDBXRelease(t *testing.T, currentRelease string) {
 		t.Fatalf("failed to write test dbx release: %v", err)
 	}
 	t.Setenv("VERSION_PATH_OVERRIDE", versionDir)
+}
+
+func testFlakeVersionFile(version string) string {
+	return fmt.Sprintf(`{
+  dbxRelease = %q;
+}`, version)
+}
+
+func testActivationScript(version string) string {
+	return fmt.Sprintf("echo '%s' > /opt/versioning/dbx\n", version)
+}
+
+func testOSFlakeFiles(installedVersion string, currentProfileVersion string, runningSystemVersion string) map[string]string {
+	files := map[string]string{
+		installedOSFlakePath: testFlakeVersionFile(installedVersion),
+	}
+	if currentProfileVersion != "" {
+		files[currentSystemProfileActivatePath] = testActivationScript(currentProfileVersion)
+	}
+	if runningSystemVersion != "" {
+		files[runningSystemActivatePath] = testActivationScript(runningSystemVersion)
+	}
+	return files
 }
 
 func TestOSFlakeMigrationRequirementsAllowEligibleInstalledVersions(t *testing.T) {
@@ -56,12 +80,14 @@ func TestOSFlakeMigrationRequirementsAllowEligibleInstalledVersions(t *testing.T
 
 	for _, tc := range testCases {
 		t.Run(tc.name, func(t *testing.T) {
+			setupTestDBXRelease(t, "v0.8.1")
+
 			ctx := core.Context{
 				Config: dogeboxd.ServerConfig{
 					DataDir: t.TempDir(),
 					TmpDir:  t.TempDir(),
 				},
-				ReadFile: testOSFlakeReadFile(tc.installedFlakeVersion),
+				ReadFile: testOSFlakeReadFiles(testOSFlakeFiles(tc.installedFlakeVersion, "", "")),
 				RepoTagsFetcher: mockRepoTagsFetcher{
 					tags: []system.RepositoryTag{
 						{Tag: "v1.2.0-rc.1"},
@@ -83,12 +109,14 @@ func TestOSFlakeMigrationRequirementsAllowEligibleInstalledVersions(t *testing.T
 }
 
 func TestOSFlakeMigrationRequirementsSkipWhenInstalledVersionIsAfterConstraint(t *testing.T) {
+	setupTestDBXRelease(t, "v0.9.0")
+
 	ctx := core.Context{
 		Config: dogeboxd.ServerConfig{
 			DataDir: t.TempDir(),
 			TmpDir:  t.TempDir(),
 		},
-		ReadFile: testOSFlakeReadFile("v0.9.0"),
+		ReadFile: testOSFlakeReadFiles(testOSFlakeFiles("v0.9.0", "v0.9.0", "v0.9.0")),
 		RepoTagsFetcher: mockRepoTagsFetcher{
 			tags: []system.RepositoryTag{
 				{Tag: "v1.2.0"},
@@ -96,15 +124,20 @@ func TestOSFlakeMigrationRequirementsSkipWhenInstalledVersionIsAfterConstraint(t
 		},
 	}
 
-	applies, reason, err := OSFlakeMigration.Requirements(ctx, core.MigrationRecord{})
+	applies, _, err := OSFlakeMigration.Requirements(ctx, core.MigrationRecord{})
 	if err != nil {
 		t.Fatalf("expected no error, got %v", err)
 	}
 	if applies {
 		t.Fatal("expected installed version after constraint to skip migration")
 	}
-	if reason == "" {
-		t.Fatal("expected skip reason")
+
+	state, err := core.LoadState(ctx.Config)
+	if err != nil {
+		t.Fatalf("expected load to succeed, got %v", err)
+	}
+	if !state[osFlakeMigrationMetadata.Name].DoNotRun {
+		t.Fatalf("expected migration to mark doNotRun after verified completion, got %+v", state[osFlakeMigrationMetadata.Name])
 	}
 }
 
@@ -116,7 +149,7 @@ func TestOSFlakeMigrationRequirementsSkipWhenNoStableReleaseAvailable(t *testing
 			DataDir: t.TempDir(),
 			TmpDir:  t.TempDir(),
 		},
-		ReadFile: testOSFlakeReadFile("v0.9.0-rc.1"),
+		ReadFile: testOSFlakeReadFiles(testOSFlakeFiles("v0.9.0-rc.1", "", "")),
 		RepoTagsFetcher: mockRepoTagsFetcher{
 			tags: []system.RepositoryTag{
 				{Tag: "v1.2.0-rc.1"},
@@ -134,21 +167,20 @@ func TestOSFlakeMigrationRequirementsSkipWhenNoStableReleaseAvailable(t *testing
 	if reason == "" {
 		t.Fatal("expected skip reason")
 	}
-	if !strings.Contains(reason, "newer than current DBX release v0.8.1") {
+	if reason != "no eligible OS releases are available newer than current DBX release v0.8.1 (pre-releases excluded)" {
 		t.Fatalf("expected skip reason to reference current DBX release, got %q", reason)
-	}
-	if !strings.Contains(reason, "pre-releases excluded") {
-		t.Fatalf("expected skip reason to mention pre-release policy, got %q", reason)
 	}
 }
 
 func TestRunOSFlakeMigrationQueuesLatestStableUpdate(t *testing.T) {
+	setupTestDBXRelease(t, "v0.8.1")
+
 	ctx := core.Context{
 		Config: dogeboxd.ServerConfig{
 			DataDir: t.TempDir(),
 			TmpDir:  t.TempDir(),
 		},
-		ReadFile: testOSFlakeReadFile("v0.8.1"),
+		ReadFile: testOSFlakeReadFiles(testOSFlakeFiles("v0.8.1", "", "")),
 		RepoTagsFetcher: mockRepoTagsFetcher{
 			tags: []system.RepositoryTag{
 				{Tag: "v1.2.0-rc.1"},
@@ -188,12 +220,14 @@ func TestRunOSFlakeMigrationQueuesLatestStableUpdate(t *testing.T) {
 }
 
 func TestRunOSFlakeMigrationQueuesLatestPrereleaseWhenEnabled(t *testing.T) {
+	setupTestDBXRelease(t, "v0.9.0-rc.1")
+
 	ctx := core.Context{
 		Config: dogeboxd.ServerConfig{
 			DataDir: t.TempDir(),
 			TmpDir:  t.TempDir(),
 		},
-		ReadFile: testOSFlakeReadFile("v0.9.0-rc.1"),
+		ReadFile: testOSFlakeReadFiles(testOSFlakeFiles("v0.9.0-rc.1", "", "")),
 		RepoTagsFetcher: mockRepoTagsFetcher{
 			tags: []system.RepositoryTag{
 				{Tag: "v1.3.0-rc.2"},
@@ -233,5 +267,86 @@ func TestRunOSFlakeMigrationQueuesLatestPrereleaseWhenEnabled(t *testing.T) {
 	}
 	if update.Package != "os" || update.Version != "v1.3.0-rc.2" {
 		t.Fatalf("unexpected queued update: %+v", update)
+	}
+}
+
+func TestRunOSFlakeMigrationQueuesActivationRepairForPartialState(t *testing.T) {
+	setupTestDBXRelease(t, "v0.8.2")
+
+	ctx := core.Context{
+		Config: dogeboxd.ServerConfig{
+			DataDir: t.TempDir(),
+			TmpDir:  t.TempDir(),
+		},
+		ReadFile: testOSFlakeReadFiles(testOSFlakeFiles("v0.8.2", "v0.9.0-rc.8", "v0.8.2")),
+		RepoTagsFetcher: mockRepoTagsFetcher{
+			tags: []system.RepositoryTag{
+				{Tag: "v0.9.0-rc.8"},
+			},
+		},
+	}
+
+	var queued dogeboxd.Action
+	ctx.Enqueue = func(action dogeboxd.Action) string {
+		queued = action
+		return "job-repair"
+	}
+
+	jobID, queuedJob, err := OSFlakeMigration.Run(ctx, core.MigrationRecord{})
+	if err != nil {
+		t.Fatalf("expected no error, got %v", err)
+	}
+	if !queuedJob || jobID != "job-repair" {
+		t.Fatalf("expected repair job to be queued, got queued=%v jobID=%q", queuedJob, jobID)
+	}
+
+	repair, ok := queued.(dogeboxd.RepairSystemActivation)
+	if !ok {
+		t.Fatalf("expected RepairSystemActivation action, got %T", queued)
+	}
+	if repair.TargetVersion != "v0.9.0-rc.8" {
+		t.Fatalf("expected repair target v0.9.0-rc.8, got %+v", repair)
+	}
+}
+
+func TestRunOSFlakeMigrationSkipsWhenSystemJobAlreadyActive(t *testing.T) {
+	setupTestDBXRelease(t, "v0.8.1")
+
+	enqueued := false
+	ctx := core.Context{
+		Config: dogeboxd.ServerConfig{
+			DataDir: t.TempDir(),
+			TmpDir:  t.TempDir(),
+		},
+		ReadFile: testOSFlakeReadFiles(testOSFlakeFiles("v0.8.1", "", "")),
+		RepoTagsFetcher: mockRepoTagsFetcher{
+			tags: []system.RepositoryTag{
+				{Tag: "v0.9.0-rc.8"},
+			},
+		},
+		ActiveJobs: func() ([]dogeboxd.JobRecord, error) {
+			return []dogeboxd.JobRecord{
+				{
+					ID:     "job-1",
+					Action: dogeboxd.SystemUpdate{}.ActionName(),
+					Status: dogeboxd.JobStatusInProgress,
+				},
+			}, nil
+		},
+		Enqueue: func(action dogeboxd.Action) string {
+			enqueued = true
+			return "job-should-not-queue"
+		},
+	}
+
+	jobID, queued, err := OSFlakeMigration.Run(ctx, core.MigrationRecord{})
+	if err != nil {
+		t.Fatalf("expected no error, got %v", err)
+	}
+	if queued || jobID != "" {
+		t.Fatalf("expected migration to skip duplicate active work, got queued=%v jobID=%q", queued, jobID)
+	}
+	if enqueued {
+		t.Fatal("expected migration not to enqueue while system job is active")
 	}
 }
