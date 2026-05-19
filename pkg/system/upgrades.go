@@ -21,6 +21,8 @@ import (
 
 var RELEASE_REPOSITORY = "https://github.com/dogebox-wg/os.git"
 var SUDO_COMMAND = "sudo"
+var SYSTEMD_RUN_COMMAND = "systemd-run"
+var DBXROOT_WRAPPER_COMMAND = "/run/wrappers/bin/_dbxroot"
 
 // semverSortTags sorts a slice of RepositoryTag by semver version
 // direction: "desc" for descending (highest first), "asc" for ascending (lowest first)
@@ -182,6 +184,28 @@ func buildStagedReleaseDirPath(tmpDir string, updateVersion string, commitHash s
 	return filepath.Join(tmpDir, fmt.Sprintf("os-upgrade-%s-%s", updateVersion, commitHash))
 }
 
+func buildSystemUpdateUnitName(updateVersion string) string {
+	sanitizer := strings.NewReplacer(".", "-", "/", "-", " ", "-", ":", "-", "@", "-", "+", "-", "=", "-")
+	return fmt.Sprintf("dogebox-system-update-%s", sanitizer.Replace(updateVersion))
+}
+
+func buildSystemUpdateCommandArgs(stagedFlakeDir string, updateVersion string) []string {
+	return []string{
+		SYSTEMD_RUN_COMMAND,
+		"--unit", buildSystemUpdateUnitName(updateVersion),
+		"--collect",
+		"--wait",
+		"--pipe",
+		DBXROOT_WRAPPER_COMMAND,
+		"nix",
+		"rs",
+		"--flake-dir",
+		stagedFlakeDir,
+		"--set-release",
+		updateVersion,
+	}
+}
+
 func stageReleaseFlake(tmpDir, updateVersion string, logger dogeboxd.SubLogger) (string, error) {
 	return stageReleaseFlakeWithClone(tmpDir, updateVersion, logger, cloneReleaseRepository)
 }
@@ -275,7 +299,7 @@ func doSystemUpdateWithDependencies(
 		}
 	}()
 
-	cmd := execCommand(SUDO_COMMAND, "_dbxroot", "nix", "rs", "--flake-dir", stagedFlakeDir, "--set-release", updateVersion)
+	cmd := execCommand(SUDO_COMMAND, buildSystemUpdateCommandArgs(stagedFlakeDir, updateVersion)...)
 	if logger != nil {
 		logger.Logf("Running command: %s %s", cmd.Path, strings.Join(cmd.Args[1:], " "))
 		cmd.Stdout = io.MultiWriter(os.Stdout, dogeboxd.NewLineWriter(func(s string) {

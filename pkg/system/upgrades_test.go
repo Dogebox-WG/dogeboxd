@@ -528,7 +528,20 @@ func TestSystemUpdaterDoSystemUpdateUsesStagedFlakeDir(t *testing.T) {
 		t.Fatalf("expected command %q, got %q", SUDO_COMMAND, capturedName)
 	}
 
-	expectedArgs := []string{"_dbxroot", "nix", "rs", "--flake-dir", stagedPath, "--set-release", "v1.2.0"}
+	expectedArgs := []string{
+		SYSTEMD_RUN_COMMAND,
+		"--unit", buildSystemUpdateUnitName("v1.2.0"),
+		"--collect",
+		"--wait",
+		"--pipe",
+		DBXROOT_WRAPPER_COMMAND,
+		"nix",
+		"rs",
+		"--flake-dir",
+		stagedPath,
+		"--set-release",
+		"v1.2.0",
+	}
 	if len(capturedArgs) != len(expectedArgs) {
 		t.Fatalf("expected args %v, got %v", expectedArgs, capturedArgs)
 	}
