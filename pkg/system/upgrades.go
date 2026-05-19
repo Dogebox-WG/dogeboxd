@@ -238,6 +238,11 @@ func stageReleaseFlakeWithClone(tmpDir, updateVersion string, logger dogeboxd.Su
 		return "", err
 	}
 
+	if err := os.RemoveAll(filepath.Join(cloneDir, ".git")); err != nil {
+		_ = os.RemoveAll(cloneDir)
+		return "", fmt.Errorf("failed to strip Git metadata from staged OS release: %w", err)
+	}
+
 	finalDir := buildStagedReleaseDirPath(tmpDir, updateVersion, commitHash)
 	if err := os.RemoveAll(finalDir); err != nil {
 		_ = os.RemoveAll(cloneDir)

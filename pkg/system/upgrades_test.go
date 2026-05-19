@@ -428,11 +428,11 @@ func TestStageReleaseFlakeCreatesCloneInConfiguredTempDir(t *testing.T) {
 	}
 
 	headHash, err := getRepositoryHeadHash(stagedPath)
-	if err != nil {
-		t.Fatalf("expected staged repository hash, got %v", err)
+	if err == nil {
+		t.Fatalf("expected staged release to be a plain path, got readable Git hash %s", headHash)
 	}
 
-	expectedPath := buildStagedReleaseDirPath(tmpDir, "v1.2.3", headHash)
+	expectedPath := buildStagedReleaseDirPath(tmpDir, "v1.2.3", stagedCommitHash(t, cloneFunc, "v1.2.3"))
 	if stagedPath != expectedPath {
 		t.Fatalf("expected staged path %q, got %q", expectedPath, stagedPath)
 	}
@@ -589,6 +589,22 @@ func createTestReleaseRepo(t *testing.T, destination string, version string) err
 		},
 	})
 	return err
+}
+
+func stagedCommitHash(t *testing.T, cloneFunc func(string, string) error, version string) string {
+	t.Helper()
+
+	tmpDir := t.TempDir()
+	if err := cloneFunc(tmpDir, version); err != nil {
+		t.Fatalf("failed to create test release repo: %v", err)
+	}
+
+	hash, err := getRepositoryHeadHash(tmpDir)
+	if err != nil {
+		t.Fatalf("failed to read test release hash: %v", err)
+	}
+
+	return hash
 }
 
 /* TODO : check if versioning file(s) were written out
