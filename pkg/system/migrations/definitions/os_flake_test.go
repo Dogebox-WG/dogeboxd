@@ -46,21 +46,10 @@ func testFlakeVersionFile(version string) string {
 }`, version)
 }
 
-func testActivationScript(version string) string {
-	return fmt.Sprintf("echo '%s' > /opt/versioning/dbx\n", version)
-}
-
-func testOSFlakeFiles(installedVersion string, currentProfileVersion string, runningSystemVersion string) map[string]string {
-	files := map[string]string{
+func testOSFlakeFiles(installedVersion string) map[string]string {
+	return map[string]string{
 		installedOSFlakePath: testFlakeVersionFile(installedVersion),
 	}
-	if currentProfileVersion != "" {
-		files[currentSystemProfileActivatePath] = testActivationScript(currentProfileVersion)
-	}
-	if runningSystemVersion != "" {
-		files[runningSystemActivatePath] = testActivationScript(runningSystemVersion)
-	}
-	return files
 }
 
 func TestOSFlakeMigrationRequirementsAllowEligibleInstalledVersions(t *testing.T) {
@@ -87,7 +76,7 @@ func TestOSFlakeMigrationRequirementsAllowEligibleInstalledVersions(t *testing.T
 					DataDir: t.TempDir(),
 					TmpDir:  t.TempDir(),
 				},
-				ReadFile: testOSFlakeReadFiles(testOSFlakeFiles(tc.installedFlakeVersion, "", "")),
+				ReadFile: testOSFlakeReadFiles(testOSFlakeFiles(tc.installedFlakeVersion)),
 				RepoTagsFetcher: mockRepoTagsFetcher{
 					tags: []system.RepositoryTag{
 						{Tag: "v1.2.0-rc.1"},
@@ -116,7 +105,7 @@ func TestOSFlakeMigrationRequirementsSkipWhenInstalledVersionIsAfterConstraint(t
 			DataDir: t.TempDir(),
 			TmpDir:  t.TempDir(),
 		},
-		ReadFile: testOSFlakeReadFiles(testOSFlakeFiles("v0.9.0", "v0.9.0", "v0.9.0")),
+		ReadFile: testOSFlakeReadFiles(testOSFlakeFiles("v0.9.0")),
 		RepoTagsFetcher: mockRepoTagsFetcher{
 			tags: []system.RepositoryTag{
 				{Tag: "v1.2.0"},
@@ -139,6 +128,9 @@ func TestOSFlakeMigrationRequirementsSkipWhenInstalledVersionIsAfterConstraint(t
 	if !state[osFlakeMigrationMetadata.Name].DoNotRun {
 		t.Fatalf("expected migration to mark doNotRun after verified completion, got %+v", state[osFlakeMigrationMetadata.Name])
 	}
+	if !state[osFlakeMigrationMetadata.Name].RanSuccessfully {
+		t.Fatalf("expected migration to mark ranSuccessfully after verified completion, got %+v", state[osFlakeMigrationMetadata.Name])
+	}
 }
 
 func TestOSFlakeMigrationRequirementsSkipWhenNoStableReleaseAvailable(t *testing.T) {
@@ -149,7 +141,7 @@ func TestOSFlakeMigrationRequirementsSkipWhenNoStableReleaseAvailable(t *testing
 			DataDir: t.TempDir(),
 			TmpDir:  t.TempDir(),
 		},
-		ReadFile: testOSFlakeReadFiles(testOSFlakeFiles("v0.9.0-rc.1", "", "")),
+		ReadFile: testOSFlakeReadFiles(testOSFlakeFiles("v0.9.0-rc.1")),
 		RepoTagsFetcher: mockRepoTagsFetcher{
 			tags: []system.RepositoryTag{
 				{Tag: "v1.2.0-rc.1"},
@@ -180,7 +172,7 @@ func TestRunOSFlakeMigrationQueuesLatestStableUpdate(t *testing.T) {
 			DataDir: t.TempDir(),
 			TmpDir:  t.TempDir(),
 		},
-		ReadFile: testOSFlakeReadFiles(testOSFlakeFiles("v0.8.1", "", "")),
+		ReadFile: testOSFlakeReadFiles(testOSFlakeFiles("v0.8.1")),
 		RepoTagsFetcher: mockRepoTagsFetcher{
 			tags: []system.RepositoryTag{
 				{Tag: "v1.2.0-rc.1"},
@@ -220,14 +212,14 @@ func TestRunOSFlakeMigrationQueuesLatestStableUpdate(t *testing.T) {
 }
 
 func TestRunOSFlakeMigrationQueuesLatestPrereleaseWhenEnabled(t *testing.T) {
-	setupTestDBXRelease(t, "v0.9.0-rc.1")
+	setupTestDBXRelease(t, "v0.8.1")
 
 	ctx := core.Context{
 		Config: dogeboxd.ServerConfig{
 			DataDir: t.TempDir(),
 			TmpDir:  t.TempDir(),
 		},
-		ReadFile: testOSFlakeReadFiles(testOSFlakeFiles("v0.9.0-rc.1", "", "")),
+		ReadFile: testOSFlakeReadFiles(testOSFlakeFiles("v0.8.1")),
 		RepoTagsFetcher: mockRepoTagsFetcher{
 			tags: []system.RepositoryTag{
 				{Tag: "v1.3.0-rc.2"},
@@ -270,45 +262,6 @@ func TestRunOSFlakeMigrationQueuesLatestPrereleaseWhenEnabled(t *testing.T) {
 	}
 }
 
-func TestRunOSFlakeMigrationQueuesActivationRepairForPartialState(t *testing.T) {
-	setupTestDBXRelease(t, "v0.8.2")
-
-	ctx := core.Context{
-		Config: dogeboxd.ServerConfig{
-			DataDir: t.TempDir(),
-			TmpDir:  t.TempDir(),
-		},
-		ReadFile: testOSFlakeReadFiles(testOSFlakeFiles("v0.8.2", "v0.9.0-rc.8", "v0.8.2")),
-		RepoTagsFetcher: mockRepoTagsFetcher{
-			tags: []system.RepositoryTag{
-				{Tag: "v0.9.0-rc.8"},
-			},
-		},
-	}
-
-	var queued dogeboxd.Action
-	ctx.Enqueue = func(action dogeboxd.Action) string {
-		queued = action
-		return "job-repair"
-	}
-
-	jobID, queuedJob, err := OSFlakeMigration.Run(ctx, core.MigrationRecord{})
-	if err != nil {
-		t.Fatalf("expected no error, got %v", err)
-	}
-	if !queuedJob || jobID != "job-repair" {
-		t.Fatalf("expected repair job to be queued, got queued=%v jobID=%q", queuedJob, jobID)
-	}
-
-	repair, ok := queued.(dogeboxd.RepairSystemActivation)
-	if !ok {
-		t.Fatalf("expected RepairSystemActivation action, got %T", queued)
-	}
-	if repair.TargetVersion != "v0.9.0-rc.8" {
-		t.Fatalf("expected repair target v0.9.0-rc.8, got %+v", repair)
-	}
-}
-
 func TestRunOSFlakeMigrationSkipsWhenSystemJobAlreadyActive(t *testing.T) {
 	setupTestDBXRelease(t, "v0.8.1")
 
@@ -318,7 +271,7 @@ func TestRunOSFlakeMigrationSkipsWhenSystemJobAlreadyActive(t *testing.T) {
 			DataDir: t.TempDir(),
 			TmpDir:  t.TempDir(),
 		},
-		ReadFile: testOSFlakeReadFiles(testOSFlakeFiles("v0.8.1", "", "")),
+		ReadFile: testOSFlakeReadFiles(testOSFlakeFiles("v0.8.1")),
 		RepoTagsFetcher: mockRepoTagsFetcher{
 			tags: []system.RepositoryTag{
 				{Tag: "v0.9.0-rc.8"},

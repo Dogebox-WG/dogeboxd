@@ -225,14 +225,6 @@ func buildSystemUpdateUnitName(updateVersion string, commitHash string) string {
 	return unitName
 }
 
-func buildSystemRepairUnitName(targetVersion string) string {
-	if targetVersion == "" {
-		targetVersion = "current"
-	}
-
-	return fmt.Sprintf("dogebox-system-repair-%s", sanitizeSystemdUnitComponent(targetVersion))
-}
-
 func buildSystemUpdateCommandArgs(stagedFlakeDir string, updateVersion string, unitName string) []string {
 	return []string{
 		DBXROOT_WRAPPER_COMMAND,
@@ -245,18 +237,6 @@ func buildSystemUpdateCommandArgs(stagedFlakeDir string, updateVersion string, u
 		stagedFlakeDir,
 		"--set-release",
 		updateVersion,
-	}
-}
-
-func buildSystemActivationRepairCommandArgs(targetVersion string) []string {
-	return []string{
-		DBXROOT_WRAPPER_COMMAND,
-		"nix",
-		"rs",
-		"--activate-current-profile",
-		"--systemd-run",
-		"--systemd-unit",
-		buildSystemRepairUnitName(targetVersion),
 	}
 }
 
@@ -385,31 +365,6 @@ func (t SystemUpdater) DoSystemUpdate(pkg string, updateVersion string, logger d
 	}
 
 	return doSystemUpdate(pkg, updateVersion, t.config.TmpDir, logger)
-}
-
-func repairSystemActivation(execCommand func(string, ...string) *exec.Cmd, logger dogeboxd.SubLogger, targetVersion string) error {
-	cmd := execCommand(SUDO_COMMAND, buildSystemActivationRepairCommandArgs(targetVersion)...)
-	if logger != nil {
-		logger.Logf("Running command: %s %s", cmd.Path, strings.Join(cmd.Args[1:], " "))
-		cmd.Stdout = io.MultiWriter(os.Stdout, dogeboxd.NewLineWriter(func(s string) {
-			logger.Log(s)
-		}))
-		cmd.Stderr = io.MultiWriter(os.Stderr, dogeboxd.NewLineWriter(func(s string) {
-			logger.Log(s)
-		}))
-	} else {
-		cmd.Stdout = os.Stdout
-		cmd.Stderr = os.Stderr
-	}
-	if err := cmd.Run(); err != nil {
-		return fmt.Errorf("failed to repair current system activation: %w", err)
-	}
-
-	return nil
-}
-
-func (t SystemUpdater) RepairSystemActivation(targetVersion string, logger dogeboxd.SubLogger) error {
-	return repairSystemActivation(exec.Command, logger, targetVersion)
 }
 
 func DoSystemUpdate(pkg string, updateVersion string, logger dogeboxd.SubLogger) error {

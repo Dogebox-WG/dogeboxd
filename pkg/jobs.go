@@ -4,6 +4,7 @@ import (
 	"encoding/json"
 	"fmt"
 	"reflect"
+	"strings"
 	"sync"
 	"time"
 )
@@ -327,7 +328,7 @@ func (jm *JobManager) ClearInterruptedSystemJobs() (int, error) {
 		if job.Status != JobStatusQueued && job.Status != JobStatusInProgress {
 			continue
 		}
-		if job.Action == (SystemUpdate{}).ActionName() || job.Action == (RepairSystemActivation{}).ActionName() {
+		if isInterruptedSystemJob(job) {
 			delete(jm.activeJobs, id)
 		}
 	}
@@ -342,9 +343,27 @@ func (jm *JobManager) markOrphanedJobsAsFailed(finished time.Time, startedBefore
 }
 
 func (jm *JobManager) markInterruptedSystemJobsAsFailed(finished time.Time) (int, error) {
-	query := fmt.Sprintf(`UPDATE %s SET value = json_set(json_set(json_set(value, '$.status', 'failed'), '$.errorMessage', 'Job was interrupted by dogeboxd restart'), '$.finished', ?) WHERE json_extract(value, '$.status') IN ('queued', 'in_progress') AND json_extract(value, '$.action') IN (?, ?)`, jm.store.Table)
-	count, err := jm.store.ExecWrite(query, finished.Format(time.RFC3339Nano), (SystemUpdate{}).ActionName(), (RepairSystemActivation{}).ActionName())
+	query := fmt.Sprintf(`UPDATE %s SET value = json_set(json_set(json_set(value, '$.status', 'failed'), '$.errorMessage', 'Job was interrupted by dogeboxd restart'), '$.finished', ?) WHERE json_extract(value, '$.status') IN ('queued', 'in_progress') AND (json_extract(value, '$.action') = ? OR lower(json_extract(value, '$.displayName')) IN (?, ?))`, jm.store.Table)
+	count, err := jm.store.ExecWrite(
+		query,
+		finished.Format(time.RFC3339Nano),
+		(SystemUpdate{}).ActionName(),
+		"system update",
+		"repair system activation",
+	)
 	return int(count), err
+}
+
+func isInterruptedSystemJob(job *JobRecord) bool {
+	if job == nil {
+		return false
+	}
+	if job.Action == (SystemUpdate{}).ActionName() {
+		return true
+	}
+
+	displayName := strings.ToLower(job.DisplayName)
+	return displayName == "system update" || displayName == "repair system activation"
 }
 
 // getDisplayName returns a human-readable name for the job
@@ -431,8 +450,6 @@ func (jm *JobManager) getDisplayName(j Job) string {
 		return "Remove Binary Cache"
 	case SystemUpdate:
 		return "System Update"
-	case RepairSystemActivation:
-		return "Repair System Activation"
 	case UpdateMetrics:
 		return "Update Metrics"
 	case UpdateTimezone:

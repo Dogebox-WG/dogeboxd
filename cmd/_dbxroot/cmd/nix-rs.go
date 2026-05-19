@@ -13,7 +13,6 @@ var nixRSSetRelease string
 var nixRSFlakeDir string
 var nixRSSystemdRun bool
 var nixRSSystemdUnit string
-var nixRSActivateCurrentProfile bool
 
 func runCurrentSystemActivation() error {
 	execCmd := exec.Command("/nix/var/nix/profiles/system/bin/switch-to-configuration", "switch")
@@ -44,9 +43,6 @@ func runSystemdWrappedRS() error {
 	if nixRSSetRelease != "" {
 		systemdArgs = append(systemdArgs, "--set-release", nixRSSetRelease)
 	}
-	if nixRSActivateCurrentProfile {
-		systemdArgs = append(systemdArgs, "--activate-current-profile")
-	}
 
 	execCmd := exec.Command("/run/current-system/sw/bin/systemd-run", systemdArgs...)
 	execCmd.Stdout = os.Stdout
@@ -61,14 +57,6 @@ var rsCmd = &cobra.Command{
 		if nixRSSystemdRun {
 			if err := runSystemdWrappedRS(); err != nil {
 				fmt.Fprintf(os.Stderr, "Error executing nixos-rebuild switch in transient unit: %v\n", err)
-				os.Exit(1)
-			}
-			return
-		}
-
-		if nixRSActivateCurrentProfile {
-			if err := runCurrentSystemActivation(); err != nil {
-				fmt.Fprintf(os.Stderr, "Error activating rebuilt system profile: %v\n", err)
 				os.Exit(1)
 			}
 			return
@@ -108,6 +96,5 @@ func init() {
 	rsCmd.Flags().StringVar(&nixRSFlakeDir, "flake-dir", "", "rebuild from a specific flake directory")
 	rsCmd.Flags().BoolVar(&nixRSSystemdRun, "systemd-run", false, "run rebuild inside a transient systemd unit")
 	rsCmd.Flags().StringVar(&nixRSSystemdUnit, "systemd-unit", "", "transient systemd unit name")
-	rsCmd.Flags().BoolVar(&nixRSActivateCurrentProfile, "activate-current-profile", false, "run switch-to-configuration for the current system profile")
 	nixCmd.AddCommand(rsCmd)
 }

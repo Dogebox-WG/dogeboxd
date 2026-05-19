@@ -581,42 +581,6 @@ func TestSystemUpdaterDoSystemUpdateUsesStagedFlakeDir(t *testing.T) {
 	}
 }
 
-func TestRepairSystemActivationUsesDbxrootSystemdUnit(t *testing.T) {
-	var capturedName string
-	var capturedArgs []string
-	execCommand := func(name string, args ...string) *exec.Cmd {
-		capturedName = name
-		capturedArgs = append([]string{}, args...)
-		return exec.Command("sh", "-c", "exit 0")
-	}
-
-	if err := repairSystemActivation(execCommand, nil, "v0.9.0-rc.8"); err != nil {
-		t.Fatalf("expected no error, got %v", err)
-	}
-
-	if capturedName != SUDO_COMMAND {
-		t.Fatalf("expected command %q, got %q", SUDO_COMMAND, capturedName)
-	}
-
-	expectedArgs := []string{
-		DBXROOT_WRAPPER_COMMAND,
-		"nix",
-		"rs",
-		"--activate-current-profile",
-		"--systemd-run",
-		"--systemd-unit",
-		buildSystemRepairUnitName("v0.9.0-rc.8"),
-	}
-	if len(capturedArgs) != len(expectedArgs) {
-		t.Fatalf("expected args %v, got %v", expectedArgs, capturedArgs)
-	}
-	for i, expected := range expectedArgs {
-		if capturedArgs[i] != expected {
-			t.Fatalf("expected capturedArgs[%d] to be %q, got %q", i, expected, capturedArgs[i])
-		}
-	}
-}
-
 func createTestReleaseRepo(t *testing.T, destination string, version string) error {
 	t.Helper()
 

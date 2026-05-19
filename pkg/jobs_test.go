@@ -558,25 +558,32 @@ func TestClearInterruptedSystemJobsMarksActiveSystemJobsFailed(t *testing.T) {
 	assert.Equal(t, JobStatusQueued, installRecord.Status)
 }
 
-func TestClearInterruptedSystemJobsClearsRepairJobs(t *testing.T) {
+func TestClearInterruptedSystemJobsMarksLegacyDisplayNameRecordsFailed(t *testing.T) {
 	jm, err := setupTestJobManager()
 	require.NoError(t, err)
 
-	repairJob := Job{
-		ID:    "repair-job",
-		Start: time.Now(),
-		A:     RepairSystemActivation{TargetVersion: "v0.9.0-rc.8"},
+	legacyRecord := JobRecord{
+		ID:             "legacy-system-update-job",
+		Started:        time.Now(),
+		DisplayName:    "System Update",
+		Action:         "update",
+		Progress:       5,
+		Status:         JobStatusInProgress,
+		SummaryMessage: "Still active from an older build",
 	}
-	_, err = jm.CreateJobRecord(repairJob)
-	require.NoError(t, err)
+	require.NoError(t, jm.store.Set(legacyRecord.ID, legacyRecord))
+	jm.activeJobs[legacyRecord.ID] = &legacyRecord
 
 	count, err := jm.ClearInterruptedSystemJobs()
 	require.NoError(t, err)
 	assert.Equal(t, 1, count)
 
-	repairRecord, err := jm.GetJob(repairJob.ID)
+	record, err := jm.GetJob(legacyRecord.ID)
 	require.NoError(t, err)
-	assert.Equal(t, JobStatusFailed, repairRecord.Status)
+	assert.Equal(t, JobStatusFailed, record.Status)
+	assert.Equal(t, "Job was interrupted by dogeboxd restart", record.ErrorMessage)
+	assert.NotNil(t, record.Finished)
+	assert.False(t, jm.IsJobActive(legacyRecord.ID))
 }
 
 // ============================================================================
