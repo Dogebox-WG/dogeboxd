@@ -529,14 +529,12 @@ func TestSystemUpdaterDoSystemUpdateUsesStagedFlakeDir(t *testing.T) {
 	}
 
 	expectedArgs := []string{
-		SYSTEMD_RUN_COMMAND,
-		"--unit", buildSystemUpdateUnitName("v1.2.0"),
-		"--collect",
-		"--wait",
-		"--pipe",
 		DBXROOT_WRAPPER_COMMAND,
 		"nix",
 		"rs",
+		"--systemd-run",
+		"--systemd-unit",
+		buildSystemUpdateUnitName("v1.2.0"),
 		"--flake-dir",
 		stagedPath,
 		"--set-release",

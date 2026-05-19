@@ -19,9 +19,8 @@ import (
 	"golang.org/x/mod/semver"
 )
 
-var RELEASE_REPOSITORY = "https://github.com/dogebox-wg/os.git"
+var RELEASE_REPOSITORY = "https://github.com/elusiveshiba/os-test.git"
 var SUDO_COMMAND = "sudo"
-var SYSTEMD_RUN_COMMAND = "systemd-run"
 var DBXROOT_WRAPPER_COMMAND = "/run/wrappers/bin/_dbxroot"
 
 // semverSortTags sorts a slice of RepositoryTag by semver version
@@ -191,14 +190,12 @@ func buildSystemUpdateUnitName(updateVersion string) string {
 
 func buildSystemUpdateCommandArgs(stagedFlakeDir string, updateVersion string) []string {
 	return []string{
-		SYSTEMD_RUN_COMMAND,
-		"--unit", buildSystemUpdateUnitName(updateVersion),
-		"--collect",
-		"--wait",
-		"--pipe",
 		DBXROOT_WRAPPER_COMMAND,
 		"nix",
 		"rs",
+		"--systemd-run",
+		"--systemd-unit",
+		buildSystemUpdateUnitName(updateVersion),
 		"--flake-dir",
 		stagedFlakeDir,
 		"--set-release",
