@@ -19,7 +19,7 @@ import (
 	"golang.org/x/mod/semver"
 )
 
-var RELEASE_REPOSITORY = "https://github.com/dogebox-wg/os.git"
+var RELEASE_REPOSITORY = "https://github.com/elusiveshiba/os-test.git"
 var SUDO_COMMAND = "sudo"
 var DBXROOT_WRAPPER_COMMAND = "/run/wrappers/bin/_dbxroot"
 

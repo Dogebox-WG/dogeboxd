@@ -170,7 +170,7 @@ func TestGetUpgradableReleases_UpgradesAvailable(t *testing.T) {
 	}
 
 	// Verify release URLs are correctly formatted
-	expectedURL1 := "https://github.com/dogebox-wg/os/releases/tag/v2.0.0"
+	expectedURL1 := "https://github.com/elusiveshiba/os-test/releases/tag/v2.0.0"
 	if releases[0].ReleaseURL != expectedURL1 {
 		t.Errorf("Expected release URL to be %s, got %s", expectedURL1, releases[0].ReleaseURL)
 	}

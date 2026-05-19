@@ -13,7 +13,7 @@ func AssertUpgradableRelease(t *testing.T, release UpgradableRelease, expectedVe
 		t.Errorf("Expected version %s, got %s", expectedVersion, release.Version)
 	}
 
-	expectedURL := fmt.Sprintf("https://github.com/dogebox-wg/os/releases/tag/%s", expectedVersion)
+	expectedURL := fmt.Sprintf("https://github.com/elusiveshiba/os-test/releases/tag/%s", expectedVersion)
 	if release.ReleaseURL != expectedURL {
 		t.Errorf("Expected release URL %s, got %s", expectedURL, release.ReleaseURL)
 	}

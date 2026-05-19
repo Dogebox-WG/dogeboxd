@@ -102,6 +102,10 @@ func (t server) Start() {
 	dbx.SetJobManager(jobManager)
 	atomic.StoreUint32(&dbxReady, 1)
 
+	if cleared, err := jobManager.ClearInterruptedSystemJobs(); err == nil && cleared > 0 {
+		log.Printf("Cleaned up %d interrupted system jobs from previous run", cleared)
+	}
+
 	// Clean up any orphaned jobs from previous runs (stuck in queued/in_progress)
 	// before startup migrations inspect active work and decide whether to queue again.
 	if cleared, err := jobManager.ClearOrphanedJobs(30 * time.Minute); err == nil && cleared > 0 {

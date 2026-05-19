@@ -527,6 +527,58 @@ func TestClearAllJobsClearsActiveCache(t *testing.T) {
 	assert.Equal(t, 0, cacheLen)
 }
 
+func TestClearInterruptedSystemJobsMarksActiveSystemJobsFailed(t *testing.T) {
+	jm, err := setupTestJobManager()
+	require.NoError(t, err)
+
+	systemJob := Job{
+		ID:    "system-update-job",
+		Start: time.Now(),
+		A:     SystemUpdate{Package: "os", Version: "v0.9.0-rc.8"},
+	}
+	_, err = jm.CreateJobRecord(systemJob)
+	require.NoError(t, err)
+
+	installJob := createTestJob("InstallPup")
+	_, err = jm.CreateJobRecord(installJob)
+	require.NoError(t, err)
+
+	count, err := jm.ClearInterruptedSystemJobs()
+	require.NoError(t, err)
+	assert.Equal(t, 1, count)
+
+	systemRecord, err := jm.GetJob(systemJob.ID)
+	require.NoError(t, err)
+	assert.Equal(t, JobStatusFailed, systemRecord.Status)
+	assert.Equal(t, "Job was interrupted by dogeboxd restart", systemRecord.ErrorMessage)
+	assert.NotNil(t, systemRecord.Finished)
+
+	installRecord, err := jm.GetJob(installJob.ID)
+	require.NoError(t, err)
+	assert.Equal(t, JobStatusQueued, installRecord.Status)
+}
+
+func TestClearInterruptedSystemJobsClearsRepairJobs(t *testing.T) {
+	jm, err := setupTestJobManager()
+	require.NoError(t, err)
+
+	repairJob := Job{
+		ID:    "repair-job",
+		Start: time.Now(),
+		A:     RepairSystemActivation{TargetVersion: "v0.9.0-rc.8"},
+	}
+	_, err = jm.CreateJobRecord(repairJob)
+	require.NoError(t, err)
+
+	count, err := jm.ClearInterruptedSystemJobs()
+	require.NoError(t, err)
+	assert.Equal(t, 1, count)
+
+	repairRecord, err := jm.GetJob(repairJob.ID)
+	require.NoError(t, err)
+	assert.Equal(t, JobStatusFailed, repairRecord.Status)
+}
+
 // ============================================================================
 // Test Suite: Display Name Generation
 // ============================================================================
