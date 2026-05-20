@@ -102,6 +102,10 @@ func (t server) Start() {
 	dbx.SetJobManager(jobManager)
 	atomic.StoreUint32(&dbxReady, 1)
 
+	if reconciled, err := jobManager.ReconcileCompletedSystemUpdateJobs(); err == nil && reconciled > 0 {
+		log.Printf("Reconciled %d interrupted system update jobs to completed after restart", reconciled)
+	}
+
 	if cleared, err := jobManager.ClearInterruptedSystemJobs(); err == nil && cleared > 0 {
 		log.Printf("Cleaned up %d interrupted system jobs from previous run", cleared)
 	}
