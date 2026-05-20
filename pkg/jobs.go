@@ -343,13 +343,12 @@ func (jm *JobManager) markOrphanedJobsAsFailed(finished time.Time, startedBefore
 }
 
 func (jm *JobManager) markInterruptedSystemJobsAsFailed(finished time.Time) (int, error) {
-	query := fmt.Sprintf(`UPDATE %s SET value = json_set(json_set(json_set(value, '$.status', 'failed'), '$.errorMessage', 'Job was interrupted by dogeboxd restart'), '$.finished', ?) WHERE json_extract(value, '$.status') IN ('queued', 'in_progress') AND (json_extract(value, '$.action') = ? OR lower(json_extract(value, '$.displayName')) IN (?, ?))`, jm.store.Table)
+	query := fmt.Sprintf(`UPDATE %s SET value = json_set(json_set(json_set(value, '$.status', 'failed'), '$.errorMessage', 'Job was interrupted by dogeboxd restart'), '$.finished', ?) WHERE json_extract(value, '$.status') IN ('queued', 'in_progress') AND (json_extract(value, '$.action') = ? OR lower(json_extract(value, '$.displayName')) = ?)`, jm.store.Table)
 	count, err := jm.store.ExecWrite(
 		query,
 		finished.Format(time.RFC3339Nano),
 		(SystemUpdate{}).ActionName(),
 		"system update",
-		"repair system activation",
 	)
 	return int(count), err
 }
@@ -363,7 +362,7 @@ func isInterruptedSystemJob(job *JobRecord) bool {
 	}
 
 	displayName := strings.ToLower(job.DisplayName)
-	return displayName == "system update" || displayName == "repair system activation"
+	return displayName == "system update"
 }
 
 // getDisplayName returns a human-readable name for the job

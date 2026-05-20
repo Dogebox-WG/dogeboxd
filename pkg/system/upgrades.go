@@ -235,6 +235,8 @@ func buildSystemUpdateCommandArgs(stagedFlakeDir string, updateVersion string, u
 		unitName,
 		"--flake-dir",
 		stagedFlakeDir,
+		// Activation reads the staged flake after dogeboxd may have been
+		// stopped, so cleanup must happen inside _dbxroot's transient unit.
 		"--cleanup-flake-dir",
 		"--set-release",
 		updateVersion,

@@ -212,6 +212,9 @@ func determineOSFlakeMigrationDecision(ctx core.Context, record core.MigrationRe
 		return osFlakeMigrationDecision{}, err
 	}
 	if currentReleaseInMigrationRange {
+		// A partial activation can update DBX while leaving /etc/nixos on the
+		// old flake. Re-run the current release so activation can copy the
+		// staged flake into place and let the next startup mark this complete.
 		decision.targetVersion = currentDBXRelease
 		return decision, nil
 	}
