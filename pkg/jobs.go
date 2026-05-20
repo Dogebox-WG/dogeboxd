@@ -348,10 +348,7 @@ func (jm *JobManager) ReconcileCompletedSystemUpdateJobs() (int, error) {
 			continue
 		}
 
-		targetVersion := strings.TrimSpace(job.TargetVersion)
-		if targetVersion == "" {
-			targetVersion = strings.TrimSpace(jm.readSystemUpdateTargetVersionFromLog(job.ID))
-		}
+		targetVersion := strings.TrimSpace(jm.resolveSystemUpdateTargetVersion(job))
 		if targetVersion == "" {
 			continue
 		}
@@ -424,6 +421,7 @@ func (jm *JobManager) getActiveSystemJobsLocked() ([]JobRecord, error) {
 }
 
 func (jm *JobManager) markInterruptedSystemJobAsFailedLocked(job JobRecord, finished time.Time) error {
+	targetVersion := strings.TrimSpace(jm.resolveSystemUpdateTargetVersion(job))
 	job.Status = JobStatusFailed
 	job.Finished = &finished
 	job.ErrorMessage = interruptedSystemJobMessage(job)
@@ -432,7 +430,7 @@ func (jm *JobManager) markInterruptedSystemJobAsFailedLocked(job JobRecord, fini
 		return err
 	}
 
-	note := interruptedSystemJobLogNote(job)
+	note := interruptedSystemJobLogNote(job, targetVersion)
 	if note != "" {
 		jm.appendJobRecoveryLog(job.ID, note)
 	}
@@ -456,21 +454,30 @@ func interruptedSystemJobMessage(job JobRecord) string {
 	return "Job was interrupted by dogeboxd restart"
 }
 
-func interruptedSystemJobLogNote(job JobRecord) string {
-	if isExpectedManualRestartMigrationUpdate(job) {
+func interruptedSystemJobLogNote(job JobRecord, targetVersion string) string {
+	if isExpectedManualRestartMigrationUpdate(targetVersion) {
 		return "System update was interrupted by dogeboxd restart. This is expected when performing a 0.8.x to 0.9.x update; restart dogeboxd to continue phase 2."
 	}
 
 	return ""
 }
 
-func isExpectedManualRestartMigrationUpdate(job JobRecord) bool {
-	targetVersion := strings.TrimSpace(job.TargetVersion)
+func isExpectedManualRestartMigrationUpdate(targetVersion string) bool {
+	targetVersion = strings.TrimSpace(targetVersion)
 	if targetVersion == "" {
 		return false
 	}
 
 	return semver.IsValid(targetVersion) && semver.Compare(targetVersion, "v0.9.0-rc.1") >= 0
+}
+
+func (jm *JobManager) resolveSystemUpdateTargetVersion(job JobRecord) string {
+	targetVersion := strings.TrimSpace(job.TargetVersion)
+	if targetVersion != "" {
+		return targetVersion
+	}
+
+	return strings.TrimSpace(jm.readSystemUpdateTargetVersionFromLog(job.ID))
 }
 
 func getReconciledInstalledOSFlakeVersion() (string, error) {

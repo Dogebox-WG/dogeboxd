@@ -610,19 +610,26 @@ func TestClearInterruptedSystemJobsAppendsMigrationRestartNoteToLog(t *testing.T
 	logDir := t.TempDir()
 	testDBX.dbx.config.ContainerLogDir = logDir
 
-	systemJob := Job{
-		ID:    "system-update-job",
-		Start: time.Now(),
-		A:     SystemUpdate{Package: "os", Version: "v0.9.0-rc.8"},
+	legacyRecord := JobRecord{
+		ID:             "system-update-job",
+		Started:        time.Now(),
+		DisplayName:    "System Update",
+		Action:         "update",
+		Progress:       5,
+		Status:         JobStatusInProgress,
+		SummaryMessage: "Still active from an older build",
 	}
-	_, err = jm.CreateJobRecord(systemJob)
-	require.NoError(t, err)
+	require.NoError(t, jm.store.Set(legacyRecord.ID, legacyRecord))
+	jm.activeJobs[legacyRecord.ID] = &legacyRecord
+
+	logPath := filepath.Join(logDir, "pup-"+legacyRecord.ID)
+	require.NoError(t, os.WriteFile(logPath, []byte("[2026-05-20 11:18:37] Starting system update to v0.9.0-rc.8\n"), 0644))
 
 	count, err := jm.ClearInterruptedSystemJobs()
 	require.NoError(t, err)
 	assert.Equal(t, 1, count)
 
-	logContents, err := os.ReadFile(filepath.Join(logDir, "pup-"+systemJob.ID))
+	logContents, err := os.ReadFile(logPath)
 	require.NoError(t, err)
 	assert.Contains(t, string(logContents), "System update was interrupted by dogeboxd restart. This is expected when performing a 0.8.x to 0.9.x update; restart dogeboxd to continue phase 2.")
 }
