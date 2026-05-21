@@ -11,9 +11,9 @@ import (
 const migrationsStateFilename = "migrations.json"
 
 type MigrationRecord struct {
-	Runs     int            `json:"runs"`
-	DoNotRun bool           `json:"doNotRun"`
-	Config   map[string]any `json:"config,omitempty"`
+	RanSuccessfully bool           `json:"ranSuccessfully"`
+	DoNotRun        bool           `json:"doNotRun"`
+	Config          map[string]any `json:"config,omitempty"`
 }
 
 type State map[string]MigrationRecord
@@ -81,19 +81,6 @@ func SaveState(config dogeboxd.ServerConfig, state State) error {
 	return os.Rename(tempPath, statePath)
 }
 
-func RecordRun(config dogeboxd.ServerConfig, migrationName string) error {
-	state, err := LoadState(config)
-	if err != nil {
-		return err
-	}
-
-	record := state[migrationName]
-	record.Runs++
-	state[migrationName] = record
-
-	return SaveState(config, state)
-}
-
 func SetDoNotRun(config dogeboxd.ServerConfig, migrationName string, value bool) error {
 	state, err := LoadState(config)
 	if err != nil {
@@ -102,6 +89,33 @@ func SetDoNotRun(config dogeboxd.ServerConfig, migrationName string, value bool)
 
 	record := state[migrationName]
 	record.DoNotRun = value
+	state[migrationName] = record
+
+	return SaveState(config, state)
+}
+
+func SetRanSuccessfully(config dogeboxd.ServerConfig, migrationName string, value bool) error {
+	state, err := LoadState(config)
+	if err != nil {
+		return err
+	}
+
+	record := state[migrationName]
+	record.RanSuccessfully = value
+	state[migrationName] = record
+
+	return SaveState(config, state)
+}
+
+func MarkCompleted(config dogeboxd.ServerConfig, migrationName string) error {
+	state, err := LoadState(config)
+	if err != nil {
+		return err
+	}
+
+	record := state[migrationName]
+	record.RanSuccessfully = true
+	record.DoNotRun = true
 	state[migrationName] = record
 
 	return SaveState(config, state)

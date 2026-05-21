@@ -25,8 +25,8 @@ func TestSaveStatePreservesUnknownKeys(t *testing.T) {
 
 	input := State{
 		"unknown_migration": {
-			Runs:     2,
-			DoNotRun: true,
+			RanSuccessfully: true,
+			DoNotRun:        true,
 			Config: map[string]any{
 				"exampleFlag": true,
 				"mode":        "test",
@@ -46,12 +46,11 @@ func TestSaveStatePreservesUnknownKeys(t *testing.T) {
 	}
 }
 
-func TestRecordRunIncrementsWithoutClearingFlagsOrConfig(t *testing.T) {
+func TestSetRanSuccessfullyWithoutClearingFlagsOrConfig(t *testing.T) {
 	config := dogeboxd.ServerConfig{DataDir: t.TempDir()}
 
 	if err := SaveState(config, State{
 		"test_migration": {
-			Runs:     1,
 			DoNotRun: true,
 			Config: map[string]any{
 				"exampleFlag": true,
@@ -61,8 +60,8 @@ func TestRecordRunIncrementsWithoutClearingFlagsOrConfig(t *testing.T) {
 		t.Fatalf("expected save to succeed, got %v", err)
 	}
 
-	if err := RecordRun(config, "test_migration"); err != nil {
-		t.Fatalf("expected record run to succeed, got %v", err)
+	if err := SetRanSuccessfully(config, "test_migration", true); err != nil {
+		t.Fatalf("expected set ran successfully to succeed, got %v", err)
 	}
 
 	state, err := LoadState(config)
@@ -70,8 +69,35 @@ func TestRecordRunIncrementsWithoutClearingFlagsOrConfig(t *testing.T) {
 		t.Fatalf("expected load to succeed, got %v", err)
 	}
 	record := state["test_migration"]
-	if record.Runs != 2 || !record.DoNotRun || !record.BoolConfig("exampleFlag") {
-		t.Fatalf("expected incremented runs and preserved flags/config, got %+v", record)
+	if !record.RanSuccessfully || !record.DoNotRun || !record.BoolConfig("exampleFlag") {
+		t.Fatalf("expected ranSuccessfully and preserved flags/config, got %+v", record)
+	}
+}
+
+func TestMarkCompletedSetsTerminalFlagsWithoutClearingConfig(t *testing.T) {
+	config := dogeboxd.ServerConfig{DataDir: t.TempDir()}
+
+	if err := SaveState(config, State{
+		"test_migration": {
+			Config: map[string]any{
+				"exampleFlag": true,
+			},
+		},
+	}); err != nil {
+		t.Fatalf("expected save to succeed, got %v", err)
+	}
+
+	if err := MarkCompleted(config, "test_migration"); err != nil {
+		t.Fatalf("expected mark completed to succeed, got %v", err)
+	}
+
+	state, err := LoadState(config)
+	if err != nil {
+		t.Fatalf("expected load to succeed, got %v", err)
+	}
+	record := state["test_migration"]
+	if !record.RanSuccessfully || !record.DoNotRun || !record.BoolConfig("exampleFlag") {
+		t.Fatalf("expected completed flags and preserved config, got %+v", record)
 	}
 }
 

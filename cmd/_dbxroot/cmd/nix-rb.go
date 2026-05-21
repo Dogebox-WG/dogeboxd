@@ -3,9 +3,7 @@ package cmd
 import (
 	"fmt"
 	"os"
-	"os/exec"
 
-	"github.com/Dogebox-WG/dogeboxd/cmd/_dbxroot/utils"
 	"github.com/spf13/cobra"
 )
 
@@ -16,22 +14,7 @@ var rbCmd = &cobra.Command{
 	Use:   "rb",
 	Short: "Executes nixos-rebuild boot",
 	Run: func(cmd *cobra.Command, args []string) {
-		rebuildCommand, rebuildArgs, err := utils.GetRebuildCommand("boot", nixRBSetRelease, nixRBFlakeDir)
-		if err != nil {
-			fmt.Fprintf(os.Stderr, "Error getting rebuild command: %v\n", err)
-			os.Exit(1)
-		}
-
-		execCmd := exec.Command(rebuildCommand, rebuildArgs...)
-		execCmd.Stdout = os.Stdout
-		execCmd.Stderr = os.Stderr
-
-		if nixRBFlakeDir != "" {
-			execCmd.Env = append(os.Environ(), "DBX_UPGRADE_FLAKE_DIR="+nixRBFlakeDir)
-		}
-
-		err = execCmd.Run()
-		if err != nil {
+		if err := runNixOSRebuild("boot", nixRBSetRelease, nixRBFlakeDir); err != nil {
 			fmt.Fprintf(os.Stderr, "Error executing nixos-rebuild boot: %v\n", err)
 			os.Exit(1)
 		}
