@@ -107,6 +107,14 @@ func EvaluateRunDecision(config dogeboxd.ServerConfig, migrationName string) (Ru
 	}
 
 	record := state[migrationName]
+	if record.RanSuccessfully {
+		return RunDecision{
+			Record:     record,
+			ShouldRun:  false,
+			SkipReason: "migration has already run successfully",
+		}, nil
+	}
+
 	if record.DoNotRun {
 		return RunDecision{
 			Record:     record,

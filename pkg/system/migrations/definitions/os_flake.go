@@ -103,10 +103,7 @@ func osFlakeMigrationRequirements(ctx core.Context, record core.MigrationRecord)
 		return false, "", err
 	}
 	if decision.complete {
-		if err := core.SetRanSuccessfully(ctx.Config, osFlakeMigrationMetadata.Name, true); err != nil {
-			return false, "", err
-		}
-		if err := core.SetDoNotRun(ctx.Config, osFlakeMigrationMetadata.Name, true); err != nil {
+		if err := core.MarkCompleted(ctx.Config, osFlakeMigrationMetadata.Name); err != nil {
 			return false, "", err
 		}
 		log.Printf(
@@ -176,6 +173,10 @@ func determineOSFlakeMigrationDecision(ctx core.Context, record core.MigrationRe
 		complete:              complete,
 	}
 
+	if complete {
+		return decision, nil
+	}
+
 	releases, err := system.GetUpgradableReleasesForVersionWithFetcher(currentDBXRelease, includePreReleases, ctx.RepoTagsFetcherOrDefault())
 	if err != nil {
 		return osFlakeMigrationDecision{}, err
@@ -192,10 +193,6 @@ func determineOSFlakeMigrationDecision(ctx core.Context, record core.MigrationRe
 			includePreReleases,
 			latestEligibleRelease,
 		)
-	}
-
-	if complete {
-		return decision, nil
 	}
 
 	matchesInstalledVersionConstraint, err := core.VersionConstraintCheck(installedFlakeVersion, "<="+osFlakeMigrationMetadata.Version)

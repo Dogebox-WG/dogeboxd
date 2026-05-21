@@ -83,6 +83,25 @@ func TestEvaluateRunDecisionSkipsWhenDoNotRunSet(t *testing.T) {
 	}
 }
 
+func TestEvaluateRunDecisionSkipsWhenRanSuccessfullySet(t *testing.T) {
+	ctx := testMigrationContext(t)
+	if err := SaveState(ctx.Config, State{
+		"test_migration": {
+			RanSuccessfully: true,
+		},
+	}); err != nil {
+		t.Fatalf("expected save to succeed, got %v", err)
+	}
+
+	decision, err := EvaluateRunDecision(ctx.Config, "test_migration")
+	if err != nil {
+		t.Fatalf("expected no error, got %v", err)
+	}
+	if decision.ShouldRun || decision.SkipReason == "" {
+		t.Fatalf("expected ranSuccessfully to skip with a reason, got %+v", decision)
+	}
+}
+
 func TestRunMigrationsDoesNotMarkSuccessWhenQueued(t *testing.T) {
 	ctx := testMigrationContext(t)
 

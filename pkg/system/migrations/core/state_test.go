@@ -74,6 +74,33 @@ func TestSetRanSuccessfullyWithoutClearingFlagsOrConfig(t *testing.T) {
 	}
 }
 
+func TestMarkCompletedSetsTerminalFlagsWithoutClearingConfig(t *testing.T) {
+	config := dogeboxd.ServerConfig{DataDir: t.TempDir()}
+
+	if err := SaveState(config, State{
+		"test_migration": {
+			Config: map[string]any{
+				"exampleFlag": true,
+			},
+		},
+	}); err != nil {
+		t.Fatalf("expected save to succeed, got %v", err)
+	}
+
+	if err := MarkCompleted(config, "test_migration"); err != nil {
+		t.Fatalf("expected mark completed to succeed, got %v", err)
+	}
+
+	state, err := LoadState(config)
+	if err != nil {
+		t.Fatalf("expected load to succeed, got %v", err)
+	}
+	record := state["test_migration"]
+	if !record.RanSuccessfully || !record.DoNotRun || !record.BoolConfig("exampleFlag") {
+		t.Fatalf("expected completed flags and preserved config, got %+v", record)
+	}
+}
+
 func TestSaveStateRoundTripsConfig(t *testing.T) {
 	config := dogeboxd.ServerConfig{DataDir: t.TempDir()}
 

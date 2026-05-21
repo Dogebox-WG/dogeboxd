@@ -107,6 +107,20 @@ func SetRanSuccessfully(config dogeboxd.ServerConfig, migrationName string, valu
 	return SaveState(config, state)
 }
 
+func MarkCompleted(config dogeboxd.ServerConfig, migrationName string) error {
+	state, err := LoadState(config)
+	if err != nil {
+		return err
+	}
+
+	record := state[migrationName]
+	record.RanSuccessfully = true
+	record.DoNotRun = true
+	state[migrationName] = record
+
+	return SaveState(config, state)
+}
+
 func (r MigrationRecord) BoolConfig(name string) bool {
 	if r.Config == nil {
 		return false

@@ -5,7 +5,6 @@ import (
 	"os"
 	"os/exec"
 
-	"github.com/Dogebox-WG/dogeboxd/cmd/_dbxroot/utils"
 	"github.com/spf13/cobra"
 )
 
@@ -28,6 +27,8 @@ func runSystemdWrappedRS() error {
 		unitName = "dogebox-system-update"
 	}
 
+	fmt.Fprintf(os.Stderr, "Running nixos-rebuild switch in transient unit %s; follow detailed logs with journalctl -u %s\n", unitName, unitName)
+
 	execCmd := exec.Command("/run/current-system/sw/bin/systemd-run", buildSystemdRunRSArgs(unitName, nixRSFlakeDir, nixRSSetRelease, nixRSCleanupFlakeDir)...)
 	execCmd.Stdout = os.Stdout
 	execCmd.Stderr = os.Stderr
@@ -39,6 +40,8 @@ func buildSystemdRunRSArgs(unitName string, flakeDir string, setRelease string, 
 		"--unit", unitName,
 		"--collect",
 		"--wait",
+		// Do not use --pipe here: dogeboxd may be stopped during activation,
+		// but the transient unit must keep running to complete the switch.
 		"--setenv=PATH=/run/current-system/sw/bin:/run/wrappers/bin",
 		"/run/wrappers/bin/_dbxroot",
 		"nix",
@@ -69,22 +72,7 @@ var rsCmd = &cobra.Command{
 			return
 		}
 
-		rebuildCommand, rebuildArgs, err := utils.GetRebuildCommand("switch", nixRSSetRelease, nixRSFlakeDir)
-		if err != nil {
-			fmt.Fprintf(os.Stderr, "Error getting rebuild command: %v\n", err)
-			os.Exit(1)
-		}
-
-		execCmd := exec.Command(rebuildCommand, rebuildArgs...)
-		execCmd.Stdout = os.Stdout
-		execCmd.Stderr = os.Stderr
-
-		if nixRSFlakeDir != "" {
-			execCmd.Env = append(os.Environ(), "DBX_UPGRADE_FLAKE_DIR="+nixRSFlakeDir)
-		}
-
-		err = execCmd.Run()
-		if err != nil {
+		if err := runNixOSRebuild("switch", nixRSSetRelease, nixRSFlakeDir); err != nil {
 			fmt.Fprintf(os.Stderr, "Error executing nixos-rebuild switch: %v\n", err)
 			os.Exit(1)
 		}
