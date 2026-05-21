@@ -170,7 +170,7 @@ func TestGetUpgradableReleases_UpgradesAvailable(t *testing.T) {
 	}
 
 	// Verify release URLs are correctly formatted
-	expectedURL1 := "https://github.com/elusiveshiba/os-test/releases/tag/v2.0.0"
+	expectedURL1 := "https://github.com/dogebox-wg/os/releases/tag/v2.0.0"
 	if releases[0].ReleaseURL != expectedURL1 {
 		t.Errorf("Expected release URL to be %s, got %s", expectedURL1, releases[0].ReleaseURL)
 	}
@@ -181,29 +181,6 @@ func TestGetUpgradableReleases_UpgradesAvailable(t *testing.T) {
 		if release.Summary != expectedSummary {
 			t.Errorf("Expected summary to be '%s', got '%s'", expectedSummary, release.Summary)
 		}
-	}
-}
-
-func TestGetUpgradableReleasesUsesRepositoryOverrideForReleaseURLs(t *testing.T) {
-	mockTags := []RepositoryTag{
-		{Tag: "v1.2.0"},
-	}
-	mockFetcher := &MockRepoTagsFetcher{tags: mockTags, err: nil}
-
-	tempDir := setupMockVersioning(t, "v1.1.0")
-	defer os.RemoveAll(tempDir)
-
-	t.Setenv(releaseRepositoryEnvVar, "https://github.com/elusiveshiba/os-test.git")
-
-	releases, err := GetUpgradableReleasesWithFetcher(true, mockFetcher)
-	if err != nil {
-		t.Fatalf("Expected no error, got: %v", err)
-	}
-	if len(releases) != 1 {
-		t.Fatalf("expected one upgradable release, got %d", len(releases))
-	}
-	if releases[0].ReleaseURL != "https://github.com/elusiveshiba/os-test/releases/tag/v1.2.0" {
-		t.Fatalf("expected os-test release URL, got %q", releases[0].ReleaseURL)
 	}
 }
 

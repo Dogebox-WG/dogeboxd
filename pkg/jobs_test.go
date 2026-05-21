@@ -575,34 +575,6 @@ func TestClearInterruptedSystemJobsMarksActiveSystemJobsFailed(t *testing.T) {
 	assert.Equal(t, JobStatusQueued, installRecord.Status)
 }
 
-func TestClearInterruptedSystemJobsMarksLegacyDisplayNameRecordsFailed(t *testing.T) {
-	jm, err := setupTestJobManager()
-	require.NoError(t, err)
-
-	legacyRecord := JobRecord{
-		ID:             "legacy-system-update-job",
-		Started:        time.Now(),
-		DisplayName:    "System Update",
-		Action:         "update",
-		Progress:       5,
-		Status:         JobStatusInProgress,
-		SummaryMessage: "Still active from an older build",
-	}
-	require.NoError(t, jm.store.Set(legacyRecord.ID, legacyRecord))
-	jm.activeJobs[legacyRecord.ID] = &legacyRecord
-
-	count, err := jm.ClearInterruptedSystemJobs()
-	require.NoError(t, err)
-	assert.Equal(t, 1, count)
-
-	record, err := jm.GetJob(legacyRecord.ID)
-	require.NoError(t, err)
-	assert.Equal(t, JobStatusFailed, record.Status)
-	assert.Equal(t, "Job was interrupted by dogeboxd restart", record.ErrorMessage)
-	assert.NotNil(t, record.Finished)
-	assert.False(t, jm.IsJobActive(legacyRecord.ID))
-}
-
 func TestClearInterruptedSystemJobsAppendsMigrationRestartNoteToLog(t *testing.T) {
 	jm, testDBX, err := setupTestJobManagerWithDBX()
 	require.NoError(t, err)

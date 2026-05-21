@@ -19,11 +19,9 @@ import (
 	"golang.org/x/mod/semver"
 )
 
-var RELEASE_REPOSITORY = "https://github.com/elusiveshiba/os-test.git"
+var RELEASE_REPOSITORY = "https://github.com/dogebox-wg/os.git"
 var SUDO_COMMAND = "sudo"
 var DBXROOT_WRAPPER_COMMAND = "/run/wrappers/bin/_dbxroot"
-
-const releaseRepositoryEnvVar = "DOGEBOX_RELEASE_REPOSITORY"
 
 // semverSortTags sorts a slice of RepositoryTag by semver version
 // direction: "desc" for descending (highest first), "asc" for ascending (lowest first)
@@ -84,24 +82,6 @@ type UpgradableRelease struct {
 	Summary    string
 }
 
-func getReleaseRepository() string {
-	if override := strings.TrimSpace(os.Getenv(releaseRepositoryEnvVar)); override != "" {
-		return override
-	}
-
-	return RELEASE_REPOSITORY
-}
-
-func buildReleaseTagURL(repository string, version string) string {
-	base := strings.TrimSuffix(strings.TrimSpace(repository), ".git")
-	base = strings.TrimSuffix(base, "/")
-	if base == "" {
-		base = strings.TrimSuffix(RELEASE_REPOSITORY, ".git")
-	}
-
-	return fmt.Sprintf("%s/releases/tag/%s", base, version)
-}
-
 type InvalidUpdatePackageError struct {
 	Package string
 }
@@ -144,8 +124,7 @@ func GetUpgradableReleasesWithFetcher(includePreReleases bool, fetcher RepoTagsF
 }
 
 func GetUpgradableReleasesForVersionWithFetcher(currentRelease string, includePreReleases bool, fetcher RepoTagsFetcher) ([]UpgradableRelease, error) {
-	releaseRepository := getReleaseRepository()
-	tags, err := fetcher.GetRepoTags(releaseRepository)
+	tags, err := fetcher.GetRepoTags(RELEASE_REPOSITORY)
 	if err != nil {
 		return []UpgradableRelease{}, err
 	}
@@ -154,7 +133,7 @@ func GetUpgradableReleasesForVersionWithFetcher(currentRelease string, includePr
 	for _, tag := range tags {
 		release := UpgradableRelease{
 			Version:    tag.Tag,
-			ReleaseURL: buildReleaseTagURL(releaseRepository, tag.Tag),
+			ReleaseURL: fmt.Sprintf("https://github.com/dogebox-wg/os/releases/tag/%s", tag.Tag),
 			Summary:    "Update for Dogeboxd / DKM / DPanel",
 		}
 
@@ -174,7 +153,7 @@ func GetUpgradableReleasesForVersionWithFetcher(currentRelease string, includePr
 
 func cloneReleaseRepository(destination, version string) error {
 	_, err := git.PlainClone(destination, false, &git.CloneOptions{
-		URL:           getReleaseRepository(),
+		URL:           RELEASE_REPOSITORY,
 		ReferenceName: plumbing.NewTagReferenceName(version),
 		SingleBranch:  true,
 		Depth:         1,
