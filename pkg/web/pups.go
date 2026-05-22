@@ -85,6 +85,95 @@ type InstallPupRequest struct {
 	EnableDevMode           bool `json:"installWithDevModeEnabled"`
 }
 
+func installKey(sourceID, pupName, pupVersion string) string {
+	return fmt.Sprintf("%s:%s:%s", sourceID, pupName, pupVersion)
+}
+
+func hasPreferredSource(source dogeboxd.PupManifestDependencySource) bool {
+	return source.SourceLocation != "" || source.PupName != "" || source.PupVersion != ""
+}
+
+func matchesPreferredSource(candidate, preferred dogeboxd.PupManifestDependencySource) bool {
+	if preferred.SourceLocation != "" && candidate.SourceLocation != preferred.SourceLocation {
+		return false
+	}
+	if preferred.PupName != "" && candidate.PupName != preferred.PupName {
+		return false
+	}
+	if preferred.PupVersion != "" && candidate.PupVersion != preferred.PupVersion {
+		return false
+	}
+	return hasPreferredSource(preferred)
+}
+
+func pickDependencySource(dep dogeboxd.PupDependencyReport) (dogeboxd.PupManifestDependencySource, bool) {
+	if dep.CurrentProvider != "" || len(dep.InstalledProviders) > 0 {
+		return dogeboxd.PupManifestDependencySource{}, false
+	}
+
+	if len(dep.InstallableProviders) == 0 {
+		return dogeboxd.PupManifestDependencySource{}, false
+	}
+
+	if hasPreferredSource(dep.DefaultSourceProvider) {
+		for _, source := range dep.InstallableProviders {
+			if matchesPreferredSource(source, dep.DefaultSourceProvider) {
+				return source, true
+			}
+		}
+	}
+
+	return dep.InstallableProviders[0], true
+}
+
+func resolveSourceID(sourceLists map[string]dogeboxd.ManifestSourceList, sourceLocation string) (string, error) {
+	for sourceID, sourceList := range sourceLists {
+		if sourceList.Config.Location == sourceLocation {
+			return sourceID, nil
+		}
+	}
+
+	return "", fmt.Errorf("no source found for location %q", sourceLocation)
+}
+
+func buildDependencyInstallRequests(
+	deps []dogeboxd.PupDependencyReport,
+	sourceLists map[string]dogeboxd.ManifestSourceList,
+	sessionToken string,
+	seenInstalls map[string]struct{},
+) ([]dogeboxd.InstallPup, error) {
+	installs := make([]dogeboxd.InstallPup, 0)
+
+	for _, dep := range deps {
+		source, ok := pickDependencySource(dep)
+		if !ok {
+			continue
+		}
+
+		sourceID, err := resolveSourceID(sourceLists, source.SourceLocation)
+		if err != nil {
+			return nil, fmt.Errorf("couldn't resolve source for dependency %q: %w", dep.Interface, err)
+		}
+
+		key := installKey(sourceID, source.PupName, source.PupVersion)
+		if seenInstalls != nil {
+			if _, exists := seenInstalls[key]; exists {
+				continue
+			}
+			seenInstalls[key] = struct{}{}
+		}
+
+		installs = append(installs, dogeboxd.InstallPup{
+			PupName:      source.PupName,
+			PupVersion:   source.PupVersion,
+			SourceId:     sourceID,
+			SessionToken: sessionToken,
+		})
+	}
+
+	return installs, nil
+}
+
 // calculateDependencies creates a temporary pup state and calculates its dependencies
 func (t api) calculateDependencies(sourceId, pupName, pupVersion string) (*dogeboxd.PupState, []dogeboxd.PupDependencyReport, error) {
 	// Create a temporary pup - this will be used to calculate dependencies
@@ -139,6 +228,18 @@ func (t api) installPup(w http.ResponseWriter, r *http.Request) {
 			return
 		}
 
+		allSources, err := t.sources.GetAll(false)
+		if err != nil {
+			sendErrorResponse(w, http.StatusBadRequest, err.Error())
+			return
+		}
+
+		dependencyInstalls, err := buildDependencyInstallRequests(deps, allSources, req.SessionToken, map[string]struct{}{})
+		if err != nil {
+			sendErrorResponse(w, http.StatusBadRequest, err.Error())
+			return
+		}
+
 		// Add the batch installation action
 		id := t.dbx.AddAction(dogeboxd.InstallPup{
 			PupName:    req.PupName,
@@ -151,20 +252,8 @@ func (t api) installPup(w http.ResponseWriter, r *http.Request) {
 		})
 
 		// Add installation actions for dependencies
-		for _, dep := range deps {
-			if dep.CurrentProvider == "" {
-				// Use the first available provider for each dependency
-				if len(dep.InstallableProviders) > 0 {
-					provider := dep.InstallableProviders[0]
-					// Use the same source ID as the main pup for dependencies
-					t.dbx.AddAction(dogeboxd.InstallPup{
-						PupName:      provider.PupName,
-						PupVersion:   provider.PupVersion,
-						SourceId:     req.SourceId, // Use the same source ID as the main pup
-						SessionToken: req.SessionToken,
-					})
-				}
-			}
+		for _, install := range dependencyInstalls {
+			t.dbx.AddAction(install)
 		}
 
 		sendResponse(w, map[string]string{"id": id})
@@ -285,6 +374,12 @@ func (t api) installPups(w http.ResponseWriter, r *http.Request) {
 
 	// Create batch installation requests
 	installRequests := make([]dogeboxd.InstallPup, 0)
+	seenDependencyInstalls := map[string]struct{}{}
+	allSources, err := t.sources.GetAll(false)
+	if err != nil {
+		sendErrorResponse(w, http.StatusBadRequest, err.Error())
+		return
+	}
 
 	// Process each pup and its dependencies if auto-install is enabled
 	for _, pup := range req.Pups {
@@ -306,23 +401,12 @@ func (t api) installPups(w http.ResponseWriter, r *http.Request) {
 				SessionToken: pup.SessionToken,
 			})
 
-			// Add all required dependencies
-			for _, dep := range deps {
-				if dep.CurrentProvider == "" {
-					// Use the first available provider for each dependency
-					if len(dep.InstallableProviders) > 0 {
-						provider := dep.InstallableProviders[0]
-						// Use the same source ID as the main pup for dependencies
-						installRequests = append(installRequests, dogeboxd.InstallPup{
-							PupName:      provider.PupName,
-							PupVersion:   provider.PupVersion,
-							SourceId:     pup.SourceId, // Use same source for dependencies
-							Options:      dogeboxd.AdoptPupOptions{},
-							SessionToken: pup.SessionToken,
-						})
-					}
-				}
+			dependencyInstalls, err := buildDependencyInstallRequests(deps, allSources, pup.SessionToken, seenDependencyInstalls)
+			if err != nil {
+				sendErrorResponse(w, http.StatusBadRequest, err.Error())
+				return
 			}
+			installRequests = append(installRequests, dependencyInstalls...)
 		} else {
 			// Add just the main pup if auto-install is disabled
 			installRequests = append(installRequests, dogeboxd.InstallPup{
