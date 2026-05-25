@@ -5,6 +5,7 @@ import (
 	"os"
 	"os/exec"
 
+	"github.com/Dogebox-WG/dogeboxd/cmd/_dbxroot/utils"
 	"github.com/spf13/cobra"
 )
 
@@ -72,7 +73,7 @@ var rsCmd = &cobra.Command{
 			return
 		}
 
-		if err := runNixOSRebuild("switch", nixRSSetRelease, nixRSFlakeDir); err != nil {
+		if err := utils.RunNixOSRebuild("switch", nixRSSetRelease, nixRSFlakeDir); err != nil {
 			fmt.Fprintf(os.Stderr, "Error executing nixos-rebuild switch: %v\n", err)
 			os.Exit(1)
 		}

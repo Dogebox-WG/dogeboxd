@@ -4,6 +4,7 @@ import (
 	"fmt"
 	"os"
 
+	"github.com/Dogebox-WG/dogeboxd/cmd/_dbxroot/utils"
 	"github.com/spf13/cobra"
 )
 
@@ -14,7 +15,7 @@ var rbCmd = &cobra.Command{
 	Use:   "rb",
 	Short: "Executes nixos-rebuild boot",
 	Run: func(cmd *cobra.Command, args []string) {
-		if err := runNixOSRebuild("boot", nixRBSetRelease, nixRBFlakeDir); err != nil {
+		if err := utils.RunNixOSRebuild("boot", nixRBSetRelease, nixRBFlakeDir); err != nil {
 			fmt.Fprintf(os.Stderr, "Error executing nixos-rebuild boot: %v\n", err)
 			os.Exit(1)
 		}

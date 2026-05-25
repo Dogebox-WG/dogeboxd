@@ -1,14 +1,12 @@
-package cmd
+package utils
 
 import (
 	"os"
 	"os/exec"
-
-	"github.com/Dogebox-WG/dogeboxd/cmd/_dbxroot/utils"
 )
 
-func runNixOSRebuild(action string, setRelease string, flakeDir string) error {
-	rebuildCommand, rebuildArgs, err := utils.GetRebuildCommand(action, setRelease, flakeDir)
+func RunNixOSRebuild(action string, setRelease string, flakeDir string) error {
+	rebuildCommand, rebuildArgs, err := GetRebuildCommand(action, setRelease, flakeDir)
 	if err != nil {
 		return err
 	}
