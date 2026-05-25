@@ -11,6 +11,7 @@ import (
 type Context struct {
 	Config          dogeboxd.ServerConfig
 	Enqueue         func(dogeboxd.Action) string
+	ActiveJobs      func() ([]dogeboxd.JobRecord, error)
 	ReadFile        func(string) ([]byte, error)
 	RepoTagsFetcher system.RepoTagsFetcher
 }
@@ -19,13 +20,8 @@ type Migration struct {
 	Name         string
 	DisplayName  string
 	Version      string
-	RunPolicy    RunPolicy
 	Requirements func(Context, MigrationRecord) (bool, string, error)
 	Run          func(Context, MigrationRecord) (string, bool, error)
-}
-
-type RunPolicy struct {
-	MaxRuns int
 }
 
 type RunDecision struct {
@@ -50,9 +46,19 @@ func (c Context) RepoTagsFetcherOrDefault() system.RepoTagsFetcher {
 	return &system.DefaultRepoTagsFetcher{}
 }
 
+func (c Context) ActiveJobsOrDefault() func() ([]dogeboxd.JobRecord, error) {
+	if c.ActiveJobs != nil {
+		return c.ActiveJobs
+	}
+
+	return func() ([]dogeboxd.JobRecord, error) {
+		return nil, nil
+	}
+}
+
 func RunMigrations(ctx Context, migrations []Migration) (string, bool, error) {
 	for _, migration := range migrations {
-		decision, err := EvaluateRunDecision(ctx.Config, migration.Name, migration.RunPolicy)
+		decision, err := EvaluateRunDecision(ctx.Config, migration.Name)
 		if err != nil {
 			return "", false, err
 		}
@@ -87,10 +93,6 @@ func RunMigrations(ctx Context, migrations []Migration) (string, bool, error) {
 			continue
 		}
 
-		if err := RecordRun(ctx.Config, migration.Name); err != nil {
-			return jobID, true, err
-		}
-
 		log.Printf("Queued startup %s job: %s", migration.DisplayName, jobID)
 		return jobID, true, nil
 	}
@@ -98,26 +100,26 @@ func RunMigrations(ctx Context, migrations []Migration) (string, bool, error) {
 	return "", false, nil
 }
 
-func EvaluateRunDecision(config dogeboxd.ServerConfig, migrationName string, policy RunPolicy) (RunDecision, error) {
+func EvaluateRunDecision(config dogeboxd.ServerConfig, migrationName string) (RunDecision, error) {
 	state, err := LoadState(config)
 	if err != nil {
 		return RunDecision{}, err
 	}
 
 	record := state[migrationName]
+	if record.RanSuccessfully {
+		return RunDecision{
+			Record:     record,
+			ShouldRun:  false,
+			SkipReason: "migration has already run successfully",
+		}, nil
+	}
+
 	if record.DoNotRun {
 		return RunDecision{
 			Record:     record,
 			ShouldRun:  false,
 			SkipReason: "migrations.json has doNotRun=true",
-		}, nil
-	}
-
-	if policy.MaxRuns > 0 && record.Runs >= policy.MaxRuns {
-		return RunDecision{
-			Record:     record,
-			ShouldRun:  false,
-			SkipReason: "it has already run the maximum allowed number of times",
 		}, nil
 	}
 

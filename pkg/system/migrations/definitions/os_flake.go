@@ -2,18 +2,20 @@ package definitions
 
 import (
 	"fmt"
+	"log"
 	"os"
 	"regexp"
 
 	dogeboxd "github.com/Dogebox-WG/dogeboxd/pkg"
 	"github.com/Dogebox-WG/dogeboxd/pkg/system"
 	"github.com/Dogebox-WG/dogeboxd/pkg/system/migrations/core"
+	"github.com/Dogebox-WG/dogeboxd/pkg/version"
 )
 
-const installedOSFlakePath = "/etc/nixos/flake.nix"
+var installedOSFlakePath = "/etc/nixos/flake.nix"
+
 const osFlakeIncludePreReleasesConfigKey = "includePreReleases"
 
-var osFlakeMigrationRunPolicy = core.RunPolicy{MaxRuns: 1}
 var osFlakeMigrationMetadata = struct {
 	Name    string
 	Version string
@@ -26,7 +28,6 @@ var OSFlakeMigration = core.Migration{
 	Name:         osFlakeMigrationMetadata.Name,
 	DisplayName:  "OS flake migrator",
 	Version:      osFlakeMigrationMetadata.Version,
-	RunPolicy:    osFlakeMigrationRunPolicy,
 	Requirements: osFlakeMigrationRequirements,
 	Run:          runOSFlakeMigration,
 }
@@ -41,10 +42,18 @@ var OSFlakeMigration = core.Migration{
 //  2. require an installed OS flake version matching <=v0.9.0-rc.1,
 //  3. select the latest eligible OS release,
 //  4. compare that target against the installed OS flake version,
-//  5. queue the normal SystemUpdate path once, and
-//  6. record a run in migrations.json so startup does not loop.
+//  5. queue the normal SystemUpdate path when the target OS flake still needs to land.
 
 var osFlakeVersionPattern = regexp.MustCompile(`(?m)^\s*dbxRelease\s*=\s*"(v[^"]+)"`)
+
+type osFlakeMigrationDecision struct {
+	installedFlakeVersion string
+	currentDBXRelease     string
+	targetVersion         string
+	includePreReleases    bool
+	complete              bool
+	reason                string
+}
 
 func getInstalledOSFlakeVersion(readFile func(string) ([]byte, error), flakePath string) (string, error) {
 	flakeContents, err := readFile(flakePath)
@@ -62,77 +71,184 @@ func getInstalledOSFlakeVersion(readFile func(string) ([]byte, error), flakePath
 	return match[1], nil
 }
 
+func semverIsAtOrAbove(version string, threshold string) (bool, error) {
+	if version == "" {
+		return false, nil
+	}
+
+	return core.VersionConstraintCheck(version, ">="+threshold)
+}
+
+func isOSFlakeMigrationComplete(installedFlakeVersion string, currentDBXRelease string) (bool, error) {
+	for _, candidate := range []string{installedFlakeVersion, currentDBXRelease} {
+		ok, err := semverIsAtOrAbove(candidate, osFlakeMigrationMetadata.Version)
+		if err != nil {
+			return false, err
+		}
+		if !ok {
+			return false, nil
+		}
+	}
+
+	return true, nil
+}
+
 func osFlakeMigrationRequirements(ctx core.Context, record core.MigrationRecord) (bool, string, error) {
 	if ctx.Config.Recovery {
 		return false, "running in recovery mode", nil
 	}
 
-	_, _, applies, reason, err := determineOSFlakeMigrationTarget(ctx, record)
+	decision, err := determineOSFlakeMigrationDecision(ctx, record, true)
 	if err != nil {
 		return false, "", err
 	}
-	if !applies {
-		return false, reason, nil
+	if decision.complete {
+		if err := core.MarkCompleted(ctx.Config, osFlakeMigrationMetadata.Name); err != nil {
+			return false, "", err
+		}
+		log.Printf(
+			"OS flake migrator marking migration complete after verifying target state: installed OS flake=%s, current DBX release=%s",
+			decision.installedFlakeVersion,
+			decision.currentDBXRelease,
+		)
+		return false, "verified target state already satisfies the migration", nil
+	}
+	if decision.reason != "" {
+		return false, decision.reason, nil
 	}
 
 	return true, "", nil
 }
 
 func runOSFlakeMigration(ctx core.Context, record core.MigrationRecord) (string, bool, error) {
-	_, targetVersion, applies, _, err := determineOSFlakeMigrationTarget(ctx, record)
+	decision, err := determineOSFlakeMigrationDecision(ctx, record, false)
 	if err != nil {
 		return "", false, err
 	}
-	if !applies {
+	if decision.complete {
+		return "", false, nil
+	}
+
+	activeJobs, err := ctx.ActiveJobsOrDefault()()
+	if err != nil {
+		return "", false, err
+	}
+	for _, job := range activeJobs {
+		if job.Action == (dogeboxd.SystemUpdate{}).ActionName() {
+			log.Printf("Skipping OS flake migrator queue because active job %s (%s) is already %s", job.ID, job.Action, job.Status)
+			return "", false, nil
+		}
+	}
+
+	if decision.targetVersion == "" {
 		return "", false, nil
 	}
 
 	jobID := ctx.Enqueue(dogeboxd.SystemUpdate{
 		Package: "os",
-		Version: targetVersion,
+		Version: decision.targetVersion,
 	})
 
 	return jobID, true, nil
 }
 
-func determineOSFlakeMigrationTarget(ctx core.Context, record core.MigrationRecord) (string, string, bool, string, error) {
+func determineOSFlakeMigrationDecision(ctx core.Context, record core.MigrationRecord, logDiscovery bool) (osFlakeMigrationDecision, error) {
 	installedFlakeVersion, err := getInstalledOSFlakeVersion(ctx.ReadFileOrDefault(), installedOSFlakePath)
 	if err != nil {
-		return "", "", false, "", err
+		return osFlakeMigrationDecision{}, err
+	}
+
+	currentDBXRelease := version.GetDBXRelease().Release
+
+	includePreReleases := record.BoolConfig(osFlakeIncludePreReleasesConfigKey)
+	complete, err := isOSFlakeMigrationComplete(installedFlakeVersion, currentDBXRelease)
+	if err != nil {
+		return osFlakeMigrationDecision{}, err
+	}
+
+	decision := osFlakeMigrationDecision{
+		installedFlakeVersion: installedFlakeVersion,
+		currentDBXRelease:     currentDBXRelease,
+		includePreReleases:    includePreReleases,
+		complete:              complete,
+	}
+
+	if complete {
+		return decision, nil
+	}
+
+	releases, err := system.GetUpgradableReleasesForVersionWithFetcher(currentDBXRelease, includePreReleases, ctx.RepoTagsFetcherOrDefault())
+	if err != nil {
+		return osFlakeMigrationDecision{}, err
+	}
+	if logDiscovery {
+		latestEligibleRelease := "none"
+		if len(releases) > 0 {
+			latestEligibleRelease = releases[0].Version
+		}
+		log.Printf(
+			"OS flake migrator release discovery: installed OS flake=%s, current DBX release=%s, includePreReleases=%t, latest eligible OS release=%s",
+			installedFlakeVersion,
+			currentDBXRelease,
+			includePreReleases,
+			latestEligibleRelease,
+		)
 	}
 
 	matchesInstalledVersionConstraint, err := core.VersionConstraintCheck(installedFlakeVersion, "<="+osFlakeMigrationMetadata.Version)
 	if err != nil {
-		return "", "", false, "", err
+		return osFlakeMigrationDecision{}, err
 	}
 	if !matchesInstalledVersionConstraint {
-		return installedFlakeVersion, "", false, fmt.Sprintf("installed OS flake version %s is newer than %s", installedFlakeVersion, osFlakeMigrationMetadata.Version), nil
+		decision.reason = fmt.Sprintf("installed OS flake version %s is newer than %s", installedFlakeVersion, osFlakeMigrationMetadata.Version)
+		return decision, nil
 	}
 
-	releases, err := system.GetUpgradableReleasesWithFetcher(record.BoolConfig(osFlakeIncludePreReleasesConfigKey), ctx.RepoTagsFetcherOrDefault())
+	currentReleaseInMigrationRange, err := semverIsAtOrAbove(currentDBXRelease, osFlakeMigrationMetadata.Version)
 	if err != nil {
-		return installedFlakeVersion, "", false, "", err
+		return osFlakeMigrationDecision{}, err
 	}
+	if currentReleaseInMigrationRange {
+		// A partial activation can update DBX while leaving /etc/nixos on the
+		// old flake. Re-run the current release so activation can copy the
+		// staged flake into place and let the next startup mark this complete.
+		decision.targetVersion = currentDBXRelease
+		return decision, nil
+	}
+
 	if len(releases) == 0 {
-		return installedFlakeVersion, "", false, fmt.Sprintf("no eligible OS releases are available for %s", osFlakeMigrationMetadata.Version), nil
+		preReleasePolicy := "pre-releases excluded"
+		if includePreReleases {
+			preReleasePolicy = "pre-releases included"
+		}
+		decision.reason = fmt.Sprintf("no eligible OS releases are available newer than current DBX release %s (%s)", currentDBXRelease, preReleasePolicy)
+		return decision, nil
 	}
 
 	targetVersion := releases[0].Version
 	targetIsNewer, err := core.VersionConstraintCheck(installedFlakeVersion, "<"+targetVersion)
 	if err != nil {
-		return installedFlakeVersion, targetVersion, false, "", err
+		return osFlakeMigrationDecision{}, err
 	}
 	if !targetIsNewer {
-		return installedFlakeVersion, targetVersion, false, fmt.Sprintf("installed OS flake version %s is not older than inferred target %s", installedFlakeVersion, targetVersion), nil
+		decision.targetVersion = targetVersion
+		decision.reason = fmt.Sprintf("installed OS flake version %s is not older than inferred target %s", installedFlakeVersion, targetVersion)
+		return decision, nil
 	}
 
-	return installedFlakeVersion, targetVersion, true, "", nil
+	decision.targetVersion = targetVersion
+	return decision, nil
 }
 
-func QueueOSFlakeMigratorIfNeeded(config dogeboxd.ServerConfig, enqueue func(dogeboxd.Action) string) (string, bool, error) {
+func QueueOSFlakeMigratorIfNeeded(
+	config dogeboxd.ServerConfig,
+	enqueue func(dogeboxd.Action) string,
+	activeJobs func() ([]dogeboxd.JobRecord, error),
+) (string, bool, error) {
 	return core.RunMigrations(core.Context{
 		Config:          config,
 		Enqueue:         enqueue,
+		ActiveJobs:      activeJobs,
 		ReadFile:        os.ReadFile,
 		RepoTagsFetcher: &system.DefaultRepoTagsFetcher{},
 	}, []core.Migration{OSFlakeMigration})

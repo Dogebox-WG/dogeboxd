@@ -64,10 +64,10 @@ func TestVersionConstraintCheck(t *testing.T) {
 			expected:   true,
 		},
 		{
-			name:       "greater than comparator excludes later patch in same minor line",
+			name:       "greater than comparator includes later patch in same minor line",
 			current:    "v0.9.1",
 			constraint: ">v0.9.0",
-			expected:   false,
+			expected:   true,
 		},
 	}
 

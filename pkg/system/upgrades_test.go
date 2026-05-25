@@ -422,19 +422,23 @@ func TestStageReleaseFlakeCreatesCloneInConfiguredTempDir(t *testing.T) {
 		return createTestReleaseRepo(t, destination, version)
 	}
 
-	stagedPath, err := stageReleaseFlakeWithClone(tmpDir, "v1.2.3", nil, cloneFunc)
+	stagedPath, commitHash, err := stageReleaseFlakeWithClone(tmpDir, "v1.2.3", nil, cloneFunc)
 	if err != nil {
 		t.Fatalf("expected no error, got %v", err)
 	}
 
 	headHash, err := getRepositoryHeadHash(stagedPath)
-	if err != nil {
-		t.Fatalf("expected staged repository hash, got %v", err)
+	if err == nil {
+		t.Fatalf("expected staged release to be a plain path, got readable Git hash %s", headHash)
 	}
 
-	expectedPath := buildStagedReleaseDirPath(tmpDir, "v1.2.3", headHash)
+	expectedCommitHash := stagedCommitHash(t, cloneFunc, "v1.2.3")
+	expectedPath := buildStagedReleaseDirPath(tmpDir, "v1.2.3", expectedCommitHash)
 	if stagedPath != expectedPath {
 		t.Fatalf("expected staged path %q, got %q", expectedPath, stagedPath)
+	}
+	if commitHash != expectedCommitHash {
+		t.Fatalf("expected commit hash %q, got %q", expectedCommitHash, commitHash)
 	}
 
 	if _, err := os.Stat(filepath.Join(stagedPath, "flake.nix")); err != nil {
@@ -448,7 +452,7 @@ func TestStageReleaseFlakeReplacesExistingHashNamedDir(t *testing.T) {
 		return createTestReleaseRepo(t, destination, version)
 	}
 
-	firstStagedPath, err := stageReleaseFlakeWithClone(tmpDir, "v1.2.3", nil, cloneFunc)
+	firstStagedPath, _, err := stageReleaseFlakeWithClone(tmpDir, "v1.2.3", nil, cloneFunc)
 	if err != nil {
 		t.Fatalf("expected first staging run to succeed, got %v", err)
 	}
@@ -458,7 +462,7 @@ func TestStageReleaseFlakeReplacesExistingHashNamedDir(t *testing.T) {
 		t.Fatalf("failed to create sentinel file: %v", err)
 	}
 
-	stagedPath, err := stageReleaseFlakeWithClone(tmpDir, "v1.2.3", nil, cloneFunc)
+	stagedPath, _, err := stageReleaseFlakeWithClone(tmpDir, "v1.2.3", nil, cloneFunc)
 	if err != nil {
 		t.Fatalf("expected no error, got %v", err)
 	}
@@ -528,7 +532,19 @@ func TestSystemUpdaterDoSystemUpdateUsesStagedFlakeDir(t *testing.T) {
 		t.Fatalf("expected command %q, got %q", SUDO_COMMAND, capturedName)
 	}
 
-	expectedArgs := []string{"_dbxroot", "nix", "rs", "--flake-dir", stagedPath, "--set-release", "v1.2.0"}
+	expectedArgs := []string{
+		DBXROOT_WRAPPER_COMMAND,
+		"nix",
+		"rs",
+		"--systemd-run",
+		"--systemd-unit",
+		buildSystemUpdateUnitName("v1.2.0", stagedCommitHash(t, cloneFunc, "v1.2.0")),
+		"--flake-dir",
+		stagedPath,
+		"--cleanup-flake-dir",
+		"--set-release",
+		"v1.2.0",
+	}
 	if len(capturedArgs) != len(expectedArgs) {
 		t.Fatalf("expected args %v, got %v", expectedArgs, capturedArgs)
 	}
@@ -538,8 +554,8 @@ func TestSystemUpdaterDoSystemUpdateUsesStagedFlakeDir(t *testing.T) {
 		}
 	}
 
-	if _, err := os.Stat(stagedPath); !os.IsNotExist(err) {
-		t.Fatalf("expected staged flake dir %q to be cleaned up, stat err: %v", stagedPath, err)
+	if _, err := os.Stat(stagedPath); err != nil {
+		t.Fatalf("expected staged flake dir %q to remain available for transient unit cleanup, stat err: %v", stagedPath, err)
 	}
 }
 
@@ -578,6 +594,22 @@ func createTestReleaseRepo(t *testing.T, destination string, version string) err
 		},
 	})
 	return err
+}
+
+func stagedCommitHash(t *testing.T, cloneFunc func(string, string) error, version string) string {
+	t.Helper()
+
+	tmpDir := t.TempDir()
+	if err := cloneFunc(tmpDir, version); err != nil {
+		t.Fatalf("failed to create test release repo: %v", err)
+	}
+
+	hash, err := getRepositoryHeadHash(tmpDir)
+	if err != nil {
+		t.Fatalf("failed to read test release hash: %v", err)
+	}
+
+	return hash
 }
 
 /* TODO : check if versioning file(s) were written out
