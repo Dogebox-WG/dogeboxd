@@ -12,8 +12,8 @@ import (
 )
 
 var wifiTestCmd = &cobra.Command{
-	Use:   "wifi-test",
-	Short: "wifi-test",
+	Use:   "test",
+	Short: "test",
 	Run: func(cmd *cobra.Command, args []string) {
 		iface, _ := cmd.Flags().GetString("interface")
 		ssid, _ := cmd.Flags().GetString("ssid")
@@ -27,7 +27,7 @@ var wifiTestCmd = &cobra.Command{
 }
 
 func init() {
-	rootCmd.AddCommand(wifiTestCmd)
+	wifiCmd.AddCommand(wifiTestCmd)
 
 	wifiTestCmd.Flags().StringP("interface", "i", "", "Wireless interface name (required)")
 	wifiTestCmd.MarkFlagRequired("interface")

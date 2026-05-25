@@ -12,9 +12,6 @@
     };
     {{else if .USE_WIRELESS}}
     wireless = {
-      iwd = {
-        enable = true;
-      };
       interfaces = [ "{{.INTERFACE}}" ];
       networks = {
         "{{.WIFI_SSID}}" = {

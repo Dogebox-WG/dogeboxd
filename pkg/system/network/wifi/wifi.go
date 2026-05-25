@@ -1,11 +1,11 @@
 package network_wifi
 
 type ScannedWifiNetwork struct {
-	SSID       string
-	BSSID      string
-	Encryption string
-	Quality    float32
-	Signal     string
+	SSID       string  `json:"ssid"`
+	BSSID      string  `json:"bssid"`
+	Encryption string  `json:"encryption"`
+	Quality    float32 `json:"quality"`
+	Signal     string  `json:"signal"`
 }
 
 type WifiScanner interface {
@@ -14,5 +14,5 @@ type WifiScanner interface {
 
 func NewWifiScanner() WifiScanner {
 	// TODO: Do some system discovery and figure out how to init this properly.
-	return IWListScanner{}
+	return IWScanner{}
 }
