@@ -205,7 +205,7 @@ func buildSystemUpdateUnitName(updateVersion string, commitHash string) string {
 }
 
 func buildSystemUpdateCommandArgs(stagedFlakeDir string, updateVersion string, unitName string) []string {
-	return []string{
+	args := []string{
 		DBXROOT_WRAPPER_COMMAND,
 		"nix",
 		"rs",
@@ -220,6 +220,10 @@ func buildSystemUpdateCommandArgs(stagedFlakeDir string, updateVersion string, u
 		"--set-release",
 		updateVersion,
 	}
+	if token := strings.TrimSpace(os.Getenv("GITHUB_TOKEN")); token != "" {
+		args = append(args, "--github-token", token)
+	}
+	return args
 }
 
 func stageReleaseFlake(tmpDir, updateVersion string, logger dogeboxd.SubLogger) (string, string, error) {
