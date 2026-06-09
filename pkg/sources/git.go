@@ -94,6 +94,13 @@ func (r ManifestSourceGit) ValidateFromLocation(location string) (dogeboxd.Manif
 		return dogeboxd.ManifestSourceConfiguration{}, fmt.Errorf("invalid manifest.json: %w", err)
 	}
 
+	if err := validateManifestBuildFiles(manifest, func(relativePath string) error {
+		_, statErr := worktree.Filesystem.Stat(relativePath)
+		return statErr
+	}); err != nil {
+		return dogeboxd.ManifestSourceConfiguration{}, fmt.Errorf("invalid build files: %w", err)
+	}
+
 	var sourceId string
 	b := make([]byte, 16)
 	_, err = rand.Read(b)
@@ -252,17 +259,6 @@ func (r ManifestSourceGit) ensureTagValidAndGetPups(tag string) ([]GitPupEntry, 
 }
 
 func (r ManifestSourceGit) getPupManifestFromWorktreeLocation(tag string, worktree *git.Worktree, location string) (dogeboxd.PupManifest, string, bool, error) {
-	for _, filename := range REQUIRED_FILES {
-		_, err := worktree.Filesystem.Stat(filepath.Join(location, filename))
-		if err != nil {
-			if os.IsNotExist(err) {
-				log.Printf("tag %s missing file %s", tag, filename)
-				return dogeboxd.PupManifest{}, "", false, nil
-			}
-			return dogeboxd.PupManifest{}, "", false, fmt.Errorf("failed to check for file %s: %w", filename, err)
-		}
-	}
-
 	content, err := worktree.Filesystem.Open(filepath.Join(location, "manifest.json"))
 	if err != nil {
 		return dogeboxd.PupManifest{}, "", false, fmt.Errorf("failed to open manifest.json: %w", err)
@@ -282,6 +278,17 @@ func (r ManifestSourceGit) getPupManifestFromWorktreeLocation(tag string, worktr
 
 	if err := manifest.Validate(); err != nil {
 		return dogeboxd.PupManifest{}, "", false, fmt.Errorf("manifest validation failed: %w", err)
+	}
+
+	if err := validateManifestBuildFiles(manifest, func(relativePath string) error {
+		_, statErr := worktree.Filesystem.Stat(filepath.Join(location, relativePath))
+		return statErr
+	}); err != nil {
+		if os.IsNotExist(err) {
+			log.Printf("tag %s missing build files for %s: %v", tag, location, err)
+			return dogeboxd.PupManifest{}, "", false, nil
+		}
+		return dogeboxd.PupManifest{}, "", false, fmt.Errorf("failed to validate build files: %w", err)
 	}
 
 	logoBase64 := ""
@@ -380,6 +387,7 @@ func (r *ManifestSourceGit) List(ignoreCache bool) (dogeboxd.ManifestSourceList,
 				},
 				Version:    entry.Manifest.Meta.Version,
 				Manifest:   entry.Manifest,
+				Warnings:   entry.Manifest.SupportWarnings(),
 				LogoBase64: entry.LogoBase64,
 				ReleaseURL: releaseURL,
 			})

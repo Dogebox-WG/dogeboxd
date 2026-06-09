@@ -1,11 +1,28 @@
 { config, lib, pkgs, ... }:
 
 let
+  serviceNames = [ {{ range .SERVICES }}"{{.NAME}}" {{end}} ];
+
+  flakePackage = if {{.IS_FLAKE_BUILD}} then
+    let
+      pupFlake = builtins.getFlake "{{.FLAKE_REF}}";
+    in
+      builtins.getAttr "{{.FLAKE_PACKAGE}}" pupFlake.packages.${pkgs.stdenv.hostPlatform.system}
+  else
+    null;
+
   pupOverlay = self: super: {
-    pup = import {{.NIX_FILE}} { inherit pkgs; };
+    pup = if {{.IS_FLAKE_BUILD}}
+      then builtins.listToAttrs (map (name: {
+        inherit name;
+        value = flakePackage;
+      }) serviceNames)
+      else import {{.NIX_FILE}} { inherit pkgs; };
   };
 
-  pupConfig = import {{.NIX_FILE}} { inherit pkgs; };
+  pupConfig = if {{.IS_FLAKE_BUILD}}
+    then {}
+    else import {{.NIX_FILE}} { inherit pkgs; };
 
   pupServices = if lib.hasAttr "services" pupConfig
     then pupConfig.services

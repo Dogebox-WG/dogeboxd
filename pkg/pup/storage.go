@@ -44,6 +44,8 @@ func (t PupManager) loadPups() error {
 			continue
 		}
 
+		state.Warnings = state.Manifest.SupportWarnings()
+
 		// Success! add to index
 		t.indexPup(&state)
 	}

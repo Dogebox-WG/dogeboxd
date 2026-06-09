@@ -7,6 +7,13 @@ import (
 	"path/filepath"
 )
 
+type PupManifestBuildType string
+
+const (
+	PupManifestBuildTypeNixFile PupManifestBuildType = "nixFile"
+	PupManifestBuildTypeFlake   PupManifestBuildType = "flake"
+)
+
 /* PupManifest represents a Nix installed process
  * running inside the Dogebox Runtime Environment.
  * These are defined in pup.json files.
@@ -37,12 +44,8 @@ func (m *PupManifest) Validate() error {
 		return fmt.Errorf("manifest meta.version is required")
 	}
 
-	if m.Container.Build.NixFile == "" {
-		return fmt.Errorf("manifest container.build.nixFile is required")
-	}
-
-	if m.Container.Build.NixFileSha256 == "" {
-		return fmt.Errorf("manifest container.build.nixFileSha256 is required")
+	if err := m.Container.Build.Validate(); err != nil {
+		return fmt.Errorf("manifest container.build invalid: %w", err)
 	}
 
 	for _, service := range m.Container.Services {
@@ -177,10 +180,95 @@ type PupManifestContainer struct {
  * package that is to be built for this pup.
  */
 type PupManifestBuild struct {
+	// Optional. Defaults to nixFile for backwards compatibility.
+	Type string `json:"type,omitempty"`
 	// The location of the nix file used for building this pups environment.
-	NixFile string `json:"nixFile"`
+	NixFile string `json:"nixFile,omitempty"`
 	// The SHA256 hash of the nix file.
-	NixFileSha256 string `json:"nixFileSha256"`
+	NixFileSha256 string                `json:"nixFileSha256,omitempty"`
+	Flake         PupManifestBuildFlake `json:"flake,omitempty"`
+}
+
+type PupManifestBuildFlake struct {
+	// Relative path from the pup root to the flake directory.
+	Path string `json:"path,omitempty"`
+	// Package attribute inside packages.${system}.
+	Package string `json:"package,omitempty"`
+}
+
+func (b PupManifestBuild) BuildType() PupManifestBuildType {
+	if b.Type == "" {
+		return PupManifestBuildTypeNixFile
+	}
+
+	return PupManifestBuildType(b.Type)
+}
+
+func (b PupManifestBuild) IsLegacy() bool {
+	return b.BuildType() == PupManifestBuildTypeNixFile
+}
+
+func (b PupManifestBuild) FlakePath() string {
+	if b.Flake.Path == "" {
+		return "."
+	}
+
+	return b.Flake.Path
+}
+
+func (b PupManifestBuild) RequiredFiles() []string {
+	switch b.BuildType() {
+	case PupManifestBuildTypeNixFile:
+		return []string{b.NixFile}
+	case PupManifestBuildTypeFlake:
+		flakePath := b.FlakePath()
+		return []string{
+			filepath.Join(flakePath, "flake.nix"),
+			filepath.Join(flakePath, "flake.lock"),
+		}
+	default:
+		return nil
+	}
+}
+
+func (b PupManifestBuild) Validate() error {
+	switch b.BuildType() {
+	case PupManifestBuildTypeNixFile:
+		if b.NixFile == "" {
+			return fmt.Errorf("nixFile is required")
+		}
+		if b.NixFileSha256 == "" {
+			return fmt.Errorf("nixFileSha256 is required")
+		}
+	case PupManifestBuildTypeFlake:
+		if filepath.IsAbs(b.FlakePath()) {
+			return fmt.Errorf("flake.path must be relative to the pup root")
+		}
+		if b.Flake.Package == "" {
+			return fmt.Errorf("flake.package is required")
+		}
+	default:
+		return fmt.Errorf("unknown build type: %q", b.Type)
+	}
+
+	return nil
+}
+
+func (m PupManifest) SupportWarnings() []PupWarning {
+	return BuildSupportWarnings(m.Container.Build)
+}
+
+func BuildSupportWarnings(build PupManifestBuild) []PupWarning {
+	if !build.IsLegacy() {
+		return nil
+	}
+
+	return []PupWarning{
+		{
+			Code:    PUP_WARNING_LEGACY_BUILD_DEPRECATED,
+			Message: "This pup uses legacy pup.nix packaging and will become unsupported in a future release.",
+		},
+	}
 }
 
 type PupManifestService struct {

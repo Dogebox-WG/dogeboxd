@@ -2,6 +2,7 @@ package source
 
 import (
 	"encoding/json"
+	"errors"
 	"fmt"
 	"log"
 	"os"
@@ -11,8 +12,6 @@ import (
 
 	dogeboxd "github.com/Dogebox-WG/dogeboxd/pkg"
 )
-
-var REQUIRED_FILES = []string{"pup.nix", "manifest.json"}
 
 // TODO: This should take storeManager and manage state internally not via Statemanager
 func NewSourceManager(config dogeboxd.ServerConfig, sm dogeboxd.StateManager, pm dogeboxd.PupManager) dogeboxd.SourceManager {
@@ -45,6 +44,16 @@ type sourceManager struct {
 	sm      dogeboxd.StateManager
 	pm      dogeboxd.PupManager
 	sources []dogeboxd.ManifestSource
+}
+
+func validateManifestBuildFiles(manifest dogeboxd.PupManifest, statFile func(relativePath string) error) error {
+	for _, requiredFile := range manifest.Container.Build.RequiredFiles() {
+		if err := statFile(requiredFile); err != nil {
+			return fmt.Errorf("required build file %s missing: %w", requiredFile, err)
+		}
+	}
+
+	return nil
 }
 
 func (sourceManager *sourceManager) GetAll(ignoreCache bool) (map[string]dogeboxd.ManifestSourceList, error) {
@@ -185,35 +194,31 @@ func (sourceManager *sourceManager) DownloadPup(path, sourceId, pupName, pupVers
 		return dogeboxd.PupManifest{}, fmt.Errorf("manifest validation failed: %w", err)
 	}
 
-	if err := sourceManager.validatePupFiles(path); err != nil {
+	if err := validatePupFiles(path, manifest); err != nil {
 		return dogeboxd.PupManifest{}, err
 	}
 
 	return manifest, nil
 }
 
-func (sourceManager *sourceManager) validatePupFiles(path string) error {
-	manifestPath := filepath.Join(path, "manifest.json")
-	manifestData, err := os.ReadFile(manifestPath)
+func validatePupFiles(path string, manifest dogeboxd.PupManifest) error {
+	err := validateManifestBuildFiles(manifest, func(relativePath string) error {
+		_, statErr := os.Stat(filepath.Join(path, relativePath))
+		return statErr
+	})
 	if err != nil {
-		return fmt.Errorf("failed to read manifest file: %w", err)
-	}
-
-	var manifest dogeboxd.PupManifest
-	err = json.Unmarshal(manifestData, &manifest)
-	if err != nil {
-		return fmt.Errorf("failed to parse manifest file: %w", err)
-	}
-
-	nixFilePath := filepath.Join(path, manifest.Container.Build.NixFile)
-	if _, err := os.Stat(nixFilePath); os.IsNotExist(err) {
-		return fmt.Errorf("nix file %s not found", manifest.Container.Build.NixFile)
+		if errors.Is(err, os.ErrNotExist) {
+			return err
+		}
+		return fmt.Errorf("failed to validate build files: %w", err)
 	}
 
 	if manifest.Meta.LogoPath != "" {
-		logoFilePath := filepath.Join(path, manifest.Meta.LogoPath)
-		if _, err := os.Stat(logoFilePath); os.IsNotExist(err) {
-			return fmt.Errorf("logo file %s not found", manifest.Meta.LogoPath)
+		if _, err := os.Stat(filepath.Join(path, manifest.Meta.LogoPath)); err != nil {
+			if errors.Is(err, os.ErrNotExist) {
+				return fmt.Errorf("logo file %s not found: %w", manifest.Meta.LogoPath, err)
+			}
+			return fmt.Errorf("failed to validate logo file %s: %w", manifest.Meta.LogoPath, err)
 		}
 	}
 

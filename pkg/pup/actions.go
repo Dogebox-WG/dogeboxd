@@ -107,6 +107,7 @@ func (t PupManager) AdoptPup(m dogeboxd.PupManifest, source dogeboxd.ManifestSou
 		NeedsDeps:    false, // TODO
 		IP:           t.lastIP.String(),
 		Version:      m.Meta.Version,
+		Warnings:     m.SupportWarnings(),
 		WebUIs:       uis,
 
 		IsDevModeEnabled: options.DevMode,

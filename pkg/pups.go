@@ -31,11 +31,16 @@ const (
 	BROKEN_REASON_DOWNLOAD_FAILED              string = "download_failed"
 	BROKEN_REASON_NIX_FILE_MISSING             string = "nix_file_missing"
 	BROKEN_REASON_NIX_HASH_MISMATCH            string = "nix_hash_mismatch"
+	BROKEN_REASON_FLAKE_BUILD_FAILED           string = "flake_build_failed"
 	BROKEN_REASON_STORAGE_CREATION_FAILED      string = "storage_creation_failed"
 	BROKEN_REASON_DELEGATE_KEY_CREATION_FAILED string = "delegate_key_creation_failed"
 	BROKEN_REASON_DELEGATE_KEY_WRITE_FAILED    string = "delegate_key_write_failed"
 	BROKEN_REASON_ENABLE_FAILED                string = "enable_failed"
 	BROKEN_REASON_NIX_APPLY_FAILED             string = "nix_apply_failed"
+)
+
+const (
+	PUP_WARNING_LEGACY_BUILD_DEPRECATED string = "legacy_build_deprecated"
 )
 
 const (
@@ -78,10 +83,11 @@ type PupState struct {
 	Hooks        []PupHook                   `json:"hooks"`        // webhooks
 	Installation string                      `json:"installation"` // see table above and constants
 	BrokenReason string                      `json:"brokenReason"` // reason for being in a broken state
-	Enabled      bool                        `json:"enabled"`      // Is this pup supposed to be running?
-	NeedsConf    bool                        `json:"needsConf"`    // Has all required config been provided?
-	NeedsDeps    bool                        `json:"needsDeps"`    // Have all dependencies been met?
-	IP           string                      `json:"ip"`           // Internal IP for this pup
+	Warnings     []PupWarning                `json:"warnings,omitempty"`
+	Enabled      bool                        `json:"enabled"`   // Is this pup supposed to be running?
+	NeedsConf    bool                        `json:"needsConf"` // Has all required config been provided?
+	NeedsDeps    bool                        `json:"needsDeps"` // Have all dependencies been met?
+	IP           string                      `json:"ip"`        // Internal IP for this pup
 	Version      string                      `json:"version"`
 	WebUIs       []PupWebUI                  `json:"webUIs"`
 
@@ -97,6 +103,11 @@ type PupWebUI struct {
 	Name     string `json:"name"`
 	Internal int    `json:"-"`
 	Port     int    `json:"port"`
+}
+
+type PupWarning struct {
+	Code    string `json:"code"`
+	Message string `json:"message"`
 }
 
 type PupHook struct {
@@ -346,6 +357,7 @@ func SetPupSkippedVersion(version string) func(*PupState, *[]Pupdate) {
 func SetPupManifest(manifest PupManifest) func(*PupState, *[]Pupdate) {
 	return func(p *PupState, pu *[]Pupdate) {
 		p.Manifest = manifest
+		p.Warnings = manifest.SupportWarnings()
 		// Recalculate if config needs values based on new manifest
 		p.NeedsConf = ManifestConfigNeedsValues(p.Manifest.Config, p.Config)
 	}

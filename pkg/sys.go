@@ -226,6 +226,7 @@ type ManifestSourcePup struct {
 	Location     map[string]string
 	Version      string
 	Manifest     PupManifest
+	Warnings     []PupWarning
 	LogoBase64   string
 	ReleaseNotes string
 	ReleaseDate  *time.Time
@@ -276,12 +277,15 @@ type NixPupContainerTemplateValues struct {
 		PORT   int
 		PUBLIC bool
 	}
-	STORAGE_PATH string
-	PUP_PATH     string
-	NIX_FILE     string
-	SERVICES     []NixPupContainerServiceValues
-	PUP_ENV      []EnvEntry
-	GLOBAL_ENV   []EnvEntry
+	STORAGE_PATH   string
+	PUP_PATH       string
+	NIX_FILE       string
+	FLAKE_REF      string
+	FLAKE_PACKAGE  string
+	IS_FLAKE_BUILD bool
+	SERVICES       []NixPupContainerServiceValues
+	PUP_ENV        []EnvEntry
+	GLOBAL_ENV     []EnvEntry
 
 	IS_DEV_MODE       bool
 	DEV_MODE_SERVICES []string

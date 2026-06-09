@@ -14,6 +14,7 @@ type StoreListSourceEntryPup struct {
 	LatestVersion    string                          `json:"latestVersion"`
 	LogoBase64       string                          `json:"logoBase64"`
 	Versions         map[string]dogeboxd.PupManifest `json:"versions"`
+	Warnings         []dogeboxd.PupWarning           `json:"warnings,omitempty"`
 	DevModeAvailable bool                            `json:"devModeAvailable"`
 }
 
@@ -69,6 +70,7 @@ func (t api) getStoreList(w http.ResponseWriter, r *http.Request) {
 					LatestVersion:    availablePup.Version,
 					LogoBase64:       availablePup.LogoBase64,
 					Versions:         versions,
+					Warnings:         availablePup.Warnings,
 					DevModeAvailable: isDevModeAvailable,
 				}
 			}
@@ -80,6 +82,7 @@ func (t api) getStoreList(w http.ResponseWriter, r *http.Request) {
 			if semver.Compare("v"+availablePup.Version, "v"+pupEntry.LatestVersion) > 0 {
 				pupEntry.LatestVersion = availablePup.Version
 				pupEntry.LogoBase64 = availablePup.LogoBase64
+				pupEntry.Warnings = availablePup.Warnings
 			}
 
 			pups[availablePup.Name] = pupEntry
@@ -99,6 +102,7 @@ func (t api) getStoreList(w http.ResponseWriter, r *http.Request) {
 				pupEntry := pups[installedPup.Manifest.Meta.Name]
 				pupEntry.Versions[installedPup.Version] = installedPup.Manifest
 				pupEntry.LatestVersion = installedPup.Version
+				pupEntry.Warnings = installedPup.Warnings
 				pups[installedPup.Manifest.Meta.Name] = pupEntry
 			}
 		}

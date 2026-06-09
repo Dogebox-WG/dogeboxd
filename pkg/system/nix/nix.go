@@ -89,11 +89,20 @@ func (nm nixManager) WritePupFile(
 	globalEnv := dogeboxd.GetSystemEnvironmentVariablesForContainer()
 
 	sourceDirectory := filepath.Join(nm.config.DataDir, "pups", state.ID)
-	nixFile := filepath.Join(sourceDirectory, state.Manifest.Container.Build.NixFile)
+	nixFile := ""
+	flakeRef := ""
+	flakePackage := ""
 
 	if state.IsDevModeEnabled {
 		sourceDirectory = state.Source.Location
+	}
+
+	if state.Manifest.Container.Build.IsLegacy() {
 		nixFile = filepath.Join(sourceDirectory, state.Manifest.Container.Build.NixFile)
+	} else {
+		flakePath := filepath.Join(sourceDirectory, state.Manifest.Container.Build.FlakePath())
+		flakeRef = "path:" + flakePath
+		flakePackage = state.Manifest.Container.Build.Flake.Package
 	}
 
 	values := dogeboxd.NixPupContainerTemplateValues{
@@ -106,12 +115,15 @@ func (nm nixManager) WritePupFile(
 			PORT   int
 			PUBLIC bool
 		}{},
-		STORAGE_PATH: filepath.Join(nm.config.DataDir, "pups/storage", state.ID),
-		PUP_PATH:     sourceDirectory,
-		NIX_FILE:     nixFile,
-		SERVICES:     services,
-		PUP_ENV:      toEnv(pupSpecificEnv),
-		GLOBAL_ENV:   toEnv(globalEnv),
+		STORAGE_PATH:   filepath.Join(nm.config.DataDir, "pups/storage", state.ID),
+		PUP_PATH:       sourceDirectory,
+		NIX_FILE:       nixFile,
+		FLAKE_REF:      flakeRef,
+		FLAKE_PACKAGE:  flakePackage,
+		IS_FLAKE_BUILD: !state.Manifest.Container.Build.IsLegacy(),
+		SERVICES:       services,
+		PUP_ENV:        toEnv(pupSpecificEnv),
+		GLOBAL_ENV:     toEnv(globalEnv),
 
 		IS_DEV_MODE:       state.IsDevModeEnabled,
 		DEV_MODE_SERVICES: state.DevModeServices,

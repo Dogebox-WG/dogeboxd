@@ -94,6 +94,10 @@ func CopyFiles(source string, destination string) error {
 }
 
 func GetPupNixAttributes(config dogeboxd.ServerConfig, diskSourcePath string, pupID string, pupManifestBuild dogeboxd.PupManifestBuild) ([]string, error) {
+	if !pupManifestBuild.IsLegacy() {
+		return []string{}, nil
+	}
+
 	nixFile := filepath.Join(diskSourcePath, pupManifestBuild.NixFile)
 
 	// quick sanity check

@@ -295,6 +295,39 @@ func (t SystemUpdater) verifyNixFileHash(pupPath string, manifest dogeboxd.PupMa
 	return nil
 }
 
+func (t SystemUpdater) verifyFlakeBuild(pupPath string, manifest dogeboxd.PupManifest, logger dogeboxd.SubLogger) error {
+	flakePath := filepath.Join(pupPath, manifest.Container.Build.FlakePath())
+
+	cmd := exec.Command("nix", "build", "--no-link", fmt.Sprintf("path:%s#%s", flakePath, manifest.Container.Build.Flake.Package))
+	cmd.Dir = flakePath
+
+	logger.LogCmd(cmd)
+
+	if err := cmd.Run(); err != nil {
+		logger.Errf("Flake build failed: %v", err)
+		return fmt.Errorf("flake build failed: %w", err)
+	}
+
+	return nil
+}
+
+func (t SystemUpdater) validateBuildInput(pupPath string, manifest dogeboxd.PupManifest, isDevMode bool, logger dogeboxd.SubLogger) (string, error) {
+	switch manifest.Container.Build.BuildType() {
+	case dogeboxd.PupManifestBuildTypeNixFile:
+		if err := t.verifyNixFileHash(pupPath, manifest, isDevMode, logger); err != nil {
+			return dogeboxd.BROKEN_REASON_NIX_HASH_MISMATCH, err
+		}
+	case dogeboxd.PupManifestBuildTypeFlake:
+		if err := t.verifyFlakeBuild(pupPath, manifest, logger); err != nil {
+			return dogeboxd.BROKEN_REASON_FLAKE_BUILD_FAILED, err
+		}
+	default:
+		return dogeboxd.BROKEN_REASON_DOWNLOAD_FAILED, fmt.Errorf("unsupported build type: %s", manifest.Container.Build.Type)
+	}
+
+	return "", nil
+}
+
 /* InstallPup takes a PupManifest and ensures a nix config
  * is written and any packages installed so that the Pup can
  * be started.
@@ -322,9 +355,9 @@ func (t SystemUpdater) installPup(pupSelection dogeboxd.InstallPup, j dogeboxd.J
 		return t.markPupBroken(s, dogeboxd.BROKEN_REASON_DOWNLOAD_FAILED, err)
 	}
 
-	// Verify nix file hash using the downloaded manifest
-	if err := t.verifyNixFileHash(pupPath, downloadedManifest, s.IsDevModeEnabled, log); err != nil {
-		return t.markPupBroken(s, dogeboxd.BROKEN_REASON_NIX_HASH_MISMATCH, err)
+	// Validate the build inputs before we try to render or rebuild.
+	if brokenReason, err := t.validateBuildInput(pupPath, downloadedManifest, s.IsDevModeEnabled, log); err != nil {
+		return t.markPupBroken(s, brokenReason, err)
 	}
 
 	// create the storage dir
@@ -882,9 +915,9 @@ func (t SystemUpdater) upgradePup(upgrade dogeboxd.UpgradePup, j dogeboxd.Job) e
 		return t.markPupBroken(s, dogeboxd.BROKEN_REASON_DOWNLOAD_FAILED, err)
 	}
 
-	// Verify nix file hash
-	if err := t.verifyNixFileHash(pupPath, newManifest, s.IsDevModeEnabled, log); err != nil {
-		return t.markPupBroken(s, dogeboxd.BROKEN_REASON_NIX_HASH_MISMATCH, err)
+	// Validate the build inputs before we try to rebuild.
+	if brokenReason, err := t.validateBuildInput(pupPath, newManifest, s.IsDevModeEnabled, log); err != nil {
+		return t.markPupBroken(s, brokenReason, err)
 	}
 
 	// Write updated config to storage (in case manifest has new config fields)
@@ -1028,6 +1061,10 @@ func (t SystemUpdater) rollbackPupUpgrade(j dogeboxd.Job) error {
 	if err != nil {
 		log.Errf("Failed to download previous version: %v", err)
 		return t.markPupBroken(s, dogeboxd.BROKEN_REASON_DOWNLOAD_FAILED, err)
+	}
+
+	if brokenReason, err := t.validateBuildInput(pupPath, snapshot.Manifest, false, log); err != nil {
+		return t.markPupBroken(s, brokenReason, err)
 	}
 
 	// Restore state from snapshot (using manifest from snapshot, not downloaded one)

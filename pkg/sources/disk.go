@@ -2,6 +2,7 @@ package source
 
 import (
 	"encoding/json"
+	"errors"
 	"fmt"
 	"io"
 	"log"
@@ -85,14 +86,10 @@ func (r ManifestSourceDisk) List(_ bool) (dogeboxd.ManifestSourceList, error) {
 
 outer:
 	for _, pupLocation := range pupLocations {
-		for _, filename := range REQUIRED_FILES {
-			p := filepath.Join(pupLocation, filename)
-			if _, err := os.Stat(p); os.IsNotExist(err) {
-				continue outer
-			}
-		}
-
 		manifestPath := filepath.Join(pupLocation, "manifest.json")
+		if _, err := os.Stat(manifestPath); os.IsNotExist(err) {
+			continue outer
+		}
 		manifestData, err := os.ReadFile(manifestPath)
 		if err != nil {
 			return dogeboxd.ManifestSourceList{}, fmt.Errorf("failed to read manifest file: %w", err)
@@ -106,6 +103,16 @@ outer:
 
 		if err := manifest.Validate(); err != nil {
 			return dogeboxd.ManifestSourceList{}, fmt.Errorf("manifest validation failed: %w", err)
+		}
+
+		if err := validateManifestBuildFiles(manifest, func(relativePath string) error {
+			_, statErr := os.Stat(filepath.Join(pupLocation, relativePath))
+			return statErr
+		}); err != nil {
+			if errors.Is(err, os.ErrNotExist) {
+				continue outer
+			}
+			return dogeboxd.ManifestSourceList{}, fmt.Errorf("failed to validate build files: %w", err)
 		}
 
 		logoBase64 := ""
@@ -131,6 +138,7 @@ outer:
 			},
 			Version:    manifest.Meta.Version,
 			Manifest:   manifest,
+			Warnings:   manifest.SupportWarnings(),
 			LogoBase64: logoBase64,
 		}
 
