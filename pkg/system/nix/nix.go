@@ -139,10 +139,8 @@ func (nm nixManager) WritePupFile(
 		nm.UpdateFirewallRules(nixPatch, dbxState)
 	}
 
-	// If we need access to the internet, update the system container config.
-	if state.Manifest.Container.RequiresInternet {
-		nm.UpdateSystemContainerConfiguration(nixPatch)
-	}
+	// Update the system container regardless of pup requiring internet as 'offline' pups may still need to talk to other pups.
+	nm.UpdateSystemContainerConfiguration(nixPatch)
 
 	nixPatch.WritePupFile(state.ID, values)
 }
