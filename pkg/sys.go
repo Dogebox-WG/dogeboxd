@@ -335,8 +335,9 @@ type NixSystemTemplateValues struct {
 }
 
 type NixIncludesFileTemplateValues struct {
-	NIX_DIR string
-	PUP_IDS []string
+	NIX_DIR  string
+	DATA_DIR string
+	PUP_IDS  []string
 }
 
 type NixNetworkTemplateValues struct {
