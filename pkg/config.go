@@ -1,5 +1,7 @@
 package dogeboxd
 
+import "strconv"
+
 type ServerConfig struct {
 	DataDir          string
 	TmpDir           string
@@ -17,9 +19,9 @@ type ServerConfig struct {
 	UnixSocketPath   string
 }
 
-func GetSystemEnvironmentVariablesForContainer() map[string]string {
+func GetSystemEnvironmentVariablesForContainer(internalPort int) map[string]string {
 	return map[string]string{
 		"DBX_HOST": "10.69.0.1",
-		"DBX_PORT": "80",
+		"DBX_PORT": strconv.Itoa(internalPort),
 	}
 }

@@ -86,7 +86,7 @@ func (nm nixManager) WritePupFile(
 	}
 
 	pupSpecificEnv := nm.pups.GetPupSpecificEnvironmentVariablesForContainer(state.ID)
-	globalEnv := dogeboxd.GetSystemEnvironmentVariablesForContainer()
+	globalEnv := dogeboxd.GetSystemEnvironmentVariablesForContainer(nm.config.InternalPort)
 
 	sourceDirectory := filepath.Join(nm.config.DataDir, "pups", state.ID)
 	nixFile := filepath.Join(sourceDirectory, state.Manifest.Container.Build.NixFile)
@@ -209,16 +209,9 @@ func (nm nixManager) UpdateSystemContainerConfiguration(nixPatch dogeboxd.NixPat
 			// Find our interface in the provider's manifest
 			var providerExposes *dogeboxd.PupManifestExposeConfig
 			for _, providerExpose := range providerPup.Manifest.Container.Exposes {
-				if providerExpose.Type != "tcp" {
-					// Ignore anything not TCP, as those are supported elsewhere.
-					continue
-				}
-
-				for _, providerExposeInterface := range providerExpose.Interfaces {
-					if providerExposeInterface == dependency.InterfaceName {
-						providerExposes = &providerExpose
-						break
-					}
+				if exposeProvidesTCPInterface(providerExpose, dependency.InterfaceName) {
+					providerExposes = &providerExpose
+					break
 				}
 			}
 
@@ -267,6 +260,22 @@ func (nm nixManager) UpdateSystemContainerConfiguration(nixPatch dogeboxd.NixPat
 	nixPatch.UpdateSystemContainerConfiguration(values)
 }
 
+func exposeProvidesTCPInterface(expose dogeboxd.PupManifestExposeConfig, interfaceName string) bool {
+	// HTTP describes the application protocol, but interface-backed HTTP APIs
+	// still need direct TCP firewall rules. User-facing Web UIs are handled by
+	// their own proxy path and do not list dependency interfaces here.
+	if expose.Type != "tcp" && expose.Type != "http" {
+		return false
+	}
+
+	for _, exposeInterface := range expose.Interfaces {
+		if exposeInterface == interfaceName {
+			return true
+		}
+	}
+	return false
+}
+
 func (nm nixManager) UpdateFirewallRules(nixPatch dogeboxd.NixPatch, dbxState dogeboxd.DogeboxState) {
 	installed := nm.pups.GetStateMap()
 	var pupPorts []struct {
@@ -302,8 +311,9 @@ func (nm nixManager) UpdateFirewallRules(nixPatch dogeboxd.NixPatch, dbxState do
 	}
 
 	nixPatch.UpdateFirewall(dogeboxd.NixFirewallTemplateValues{
-		SSH_ENABLED: dbxState.SSH.Enabled,
-		PUP_PORTS:   pupPorts,
+		SSH_ENABLED:          dbxState.SSH.Enabled,
+		INTERNAL_ROUTER_PORT: nm.config.InternalPort,
+		PUP_PORTS:            pupPorts,
 	})
 }
 

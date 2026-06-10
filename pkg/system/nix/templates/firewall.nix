@@ -4,9 +4,9 @@
   networking.firewall.enable = true;
 
   networking.firewall.allowedTCPPorts = [
-    # Allow dogeboxd to bind to 80 for the pup-router.
-    # TODO: Make this an explicit firewall rule only available to pup cide.
-    80
+    # Allow pups to reach dogeboxd's internal router.
+    # TODO: Make this an explicit firewall rule only available to the pup side.
+    {{ .INTERNAL_ROUTER_PORT }}
 
     {{ if .SSH_ENABLED }}
     # TODO: Allow the user to customise this at some point.

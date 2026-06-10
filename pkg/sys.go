@@ -316,8 +316,9 @@ type NixSystemContainerConfigTemplateValues struct {
 }
 
 type NixFirewallTemplateValues struct {
-	SSH_ENABLED bool
-	PUP_PORTS   []struct {
+	SSH_ENABLED          bool
+	INTERNAL_ROUTER_PORT int
+	PUP_PORTS            []struct {
 		PORT   int
 		PUBLIC bool
 		PUP_ID string

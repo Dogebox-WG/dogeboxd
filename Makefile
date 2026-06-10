@@ -62,6 +62,7 @@ dev: build dpanel-build
 	/run/wrappers/bin/dogeboxd -v --addr 0.0.0.0 --danger-dev \
 		--data ~/data --nix ~/data/nix --containerlogdir ~/data/containerlogs \
 		--port 3000 --uiport 8080 --uidir $(DPANEL_DIST) \
+		--internal-port 8082 \
 		--unix-socket ~/data/dbx-socket $(ARGS)
 
 recovery:
