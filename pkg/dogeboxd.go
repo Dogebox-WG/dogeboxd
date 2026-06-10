@@ -46,15 +46,16 @@ import (
 	"os/exec"
 	"strconv"
 	"sync"
+	"sync/atomic"
 	"time"
 
-	"sync/atomic"
+	"github.com/golanglibs/gocollections/set/hashset"
 )
 
 type syncQueue struct {
-	jobQueue            []Job              // pending jobs waiting to be handed to SystemUpdater
-	nonQueuedActiveJobs map[string]struct{} // runtime-active jobs that are not currently in jobQueue
-	currentSystemJobID  string             // the single job currently handed to SystemUpdater
+	jobQueue            []Job               // pending jobs waiting to be handed to SystemUpdater
+	nonQueuedActiveJobs hashset.Set[string] // runtime-active jobs that are not currently in jobQueue
+	currentSystemJobID  string              // the single job currently handed to SystemUpdater
 	jobQLock            sync.Mutex
 	jobInProgress       sync.Mutex
 	jobTimer            time.Time
@@ -98,7 +99,7 @@ func NewDogeboxd(
 ) Dogeboxd {
 	q := syncQueue{
 		jobQueue:            []Job{},
-		nonQueuedActiveJobs: map[string]struct{}{},
+		nonQueuedActiveJobs: hashset.New[string](),
 		jobQLock:            sync.Mutex{},
 		jobInProgress:       sync.Mutex{},
 	}
@@ -324,20 +325,20 @@ func (t *Dogeboxd) pumpQueue() {
 func (t *Dogeboxd) enqueue(j Job) {
 	t.queue.jobQLock.Lock()
 	defer t.queue.jobQLock.Unlock()
-	delete(t.queue.nonQueuedActiveJobs, j.ID)
+	t.queue.nonQueuedActiveJobs.Remove(j.ID)
 	t.queue.jobQueue = append(t.queue.jobQueue, j)
 }
 
 func (t *Dogeboxd) markNonQueuedActiveJob(jobID string) {
 	t.queue.jobQLock.Lock()
 	defer t.queue.jobQLock.Unlock()
-	t.queue.nonQueuedActiveJobs[jobID] = struct{}{}
+	t.queue.nonQueuedActiveJobs.Add(jobID)
 }
 
 func (t *Dogeboxd) clearNonQueuedActiveJob(jobID string) {
 	t.queue.jobQLock.Lock()
 	defer t.queue.jobQLock.Unlock()
-	delete(t.queue.nonQueuedActiveJobs, jobID)
+	t.queue.nonQueuedActiveJobs.Remove(jobID)
 }
 
 func (t *Dogeboxd) clearCurrentSystemJobID(jobID string) {
@@ -368,16 +369,16 @@ func (t *Dogeboxd) GetRuntimeJobIDs() []string {
 	t.queue.jobQLock.Lock()
 	defer t.queue.jobQLock.Unlock()
 
-	ids := make([]string, 0, len(t.queue.jobQueue)+len(t.queue.nonQueuedActiveJobs)+1)
+	ids := make([]string, 0, len(t.queue.jobQueue)+t.queue.nonQueuedActiveJobs.Size()+1)
 	if t.queue.currentSystemJobID != "" {
 		ids = append(ids, t.queue.currentSystemJobID)
 	}
 	for _, job := range t.queue.jobQueue {
 		ids = append(ids, job.ID)
 	}
-	for jobID := range t.queue.nonQueuedActiveJobs {
-		ids = append(ids, jobID)
-	}
+	t.queue.nonQueuedActiveJobs.ForEach(func(jobID *string) {
+		ids = append(ids, *jobID)
+	})
 
 	return ids
 }
@@ -392,7 +393,7 @@ func (t *Dogeboxd) RemoveFromQueue(jobID string) bool {
 		}
 
 		t.queue.jobQueue = append(t.queue.jobQueue[:i], t.queue.jobQueue[i+1:]...)
-		delete(t.queue.nonQueuedActiveJobs, jobID)
+		t.queue.nonQueuedActiveJobs.Remove(jobID)
 		return true
 	}
 

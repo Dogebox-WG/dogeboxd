@@ -4,6 +4,7 @@ import (
 	"testing"
 	"time"
 
+	"github.com/golanglibs/gocollections/set/hashset"
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
 )
@@ -874,7 +875,7 @@ func TestDetectAndMarkOrphanedJobs(t *testing.T) {
 	dbx := Dogeboxd{
 		queue: &syncQueue{
 			jobQueue:            []Job{},
-			nonQueuedActiveJobs: map[string]struct{}{},
+			nonQueuedActiveJobs: hashset.New[string](),
 		},
 		Changes: make(chan Change, 10),
 		config:  &ServerConfig{ContainerLogDir: ""},
@@ -903,7 +904,7 @@ func TestDetectAndMarkOrphanedJobsSkipsRuntimeTrackedJobs(t *testing.T) {
 	dbx := Dogeboxd{
 		queue: &syncQueue{
 			jobQueue:            []Job{},
-			nonQueuedActiveJobs: map[string]struct{}{},
+			nonQueuedActiveJobs: hashset.New[string](),
 		},
 		Changes: make(chan Change, 10),
 		config:  &ServerConfig{ContainerLogDir: ""},
@@ -933,7 +934,7 @@ func TestDetectAndMarkOrphanedJobsSkipsCurrentSystemJob(t *testing.T) {
 	dbx := Dogeboxd{
 		queue: &syncQueue{
 			jobQueue:            []Job{},
-			nonQueuedActiveJobs: map[string]struct{}{},
+			nonQueuedActiveJobs: hashset.New[string](),
 			currentSystemJobID:  "",
 		},
 		Changes: make(chan Change, 10),
@@ -967,7 +968,7 @@ func TestSendFinishedJobCompletesTrackedJobAndClearsRuntimeTracking(t *testing.T
 	dbx := Dogeboxd{
 		queue: &syncQueue{
 			jobQueue:            []Job{},
-			nonQueuedActiveJobs: map[string]struct{}{},
+			nonQueuedActiveJobs: hashset.New[string](),
 		},
 		Changes: make(chan Change, 10),
 		config:  &ServerConfig{ContainerLogDir: ""},
@@ -988,4 +989,3 @@ func TestSendFinishedJobCompletesTrackedJobAndClearsRuntimeTracking(t *testing.T
 	assert.Equal(t, JobStatusCompleted, completedJob.Status)
 	assert.Empty(t, dbx.GetRuntimeJobIDs())
 }
-
