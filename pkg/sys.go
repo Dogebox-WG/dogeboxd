@@ -149,7 +149,6 @@ type NetworkConnection interface {
 type NetworkEthernet struct {
 	Type      string `json:"type"`
 	Interface string `json:"interface"`
-	Label     string `json:"label,omitempty"`
 	Active    bool   `json:"active"`
 }
 
