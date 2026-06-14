@@ -235,6 +235,7 @@ func TestActionLoggerLineWriterCapturesOutput(t *testing.T) {
 	assert.Equal(t, "line3", captured[2])
 }
 
+
 func TestActionLoggerLineWriterBuffersPartialLines(t *testing.T) {
 	var captured []string
 	writer := NewLineWriter(func(s string) {

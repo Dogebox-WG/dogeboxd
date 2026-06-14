@@ -1028,21 +1028,24 @@ func (t Dogeboxd) getLogChannel(source logSource, resumeToken *string) (context.
 	return t.logtailer.GetChannel(source.filePath)
 }
 
-func (t Dogeboxd) getLogTail(source logSource, limit int) ([]string, *string, error) {
+func (t Dogeboxd) getLogPage(source logSource, before *string, limit int) (LogPage, error) {
 	if limit <= 0 {
-		return nil, nil, fmt.Errorf("Log tail limit must be greater than zero")
+		return LogPage{}, fmt.Errorf("Log tail limit must be greater than zero")
 	}
 
 	if source.usesJournal() {
-		return t.JournalReader.GetJournalTail(source.journalService, limit)
+		return t.JournalReader.GetJournalPage(source.journalService, before, limit)
 	}
 
-	lines, resumeToken, err := t.logtailer.GetTail(source.filePath, limit)
-	if err != nil {
-		return nil, nil, err
+	if before != nil {
+		offset, err := parseLogOffsetResumeToken(*before)
+		if err != nil {
+			return LogPage{}, err
+		}
+		return t.logtailer.GetPage(source.filePath, &offset, limit)
 	}
 
-	return lines, logOffsetResumeToken(resumeToken), nil
+	return t.logtailer.GetPage(source.filePath, nil, limit)
 }
 
 func (t Dogeboxd) GetLogChannel(PupID string, resumeToken *string) (context.CancelFunc, chan string, error) {
@@ -1055,12 +1058,21 @@ func (t Dogeboxd) GetLogChannel(PupID string, resumeToken *string) (context.Canc
 }
 
 func (t Dogeboxd) GetLogTail(PupID string, limit int) ([]string, *string, error) {
-	source, err := t.resolvePupLogSource(PupID)
+	page, err := t.GetLogPage(PupID, nil, limit)
 	if err != nil {
 		return nil, nil, err
 	}
 
-	return t.getLogTail(source, limit)
+	return page.Lines, page.ResumeToken, nil
+}
+
+func (t Dogeboxd) GetLogPage(PupID string, before *string, limit int) (LogPage, error) {
+	source, err := t.resolvePupLogSource(PupID)
+	if err != nil {
+		return LogPage{}, err
+	}
+
+	return t.getLogPage(source, before, limit)
 }
 
 // GetJobLogChannel returns a log channel for a specific job
@@ -1075,12 +1087,21 @@ func (t Dogeboxd) GetJobLogChannel(JobID string, resumeToken *string) (context.C
 }
 
 func (t Dogeboxd) GetJobLogTail(JobID string, limit int) ([]string, *string, error) {
-	source, err := t.resolveJobLogSource(JobID)
+	page, err := t.GetJobLogPage(JobID, nil, limit)
 	if err != nil {
 		return nil, nil, err
 	}
 
-	return t.getLogTail(source, limit)
+	return page.Lines, page.ResumeToken, nil
+}
+
+func (t Dogeboxd) GetJobLogPage(JobID string, before *string, limit int) (LogPage, error) {
+	source, err := t.resolveJobLogSource(JobID)
+	if err != nil {
+		return LogPage{}, err
+	}
+
+	return t.getLogPage(source, before, limit)
 }
 
 func parseLogOffsetResumeToken(resumeToken string) (int64, error) {

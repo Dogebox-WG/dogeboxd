@@ -8,7 +8,10 @@ import (
 	"io"
 	"log"
 	"os"
+	"strconv"
 	"time"
+
+	dogeboxd "github.com/Dogebox-WG/dogeboxd/pkg"
 )
 
 const maxInitialLines = 1000
@@ -82,25 +85,65 @@ func (t LogTailer) GetChannelFromOffset(logFile string, startOffset int64) (cont
 }
 
 func (t LogTailer) GetTail(logFile string, limit int) ([]string, int64, error) {
-	if limit <= 0 {
-		return nil, 0, fmt.Errorf("Log tail limit must be greater than zero")
+	page, err := t.GetPage(logFile, nil, limit)
+	if err != nil {
+		return nil, 0, err
 	}
 
+	if page.ResumeToken == nil {
+		return page.Lines, 0, nil
+	}
+
+	resumeToken, err := strconv.ParseInt(*page.ResumeToken, 10, 64)
+	if err != nil {
+		return nil, 0, err
+	}
+
+	return page.Lines, resumeToken, nil
+}
+
+func (t LogTailer) GetPage(logFile string, beforeOffset *int64, limit int) (dogeboxd.LogPage, error) {
+	if limit <= 0 {
+		return dogeboxd.LogPage{}, fmt.Errorf("Log tail limit must be greater than zero")
+	}
 	file, err := os.Open(logFile)
 	if err != nil {
 		if os.IsNotExist(err) {
-			return []string{}, 0, nil
+			return dogeboxd.LogPage{Lines: []string{}}, nil
 		}
-		return nil, 0, err
+		return dogeboxd.LogPage{}, err
 	}
 	defer file.Close()
 
-	lines, cursor, err := readLastLines(file, limit)
+	stat, err := file.Stat()
 	if err != nil {
-		return nil, 0, err
+		return dogeboxd.LogPage{}, err
 	}
 
-	return lines, cursor, nil
+	endBefore := stat.Size()
+	if beforeOffset != nil {
+		endBefore = *beforeOffset
+	}
+
+	lines, oldestOffset, hasMoreOlder, err := readLastLinesBefore(file, endBefore, limit)
+	if err != nil {
+		return dogeboxd.LogPage{}, err
+	}
+
+	page := dogeboxd.LogPage{
+		Lines:        lines,
+		HasMoreOlder: hasMoreOlder,
+	}
+	if beforeOffset == nil {
+		resumeToken := strconv.FormatInt(stat.Size(), 10)
+		page.ResumeToken = &resumeToken
+	}
+	if hasMoreOlder {
+		olderCursor := strconv.FormatInt(oldestOffset, 10)
+		page.OlderCursor = &olderCursor
+	}
+
+	return page, nil
 }
 
 func waitForLogFile(logFile string) (*os.File, error) {
@@ -135,8 +178,9 @@ func resolveStartOffset(file *os.File, requestedOffset int64) (int64, error) {
 }
 
 func readLastLines(file *os.File, limit int) ([]string, int64, error) {
-	if limit <= 0 {
-		return nil, 0, fmt.Errorf("Log tail limit must be greater than zero")
+	lines, oldestOffset, _, err := readLastLinesBefore(file, -1, limit)
+	if err != nil {
+		return nil, 0, err
 	}
 
 	stat, err := file.Stat()
@@ -144,15 +188,38 @@ func readLastLines(file *os.File, limit int) ([]string, int64, error) {
 		return nil, 0, err
 	}
 
+	if oldestOffset == 0 && stat.Size() == 0 {
+		return lines, 0, nil
+	}
+
+	return lines, stat.Size(), nil
+}
+
+func readLastLinesBefore(file *os.File, endBefore int64, limit int) ([]string, int64, bool, error) {
+	if limit <= 0 {
+		return nil, 0, false, fmt.Errorf("Log tail limit must be greater than zero")
+	}
+
+	stat, err := file.Stat()
+	if err != nil {
+		return nil, 0, false, err
+	}
+
 	endOffset := stat.Size()
+	if endBefore >= 0 && endBefore < endOffset {
+		endOffset = endBefore
+	}
+	if endOffset < 0 {
+		endOffset = 0
+	}
 	if endOffset == 0 {
-		return []string{}, 0, nil
+		return []string{}, 0, false, nil
 	}
 
 	trailingByte := make([]byte, 1)
 	_, err = file.ReadAt(trailingByte, endOffset-1)
 	if err != nil && err != io.EOF {
-		return nil, 0, err
+		return nil, 0, false, err
 	}
 
 	newlinesNeeded := limit
@@ -172,7 +239,7 @@ func readLastLines(file *os.File, limit int) ([]string, int64, error) {
 		chunk := make([]byte, currentOffset-chunkStart)
 		_, err = file.ReadAt(chunk, chunkStart)
 		if err != nil && err != io.EOF {
-			return nil, 0, err
+			return nil, 0, false, err
 		}
 
 		for idx := len(chunk) - 1; idx >= 0; idx-- {
@@ -194,7 +261,7 @@ func readLastLines(file *os.File, limit int) ([]string, int64, error) {
 	reader := io.NewSectionReader(file, startOffset, endOffset-startOffset)
 	data, err := io.ReadAll(reader)
 	if err != nil {
-		return nil, 0, err
+		return nil, 0, false, err
 	}
 
 	lines := splitLogLines(data)
@@ -202,7 +269,7 @@ func readLastLines(file *os.File, limit int) ([]string, int64, error) {
 		lines = lines[len(lines)-limit:]
 	}
 
-	return lines, endOffset, nil
+	return lines, startOffset, startOffset > 0, nil
 }
 
 func splitLogLines(data []byte) []string {
