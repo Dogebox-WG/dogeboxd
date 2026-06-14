@@ -16,6 +16,7 @@ require (
 	github.com/go-git/go-billy/v5 v5.6.2
 	github.com/go-git/go-git/v5 v5.14.0
 	github.com/go-resty/resty/v2 v2.14.0
+	github.com/golanglibs/gocollections v1.0.0
 	github.com/gorilla/securecookie v1.1.2
 	github.com/mattn/go-sqlite3 v1.14.24
 	github.com/mdlayher/wifi v0.2.0
