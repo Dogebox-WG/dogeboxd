@@ -974,21 +974,47 @@ var allowedJournalServices = map[string]string{
 	"dkm": "dkm.service",
 }
 
-func (t Dogeboxd) GetLogChannel(PupID string, resumeToken *string) (context.CancelFunc, chan string, error) {
+type logSource struct {
+	journalService string
+	filePath       string
+}
+
+func (s logSource) usesJournal() bool {
+	return s.journalService != ""
+}
+
+func (t Dogeboxd) resolvePupLogSource(PupID string) (logSource, error) {
 	// We read dogeboxd and dkm from the host systemd journal,
 	// and read everything else (pups) from the container logs we export.
 	service, ok := allowedJournalServices[PupID]
 	if ok {
-		if resumeToken != nil {
-			return t.JournalReader.GetJournalChannelFromCursor(service, *resumeToken)
-		}
-		return t.JournalReader.GetJournalChannel(service)
+		return logSource{journalService: service}, nil
 	}
 
 	// Check that we've actually got a valid pup id.
 	_, _, err := t.Pups.GetPup(PupID)
 	if err != nil {
-		return nil, nil, err
+		return logSource{}, err
+	}
+
+	return logSource{filePath: t.config.PupLogPath(PupID)}, nil
+}
+
+func (t Dogeboxd) resolveJobLogSource(JobID string) (logSource, error) {
+	_, err := t.JobManager.GetJob(JobID)
+	if err != nil {
+		return logSource{}, fmt.Errorf("job not found: %s", JobID)
+	}
+
+	return logSource{filePath: t.config.JobLogPath(JobID)}, nil
+}
+
+func (t Dogeboxd) getLogChannel(source logSource, resumeToken *string) (context.CancelFunc, chan string, error) {
+	if source.usesJournal() {
+		if resumeToken != nil {
+			return t.JournalReader.GetJournalChannelFromCursor(source.journalService, *resumeToken)
+		}
+		return t.JournalReader.GetJournalChannel(source.journalService)
 	}
 
 	if resumeToken != nil {
@@ -996,72 +1022,65 @@ func (t Dogeboxd) GetLogChannel(PupID string, resumeToken *string) (context.Canc
 		if err != nil {
 			return nil, nil, err
 		}
-		return t.logtailer.GetChannelFromOffset(PupID, offset)
+		return t.logtailer.GetChannelFromOffset(source.filePath, offset)
 	}
 
-	return t.logtailer.GetChannel(PupID)
+	return t.logtailer.GetChannel(source.filePath)
 }
 
-func (t Dogeboxd) GetLogTail(PupID string, limit int) ([]string, *string, error) {
+func (t Dogeboxd) getLogTail(source logSource, limit int) ([]string, *string, error) {
 	if limit <= 0 {
 		return nil, nil, fmt.Errorf("Log tail limit must be greater than zero")
 	}
 
-	service, ok := allowedJournalServices[PupID]
-	if ok {
-		lines, resumeToken, err := t.JournalReader.GetJournalTail(service, limit)
-		return lines, resumeToken, err
+	if source.usesJournal() {
+		return t.JournalReader.GetJournalTail(source.journalService, limit)
 	}
 
-	_, _, err := t.Pups.GetPup(PupID)
-	if err != nil {
-		return nil, nil, err
-	}
-
-	lines, resumeToken, err := t.logtailer.GetTail(PupID, limit)
+	lines, resumeToken, err := t.logtailer.GetTail(source.filePath, limit)
 	if err != nil {
 		return nil, nil, err
 	}
 
 	return lines, logOffsetResumeToken(resumeToken), nil
+}
+
+func (t Dogeboxd) GetLogChannel(PupID string, resumeToken *string) (context.CancelFunc, chan string, error) {
+	source, err := t.resolvePupLogSource(PupID)
+	if err != nil {
+		return nil, nil, err
+	}
+
+	return t.getLogChannel(source, resumeToken)
+}
+
+func (t Dogeboxd) GetLogTail(PupID string, limit int) ([]string, *string, error) {
+	source, err := t.resolvePupLogSource(PupID)
+	if err != nil {
+		return nil, nil, err
+	}
+
+	return t.getLogTail(source, limit)
 }
 
 // GetJobLogChannel returns a log channel for a specific job
 // Streams logs from the job's ActionLogger in real-time (same system as pup logs)
 func (t Dogeboxd) GetJobLogChannel(JobID string, resumeToken *string) (context.CancelFunc, chan string, error) {
-	// Verify job exists
-	_, err := t.JobManager.GetJob(JobID)
-	if err != nil {
-		return nil, nil, fmt.Errorf("job not found: %s", JobID)
-	}
-
-	if resumeToken != nil {
-		offset, err := parseLogOffsetResumeToken(*resumeToken)
-		if err != nil {
-			return nil, nil, err
-		}
-		return t.logtailer.GetChannelFromOffset(JobID, offset)
-	}
-
-	return t.logtailer.GetChannel(JobID)
-}
-
-func (t Dogeboxd) GetJobLogTail(JobID string, limit int) ([]string, *string, error) {
-	if limit <= 0 {
-		return nil, nil, fmt.Errorf("Log tail limit must be greater than zero")
-	}
-
-	_, err := t.JobManager.GetJob(JobID)
-	if err != nil {
-		return nil, nil, fmt.Errorf("job not found: %s", JobID)
-	}
-
-	lines, resumeToken, err := t.logtailer.GetTail(JobID, limit)
+	source, err := t.resolveJobLogSource(JobID)
 	if err != nil {
 		return nil, nil, err
 	}
 
-	return lines, logOffsetResumeToken(resumeToken), nil
+	return t.getLogChannel(source, resumeToken)
+}
+
+func (t Dogeboxd) GetJobLogTail(JobID string, limit int) ([]string, *string, error) {
+	source, err := t.resolveJobLogSource(JobID)
+	if err != nil {
+		return nil, nil, err
+	}
+
+	return t.getLogTail(source, limit)
 }
 
 func parseLogOffsetResumeToken(resumeToken string) (int64, error) {

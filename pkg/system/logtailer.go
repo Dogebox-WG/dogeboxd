@@ -8,10 +8,7 @@ import (
 	"io"
 	"log"
 	"os"
-	"path/filepath"
 	"time"
-
-	dogeboxd "github.com/Dogebox-WG/dogeboxd/pkg"
 )
 
 const maxInitialLines = 1000
@@ -19,28 +16,22 @@ const tailReadChunkSize int64 = 8192
 const logFileOpenAttempts = 300
 const logFileOpenRetryDelay = 100 * time.Millisecond
 
-func NewLogTailer(config dogeboxd.ServerConfig) LogTailer {
-	return LogTailer{
-		config: config,
-	}
+func NewLogTailer() LogTailer {
+	return LogTailer{}
 }
 
-type LogTailer struct {
-	config dogeboxd.ServerConfig
+type LogTailer struct{}
+
+func (t LogTailer) GetChannel(logFile string) (context.CancelFunc, chan string, error) {
+	return t.GetChannelFromOffset(logFile, -1)
 }
 
-func (t LogTailer) GetChannel(pupId string) (context.CancelFunc, chan string, error) {
-	return t.GetChannelFromOffset(pupId, -1)
-}
-
-func (t LogTailer) GetChannelFromOffset(pupId string, startOffset int64) (context.CancelFunc, chan string, error) {
+func (t LogTailer) GetChannelFromOffset(logFile string, startOffset int64) (context.CancelFunc, chan string, error) {
 	ctx, cancel := context.WithCancel(context.Background())
 
 	out := make(chan string, 10)
 
 	go func() {
-		logFile := filepath.Join(t.config.ContainerLogDir, "pup-"+pupId)
-
 		// Wait for the file to be created (up to 30 seconds)
 		file, err := waitForLogFile(logFile)
 		if err != nil {
@@ -90,12 +81,10 @@ func (t LogTailer) GetChannelFromOffset(pupId string, startOffset int64) (contex
 	return cancel, out, nil
 }
 
-func (t LogTailer) GetTail(pupId string, limit int) ([]string, int64, error) {
+func (t LogTailer) GetTail(logFile string, limit int) ([]string, int64, error) {
 	if limit <= 0 {
 		return nil, 0, fmt.Errorf("Log tail limit must be greater than zero")
 	}
-
-	logFile := filepath.Join(t.config.ContainerLogDir, "pup-"+pupId)
 
 	file, err := os.Open(logFile)
 	if err != nil {
