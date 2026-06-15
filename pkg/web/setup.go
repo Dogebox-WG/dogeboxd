@@ -27,6 +27,8 @@ type BootstrapFacts struct {
 	HasCompletedInitialConfiguration bool `json:"hasCompletedInitialConfiguration"`
 	SetupSessionID                   string `json:"setupSessionId"`
 	ActiveBootstrapJobId             string `json:"activeBootstrapJobId,omitempty"`
+	ActiveSystemUpdateJobId          string `json:"activeSystemUpdateJobId,omitempty"`
+	ActiveSystemUpdateStatus         string `json:"activeSystemUpdateStatus,omitempty"`
 }
 
 type BootstrapFlags struct {
@@ -53,6 +55,8 @@ type BootstrapResponse struct {
 func (t api) getRawBS() BootstrapResponse {
 	dbxState := t.sm.Get().Dogebox
 	activeBootstrapJobID := ""
+	activeSystemUpdateJobID := ""
+	activeSystemUpdateStatus := ""
 
 	if t.dbx.JobManager != nil {
 		activeJobs, err := t.dbx.JobManager.GetActiveJobs()
@@ -62,6 +66,10 @@ func (t api) getRawBS() BootstrapResponse {
 			for _, job := range activeJobs {
 				if job.Action == "initial-bootstrap" {
 					activeBootstrapJobID = job.ID
+				}
+				if job.Action == "system-update" {
+					activeSystemUpdateJobID = job.ID
+					activeSystemUpdateStatus = string(job.Status)
 				}
 			}
 		}
@@ -90,6 +98,8 @@ func (t api) getRawBS() BootstrapResponse {
 			HasCompletedInitialConfiguration: dbxState.InitialState.HasFullyConfigured,
 			SetupSessionID:                   dbxState.InitialState.SetupSessionID,
 			ActiveBootstrapJobId:             activeBootstrapJobID,
+			ActiveSystemUpdateJobId:          activeSystemUpdateJobID,
+			ActiveSystemUpdateStatus:         activeSystemUpdateStatus,
 		},
 		SidebarPreferences: SidebarPreferencesResponse{SidebarPups: sidebarPups},
 	}
