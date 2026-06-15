@@ -85,24 +85,6 @@ func (t api) getStoreList(w http.ResponseWriter, r *http.Request) {
 			pups[availablePup.Name] = pupEntry
 		}
 
-		// Override any entry in the listing with what we actually have installed.
-		// We want to show that is _actually_ installed, rather than what might have been removed or updated underneath us.
-		// nb. We don't let you remove a source if you have a pup installed from it, so this should be safe here.
-		for _, installedPup := range t.dbx.Pups.GetStateMap() {
-			if installedPup.Source.Location == entry.Config.Location && installedPup.Source.Name == entry.Config.Name {
-				if _, ok := pups[installedPup.Manifest.Meta.Name]; !ok {
-					pups[installedPup.Manifest.Meta.Name] = StoreListSourceEntryPup{
-						Versions: map[string]dogeboxd.PupManifest{},
-					}
-				}
-
-				pupEntry := pups[installedPup.Manifest.Meta.Name]
-				pupEntry.Versions[installedPup.Version] = installedPup.Manifest
-				pupEntry.LatestVersion = installedPup.Version
-				pups[installedPup.Manifest.Meta.Name] = pupEntry
-			}
-		}
-
 		response[k] = StoreListSourceEntry{
 			Name:        entry.Config.Name,
 			Description: entry.Config.Description,

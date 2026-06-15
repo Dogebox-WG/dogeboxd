@@ -5,6 +5,7 @@ import (
 	"fmt"
 	"log"
 	"sync/atomic"
+	"time"
 
 	dogeboxd "github.com/Dogebox-WG/dogeboxd/pkg"
 	"github.com/Dogebox-WG/dogeboxd/pkg/conductor"
@@ -70,7 +71,7 @@ func (t server) Start() {
 
 	systemUpdater := system.NewSystemUpdater(t.config, networkManager, nixManager, sourceManager, pups, t.sm, lifecycleManager, dkm)
 	journalReader := system.NewJournalReader(t.config)
-	logtailer := system.NewLogTailer(t.config)
+	logtailer := system.NewLogTailer()
 
 	/* ----------------------------------------------------------------------- */
 	// Set up PupManager and load the state for all installed pups
@@ -101,9 +102,29 @@ func (t server) Start() {
 	dbx.SetJobManager(jobManager)
 	atomic.StoreUint32(&dbxReady, 1)
 
+	if reconciled, err := jobManager.ReconcileCompletedSystemUpdateJobs(); err == nil && reconciled > 0 {
+		log.Printf("Reconciled %d interrupted system update jobs to completed after restart", reconciled)
+	}
+
+	if cleared, err := jobManager.ClearInterruptedSystemJobs(); err == nil && cleared > 0 {
+		log.Printf("Cleaned up %d interrupted system jobs from previous run", cleared)
+	}
+
+	// Clean up any orphaned jobs from previous runs (stuck in queued/in_progress)
+	// before startup migrations inspect active work and decide whether to queue again.
+	if cleared, err := jobManager.ClearOrphanedJobs(30 * time.Minute); err == nil && cleared > 0 {
+		log.Printf("Cleaned up %d orphaned jobs from previous run", cleared)
+	}
+
 	if t.sm.Get().Dogebox.InitialState.HasFullyConfigured {
-		jobID := dbx.AddAction(dogeboxd.UpdateNixCache{})
-		log.Printf("Queued startup nix cache update job: %s", jobID)
+		go func() {
+			if t.checkAndPerformPostUpgradeMigrations(dbx) {
+				return
+			}
+
+			jobID := dbx.AddAction(dogeboxd.UpdateNixCache{})
+			log.Printf("Queued startup nix cache update job: %s", jobID)
+		}()
 	}
 
 	//No need to show welcome screen if any pups are already installed (may have just done a system update or something similar)

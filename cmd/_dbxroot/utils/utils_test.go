@@ -1,76 +1,84 @@
 package utils
 
 import (
-	"os"
-	"path/filepath"
+	"strings"
 	"testing"
+
+	"github.com/Dogebox-WG/dogeboxd/pkg/version"
 )
 
-func TestPrepareReleaseTagOverrideRollsBackNewFile(t *testing.T) {
-	previousVersioningDirPath := versioningDirPath
-	versioningDirPath = t.TempDir()
-	defer func() {
-		versioningDirPath = previousVersioningDirPath
-	}()
-
-	releaseTagPath := filepath.Join(versioningDirPath, dbxReleaseTagFilename)
-
-	rollback, err := PrepareReleaseTagOverride("v0.9.0-rc.3")
-	if err != nil {
-		t.Fatalf("PrepareReleaseTagOverride returned error: %v", err)
-	}
-
-	contents, err := os.ReadFile(releaseTagPath)
-	if err != nil {
-		t.Fatalf("failed to read persisted release tag: %v", err)
-	}
-	if string(contents) != "v0.9.0-rc.3\n" {
-		t.Fatalf("unexpected release tag contents: %q", string(contents))
-	}
-
-	if err := rollback(); err != nil {
-		t.Fatalf("rollback returned error: %v", err)
-	}
-
-	if _, err := os.Stat(releaseTagPath); !os.IsNotExist(err) {
-		t.Fatalf("expected release tag file to be removed, got err=%v", err)
+func testVersionInfo() *version.DBXVersionInfo {
+	return &version.DBXVersionInfo{
+		Release: "v1.0.0",
+		Packages: map[string]version.DBXVersionInputTuple{
+			"dogeboxd": {Rev: "dogeboxd-rev", Hash: "dogeboxd-hash"},
+			"dpanel":   {Rev: "dpanel-rev", Hash: "dpanel-hash"},
+			"dkm":      {Rev: "dkm-rev", Hash: "dkm-hash"},
+		},
 	}
 }
 
-func TestPrepareReleaseTagOverrideRestoresPreviousFile(t *testing.T) {
-	previousVersioningDirPath := versioningDirPath
-	versioningDirPath = t.TempDir()
-	defer func() {
-		versioningDirPath = previousVersioningDirPath
-	}()
-
-	releaseTagPath := filepath.Join(versioningDirPath, dbxReleaseTagFilename)
-	if err := os.WriteFile(releaseTagPath, []byte("v0.9.0-rc.1\n"), 0o644); err != nil {
-		t.Fatalf("failed to seed existing release tag file: %v", err)
+func TestGetFlakePathUsesCustomBaseDir(t *testing.T) {
+	flakePath := buildFlakePath("/tmp/os-upgrade", "nanopc-t6", "aarch64")
+	expected := "/tmp/os-upgrade#dogeboxos-nanopc-t6-aarch64"
+	if flakePath != expected {
+		t.Fatalf("expected flake path %q, got %q", expected, flakePath)
 	}
+}
 
-	rollback, err := PrepareReleaseTagOverride("v0.9.0-rc.3")
+func TestGetRebuildCommandUsesStagedFlakeWithUpgradeOverrides(t *testing.T) {
+	command, args, err := buildRebuildCommand("switch", "v9.9.9", "/tmp/os-upgrade#dogeboxos-qemu-x86_64", testVersionInfo())
 	if err != nil {
-		t.Fatalf("PrepareReleaseTagOverride returned error: %v", err)
+		t.Fatalf("expected no error, got %v", err)
 	}
 
-	updatedContents, err := os.ReadFile(releaseTagPath)
+	if command != "nixos-rebuild" {
+		t.Fatalf("expected nixos-rebuild command, got %q", command)
+	}
+
+	expectedPrefix := []string{
+		"switch",
+		"--flake",
+		"/tmp/os-upgrade#dogeboxos-qemu-x86_64",
+		"--impure",
+	}
+	if len(args) < len(expectedPrefix) {
+		t.Fatalf("expected args to start with %v, got %v", expectedPrefix, args)
+	}
+	for i, expected := range expectedPrefix {
+		if args[i] != expected {
+			t.Fatalf("expected args[%d] to be %q, got %q", i, expected, args[i])
+		}
+	}
+
+	joinedArgs := strings.Join(args, " ")
+	expectedOverrides := []string{
+		"--override-input dogeboxd github:dogebox-wg/dogeboxd/v9.9.9",
+		"--override-input dkm github:dogebox-wg/dkm/v9.9.9",
+		"--override-input dpanel github:dogebox-wg/dpanel/v9.9.9",
+	}
+	for _, expected := range expectedOverrides {
+		if !strings.Contains(joinedArgs, expected) {
+			t.Fatalf("expected staged-flake rebuild args to contain %q, got %q", expected, joinedArgs)
+		}
+	}
+}
+
+func TestGetRebuildCommandUsesVersionOverridesWhenNoFlakeDirIsProvided(t *testing.T) {
+	_, args, err := buildRebuildCommand("boot", "v2.0.0", "/etc/nixos#dogeboxos-iso-x86_64", testVersionInfo())
 	if err != nil {
-		t.Fatalf("failed to read updated release tag: %v", err)
-	}
-	if string(updatedContents) != "v0.9.0-rc.3\n" {
-		t.Fatalf("unexpected updated release tag contents: %q", string(updatedContents))
+		t.Fatalf("expected no error, got %v", err)
 	}
 
-	if err := rollback(); err != nil {
-		t.Fatalf("rollback returned error: %v", err)
+	joinedArgs := strings.Join(args, " ")
+	expectedOverrides := []string{
+		"--override-input dogeboxd github:dogebox-wg/dogeboxd/v2.0.0",
+		"--override-input dkm github:dogebox-wg/dkm/v2.0.0",
+		"--override-input dpanel github:dogebox-wg/dpanel/v2.0.0",
 	}
-
-	restoredContents, err := os.ReadFile(releaseTagPath)
-	if err != nil {
-		t.Fatalf("failed to read restored release tag: %v", err)
-	}
-	if string(restoredContents) != "v0.9.0-rc.1\n" {
-		t.Fatalf("unexpected restored release tag contents: %q", string(restoredContents))
+	for _, expected := range expectedOverrides {
+		if !strings.Contains(joinedArgs, expected) {
+			t.Fatalf("expected rebuild args to contain %q, got %q", expected, joinedArgs)
+		}
 	}
 }

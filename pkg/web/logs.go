@@ -7,15 +7,18 @@ import (
 	"log"
 	"net/http"
 	"os"
-	"path/filepath"
 	"strconv"
+
+	dogeboxd "github.com/Dogebox-WG/dogeboxd/pkg"
 )
 
 const defaultLogTailLimit = 1000
 
 type logTailResponse struct {
-	Lines       []string `json:"lines"`
-	ResumeToken *string  `json:"resumeToken,omitempty"`
+	Lines        []string `json:"lines"`
+	ResumeToken  *string  `json:"resumeToken,omitempty"`
+	OlderCursor  *string  `json:"olderCursor,omitempty"`
+	HasMoreOlder bool     `json:"hasMoreOlder"`
 }
 
 func (t api) downloadPupLog(w http.ResponseWriter, r *http.Request) {
@@ -35,7 +38,7 @@ func (t api) downloadPupLog(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	t.streamLogDownload(w, "pup-"+pupID, "pup-"+pupID+".log")
+	t.streamLogDownload(w, t.config.PupLogPath(pupID), t.config.PupLogFileName(pupID)+".log")
 }
 
 func (t api) downloadJobLog(w http.ResponseWriter, r *http.Request) {
@@ -50,22 +53,22 @@ func (t api) downloadJobLog(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	t.streamLogDownload(w, "pup-"+jobID, "job-"+jobID+".log")
+	t.streamLogDownload(w, t.config.JobLogPath(jobID), t.config.JobLogFileName(jobID)+".log")
 }
 
 func (t api) getPupLogTail(w http.ResponseWriter, r *http.Request) {
-	t.getLogTail(w, r, "PupID", t.dbx.GetLogTail)
+	t.getLogTail(w, r, "PupID", t.dbx.GetLogPage)
 }
 
 func (t api) getJobLogTail(w http.ResponseWriter, r *http.Request) {
-	t.getLogTail(w, r, "JobID", t.dbx.GetJobLogTail)
+	t.getLogTail(w, r, "JobID", t.dbx.GetJobLogPage)
 }
 
 func (t api) getLogTail(
 	w http.ResponseWriter,
 	r *http.Request,
 	pathValue string,
-	fetchTail func(string, int) ([]string, *string, error),
+	fetchTail func(string, *string, int) (dogeboxd.LogPage, error),
 ) {
 	logID := r.PathValue(pathValue)
 	limit, err := parseLogTailLimit(r)
@@ -74,13 +77,24 @@ func (t api) getLogTail(
 		return
 	}
 
-	lines, resumeToken, err := fetchTail(logID, limit)
+	before, err := parseLogTailBefore(r)
 	if err != nil {
 		sendErrorResponse(w, http.StatusBadRequest, err.Error())
 		return
 	}
 
-	sendResponse(w, logTailResponse{Lines: lines, ResumeToken: resumeToken})
+	page, err := fetchTail(logID, before, limit)
+	if err != nil {
+		sendErrorResponse(w, http.StatusBadRequest, err.Error())
+		return
+	}
+
+	sendResponse(w, logTailResponse{
+		Lines:        page.Lines,
+		ResumeToken:  page.ResumeToken,
+		OlderCursor:  page.OlderCursor,
+		HasMoreOlder: page.HasMoreOlder,
+	})
 }
 
 func parseLogTailLimit(r *http.Request) (int, error) {
@@ -103,8 +117,15 @@ func parseLogTailLimit(r *http.Request) (int, error) {
 	return limit, nil
 }
 
-func (t api) streamLogDownload(w http.ResponseWriter, logFileName string, downloadName string) {
-	logPath := filepath.Join(t.config.ContainerLogDir, logFileName)
+func parseLogTailBefore(r *http.Request) (*string, error) {
+	before := r.URL.Query().Get("before")
+	if before == "" {
+		return nil, nil
+	}
+
+	return &before, nil
+}
+func (t api) streamLogDownload(w http.ResponseWriter, logPath string, downloadName string) {
 	logFile, err := os.Open(logPath)
 	if err != nil {
 		if os.IsNotExist(err) {
@@ -121,6 +142,6 @@ func (t api) streamLogDownload(w http.ResponseWriter, logFileName string, downlo
 	w.Header().Set("Cache-Control", "no-store")
 
 	if _, err := io.Copy(w, logFile); err != nil {
-		log.Printf("Error streaming log file %s: %v", logFileName, err)
+		log.Printf("Error streaming log file %s: %v", logPath, err)
 	}
 }

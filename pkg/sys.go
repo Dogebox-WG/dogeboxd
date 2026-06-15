@@ -39,16 +39,25 @@ type SystemMonitor interface {
 // actively listen for systemd journal entries
 // for a given systemd service, close channel
 // when done
+type LogPage struct {
+	Lines        []string `json:"lines"`
+	ResumeToken  *string  `json:"resumeToken,omitempty"`
+	OlderCursor  *string  `json:"olderCursor,omitempty"`
+	HasMoreOlder bool     `json:"hasMoreOlder"`
+}
+
 type JournalReader interface {
 	GetJournalChannel(string) (context.CancelFunc, chan string, error)
 	GetJournalChannelFromCursor(string, string) (context.CancelFunc, chan string, error)
 	GetJournalTail(string, int) ([]string, *string, error)
+	GetJournalPage(string, *string, int) (LogPage, error)
 }
 
 type LogTailer interface {
 	GetChannel(string) (context.CancelFunc, chan string, error)
 	GetChannelFromOffset(string, int64) (context.CancelFunc, chan string, error)
 	GetTail(string, int) ([]string, int64, error)
+	GetPage(string, *int64, int) (LogPage, error)
 }
 
 // SystemMonitor issues these for monitored PUPs
@@ -149,7 +158,6 @@ type NetworkConnection interface {
 type NetworkEthernet struct {
 	Type      string `json:"type"`
 	Interface string `json:"interface"`
-	Label     string `json:"label,omitempty"`
 	Active    bool   `json:"active"`
 }
 
@@ -335,8 +343,9 @@ type NixSystemTemplateValues struct {
 }
 
 type NixIncludesFileTemplateValues struct {
-	NIX_DIR string
-	PUP_IDS []string
+	NIX_DIR  string
+	DATA_DIR string
+	PUP_IDS  []string
 }
 
 type NixNetworkTemplateValues struct {

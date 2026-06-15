@@ -3,9 +3,16 @@ package dogeboxd
 import (
 	"encoding/json"
 	"fmt"
+	"os"
+	"path/filepath"
 	"reflect"
+	"regexp"
+	"strings"
 	"sync"
 	"time"
+
+	"github.com/Dogebox-WG/dogeboxd/pkg/version"
+	"golang.org/x/mod/semver"
 )
 
 // JobStatus represents the current state of a job
@@ -26,12 +33,20 @@ type JobRecord struct {
 	Started        time.Time  `json:"started"`
 	Finished       *time.Time `json:"finished"` // nil if not finished
 	DisplayName    string     `json:"displayName"`
-	Action         string     `json:"action"`   // Action type: install, upgrade, uninstall, etc.
+	Action         string     `json:"action"` // Action type: install, upgrade, uninstall, etc.
+	TargetVersion  string     `json:"targetVersion,omitempty"`
 	Progress       int        `json:"progress"` // 0-100
 	Status         JobStatus  `json:"status"`
 	SummaryMessage string     `json:"summaryMessage"`
 	ErrorMessage   string     `json:"errorMessage"`
 	PupID          string     `json:"pupID"` // Associated pup if applicable
+}
+
+var reconciledInstalledOSFlakePath = "/etc/nixos/flake.nix"
+var reconciledOSFlakeVersionPattern = regexp.MustCompile(`(?m)^\s*dbxRelease\s*=\s*"(v[^"]+)"`)
+var reconciledReadFile = os.ReadFile
+var reconciledCurrentDBXRelease = func() string {
+	return version.GetDBXRelease().Release
 }
 
 // JobManager handles job persistence and state management
@@ -77,6 +92,9 @@ func (jm *JobManager) CreateJobRecord(j Job) (*JobRecord, error) {
 		SummaryMessage: "Job queued",
 		ErrorMessage:   "",
 		PupID:          pupID,
+	}
+	if action, ok := j.A.(SystemUpdate); ok {
+		record.TargetVersion = action.Version
 	}
 
 	if j.State != nil {
@@ -329,6 +347,233 @@ func (jm *JobManager) DeleteJob(jobID string) error {
 
 	delete(jm.activeJobs, jobID)
 	return jm.store.Del(jobID)
+}
+
+// ClearOrphanedJobs marks jobs stuck in queued/in_progress state as failed
+// Jobs are considered orphaned if they've been queued for longer than the threshold
+func (jm *JobManager) ClearOrphanedJobs(olderThan time.Duration) (int, error) {
+	jm.jobsMutex.Lock()
+	defer jm.jobsMutex.Unlock()
+
+	cutoff := time.Now().Add(-olderThan)
+	now := time.Now()
+
+	count, err := jm.markOrphanedJobsAsFailed(now, cutoff)
+	if err != nil {
+		return 0, err
+	}
+
+	// Clear active jobs cache for these orphaned jobs
+	for id, job := range jm.activeJobs {
+		if job.Status == JobStatusQueued || job.Status == JobStatusInProgress {
+			if job.Started.Before(cutoff) {
+				delete(jm.activeJobs, id)
+			}
+		}
+	}
+
+	return count, nil
+}
+
+// ReconcileCompletedSystemUpdateJobs marks interrupted system update jobs as
+// completed when the current runtime state already matches their target version.
+func (jm *JobManager) ReconcileCompletedSystemUpdateJobs() (int, error) {
+	currentDBXRelease := strings.TrimSpace(reconciledCurrentDBXRelease())
+	installedFlakeVersion, err := getReconciledInstalledOSFlakeVersion()
+	if err != nil {
+		return 0, err
+	}
+
+	activeJobs, err := jm.GetActiveJobs()
+	if err != nil {
+		return 0, err
+	}
+
+	reconciled := 0
+	for _, job := range activeJobs {
+		if !isInterruptedSystemJob(&job) {
+			continue
+		}
+
+		targetVersion := strings.TrimSpace(jm.resolveSystemUpdateTargetVersion(job))
+		if targetVersion == "" {
+			continue
+		}
+		if currentDBXRelease != targetVersion || installedFlakeVersion != targetVersion {
+			continue
+		}
+
+		if err := jm.CompleteJob(job.ID, ""); err != nil {
+			return reconciled, err
+		}
+		jm.appendJobRecoveryLog(job.ID, fmt.Sprintf("System update to %s completed after dogeboxd restart", targetVersion))
+		reconciled++
+	}
+
+	return reconciled, nil
+}
+
+// ClearInterruptedSystemJobs marks system-level jobs from a previous dogeboxd
+// process as failed. These jobs cannot resume after dogeboxd restarts, and if
+// they remain active they keep the updates UI locked.
+func (jm *JobManager) ClearInterruptedSystemJobs() (int, error) {
+	jm.jobsMutex.Lock()
+	defer jm.jobsMutex.Unlock()
+
+	now := time.Now()
+	count := 0
+	activeJobs, err := jm.getActiveSystemJobsLocked()
+	if err != nil {
+		return 0, err
+	}
+	for _, job := range activeJobs {
+		if err := jm.markInterruptedSystemJobAsFailedLocked(job, now); err != nil {
+			return count, err
+		}
+		count++
+	}
+
+	for id, job := range jm.activeJobs {
+		if job.Status != JobStatusQueued && job.Status != JobStatusInProgress {
+			continue
+		}
+		if isInterruptedSystemJob(job) {
+			delete(jm.activeJobs, id)
+		}
+	}
+
+	return count, nil
+}
+
+func (jm *JobManager) markOrphanedJobsAsFailed(finished time.Time, startedBefore time.Time) (int, error) {
+	query := fmt.Sprintf(`UPDATE %s SET value = json_set(json_set(json_set(value, '$.status', 'failed'), '$.errorMessage', 'Job was orphaned (stuck in queue)'), '$.finished', ?) WHERE json_extract(value, '$.status') IN ('queued', 'in_progress') AND json_extract(value, '$.started') < ?`, jm.store.Table)
+	count, err := jm.store.ExecWrite(query, finished.Format(time.RFC3339Nano), startedBefore.Format(time.RFC3339Nano))
+	return int(count), err
+}
+
+func (jm *JobManager) getActiveSystemJobsLocked() ([]JobRecord, error) {
+	activeJobs, err := jm.GetActiveJobs()
+	if err != nil {
+		return nil, err
+	}
+
+	filtered := make([]JobRecord, 0, len(activeJobs))
+	for _, job := range activeJobs {
+		if isInterruptedSystemJob(&job) {
+			filtered = append(filtered, job)
+		}
+	}
+
+	return filtered, nil
+}
+
+func (jm *JobManager) markInterruptedSystemJobAsFailedLocked(job JobRecord, finished time.Time) error {
+	targetVersion := strings.TrimSpace(jm.resolveSystemUpdateTargetVersion(job))
+	job.Status = JobStatusFailed
+	job.Finished = &finished
+	job.ErrorMessage = interruptedSystemJobMessage(job)
+	job.SummaryMessage = "Job failed"
+	if err := jm.store.Set(job.ID, job); err != nil {
+		return err
+	}
+
+	note := interruptedSystemJobLogNote(job, targetVersion)
+	if note != "" {
+		jm.appendJobRecoveryLog(job.ID, note)
+	}
+
+	return nil
+}
+
+func isInterruptedSystemJob(job *JobRecord) bool {
+	if job == nil {
+		return false
+	}
+	if job.Action == (SystemUpdate{}).ActionName() {
+		return true
+	}
+
+	displayName := strings.ToLower(job.DisplayName)
+	return displayName == "system update"
+}
+
+func interruptedSystemJobMessage(job JobRecord) string {
+	return "Job was interrupted by dogeboxd restart"
+}
+
+func interruptedSystemJobLogNote(job JobRecord, targetVersion string) string {
+	if isExpectedManualRestartMigrationUpdate(targetVersion) {
+		return "System update was interrupted by dogeboxd restart. This is expected when performing a 0.8.x to 0.9.x update; restart dogeboxd to continue phase 2."
+	}
+
+	return ""
+}
+
+func isExpectedManualRestartMigrationUpdate(targetVersion string) bool {
+	targetVersion = strings.TrimSpace(targetVersion)
+	if targetVersion == "" {
+		return false
+	}
+
+	return semver.IsValid(targetVersion) && semver.Compare(targetVersion, "v0.9.0-rc.1") >= 0
+}
+
+func (jm *JobManager) resolveSystemUpdateTargetVersion(job JobRecord) string {
+	targetVersion := strings.TrimSpace(job.TargetVersion)
+	if targetVersion != "" {
+		return targetVersion
+	}
+
+	return strings.TrimSpace(jm.readSystemUpdateTargetVersionFromLog(job.ID))
+}
+
+func getReconciledInstalledOSFlakeVersion() (string, error) {
+	contents, err := reconciledReadFile(reconciledInstalledOSFlakePath)
+	if err != nil {
+		return "", err
+	}
+
+	match := reconciledOSFlakeVersionPattern.FindStringSubmatch(string(contents))
+	if len(match) != 2 {
+		return "", fmt.Errorf("installed os flake version not found in %s", reconciledInstalledOSFlakePath)
+	}
+
+	return strings.TrimSpace(match[1]), nil
+}
+
+func (jm *JobManager) readSystemUpdateTargetVersionFromLog(jobID string) string {
+	if jm.dbx == nil || jm.dbx.config == nil || jm.dbx.config.ContainerLogDir == "" {
+		return ""
+	}
+
+	logPath := filepath.Join(jm.dbx.config.ContainerLogDir, "pup-"+jobID)
+	contents, err := os.ReadFile(logPath)
+	if err != nil {
+		return ""
+	}
+
+	matches := regexp.MustCompile(`Starting system update to (v[^\s]+)`).FindAllStringSubmatch(string(contents), -1)
+	if len(matches) == 0 {
+		return ""
+	}
+
+	return matches[len(matches)-1][1]
+}
+
+func (jm *JobManager) appendJobRecoveryLog(jobID string, msg string) {
+	if jm.dbx == nil || jm.dbx.config == nil || jm.dbx.config.ContainerLogDir == "" {
+		return
+	}
+
+	logPath := filepath.Join(jm.dbx.config.ContainerLogDir, "pup-"+jobID)
+	f, err := os.OpenFile(logPath, os.O_APPEND|os.O_CREATE|os.O_WRONLY, 0644)
+	if err != nil {
+		return
+	}
+	defer f.Close()
+
+	timestamp := time.Now().Format("2006-01-02 15:04:05")
+	_, _ = fmt.Fprintf(f, "[%s] %s\n", timestamp, msg)
 }
 
 // getDisplayName returns a human-readable name for the job

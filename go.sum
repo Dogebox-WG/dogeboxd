@@ -113,6 +113,10 @@ github.com/golang/groupcache v0.0.0-20241129210726-2c02b8208cf8 h1:f+oWsMOmNPc8J
 github.com/golang/groupcache v0.0.0-20241129210726-2c02b8208cf8/go.mod h1:wcDNUvekVysuuOpQKo3191zZyTpiI6se1N1ULghS0sw=
 github.com/golang/protobuf v1.5.4 h1:i7eJL8qZTpSEXOPTxNKhASYpMn+8e5Q6AdndVa1dWek=
 github.com/golang/protobuf v1.5.4/go.mod h1:lnTiLA8Wa4RWRcIUkrtSVa5nRhsEGBg48fD6rSs7xps=
+github.com/golanglibs/goassert v0.5.0 h1:8wXK2ypro38aXvzkurs99bATUqwN8NGxpkbEy6vE4GI=
+github.com/golanglibs/goassert v0.5.0/go.mod h1:71KXF3RiammwVhN3mQ6jwumNPZ2BhufOVlJkNd2K7/0=
+github.com/golanglibs/gocollections v1.0.0 h1:hb9IS6bB+AdTcg4fZsL97wcMS6DM5B+FayrhaZ2b7lw=
+github.com/golanglibs/gocollections v1.0.0/go.mod h1:ZoreGFuwiT4Y4gUwtaMyo95/vjAcuRR7n+2jyvYDKO8=
 github.com/google/gnostic-models v0.6.8 h1:yo/ABAfM5IMRsS1VnXjTBvUb61tFIHozhlYvRgGre9I=
 github.com/google/gnostic-models v0.6.8/go.mod h1:5n7qKqH0f5wFt+aWF8CW6pZLLNOfYuF5OpfBSENuI8U=
 github.com/google/go-cmp v0.5.6/go.mod h1:v8dTdLbMG2kIc/vJvl+f65V22dbkXbowE6jgT/gNBxE=

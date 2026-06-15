@@ -46,15 +46,16 @@ import (
 	"os/exec"
 	"strconv"
 	"sync"
+	"sync/atomic"
 	"time"
 
-	"sync/atomic"
+	"github.com/golanglibs/gocollections/set/hashset"
 )
 
 type syncQueue struct {
-	jobQueue            []Job              // pending jobs waiting to be handed to SystemUpdater
-	nonQueuedActiveJobs map[string]struct{} // runtime-active jobs that are not currently in jobQueue
-	currentSystemJobID  string             // the single job currently handed to SystemUpdater
+	jobQueue            []Job               // pending jobs waiting to be handed to SystemUpdater
+	nonQueuedActiveJobs hashset.Set[string] // runtime-active jobs that are not currently in jobQueue
+	currentSystemJobID  string              // the single job currently handed to SystemUpdater
 	jobQLock            sync.Mutex
 	jobInProgress       sync.Mutex
 	jobTimer            time.Time
@@ -98,7 +99,7 @@ func NewDogeboxd(
 ) Dogeboxd {
 	q := syncQueue{
 		jobQueue:            []Job{},
-		nonQueuedActiveJobs: map[string]struct{}{},
+		nonQueuedActiveJobs: hashset.New[string](),
 		jobQLock:            sync.Mutex{},
 		jobInProgress:       sync.Mutex{},
 	}
@@ -324,20 +325,20 @@ func (t *Dogeboxd) pumpQueue() {
 func (t *Dogeboxd) enqueue(j Job) {
 	t.queue.jobQLock.Lock()
 	defer t.queue.jobQLock.Unlock()
-	delete(t.queue.nonQueuedActiveJobs, j.ID)
+	t.queue.nonQueuedActiveJobs.Remove(j.ID)
 	t.queue.jobQueue = append(t.queue.jobQueue, j)
 }
 
 func (t *Dogeboxd) markNonQueuedActiveJob(jobID string) {
 	t.queue.jobQLock.Lock()
 	defer t.queue.jobQLock.Unlock()
-	t.queue.nonQueuedActiveJobs[jobID] = struct{}{}
+	t.queue.nonQueuedActiveJobs.Add(jobID)
 }
 
 func (t *Dogeboxd) clearNonQueuedActiveJob(jobID string) {
 	t.queue.jobQLock.Lock()
 	defer t.queue.jobQLock.Unlock()
-	delete(t.queue.nonQueuedActiveJobs, jobID)
+	t.queue.nonQueuedActiveJobs.Remove(jobID)
 }
 
 func (t *Dogeboxd) clearCurrentSystemJobID(jobID string) {
@@ -368,16 +369,16 @@ func (t *Dogeboxd) GetRuntimeJobIDs() []string {
 	t.queue.jobQLock.Lock()
 	defer t.queue.jobQLock.Unlock()
 
-	ids := make([]string, 0, len(t.queue.jobQueue)+len(t.queue.nonQueuedActiveJobs)+1)
+	ids := make([]string, 0, len(t.queue.jobQueue)+t.queue.nonQueuedActiveJobs.Size()+1)
 	if t.queue.currentSystemJobID != "" {
 		ids = append(ids, t.queue.currentSystemJobID)
 	}
 	for _, job := range t.queue.jobQueue {
 		ids = append(ids, job.ID)
 	}
-	for jobID := range t.queue.nonQueuedActiveJobs {
-		ids = append(ids, jobID)
-	}
+	t.queue.nonQueuedActiveJobs.ForEach(func(jobID *string) {
+		ids = append(ids, *jobID)
+	})
 
 	return ids
 }
@@ -392,7 +393,7 @@ func (t *Dogeboxd) RemoveFromQueue(jobID string) bool {
 		}
 
 		t.queue.jobQueue = append(t.queue.jobQueue[:i], t.queue.jobQueue[i+1:]...)
-		delete(t.queue.nonQueuedActiveJobs, jobID)
+		t.queue.nonQueuedActiveJobs.Remove(jobID)
 		return true
 	}
 
@@ -973,21 +974,47 @@ var allowedJournalServices = map[string]string{
 	"dkm": "dkm.service",
 }
 
-func (t Dogeboxd) GetLogChannel(PupID string, resumeToken *string) (context.CancelFunc, chan string, error) {
+type logSource struct {
+	journalService string
+	filePath       string
+}
+
+func (s logSource) usesJournal() bool {
+	return s.journalService != ""
+}
+
+func (t Dogeboxd) resolvePupLogSource(PupID string) (logSource, error) {
 	// We read dogeboxd and dkm from the host systemd journal,
 	// and read everything else (pups) from the container logs we export.
 	service, ok := allowedJournalServices[PupID]
 	if ok {
-		if resumeToken != nil {
-			return t.JournalReader.GetJournalChannelFromCursor(service, *resumeToken)
-		}
-		return t.JournalReader.GetJournalChannel(service)
+		return logSource{journalService: service}, nil
 	}
 
 	// Check that we've actually got a valid pup id.
 	_, _, err := t.Pups.GetPup(PupID)
 	if err != nil {
-		return nil, nil, err
+		return logSource{}, err
+	}
+
+	return logSource{filePath: t.config.PupLogPath(PupID)}, nil
+}
+
+func (t Dogeboxd) resolveJobLogSource(JobID string) (logSource, error) {
+	_, err := t.JobManager.GetJob(JobID)
+	if err != nil {
+		return logSource{}, fmt.Errorf("job not found: %s", JobID)
+	}
+
+	return logSource{filePath: t.config.JobLogPath(JobID)}, nil
+}
+
+func (t Dogeboxd) getLogChannel(source logSource, resumeToken *string) (context.CancelFunc, chan string, error) {
+	if source.usesJournal() {
+		if resumeToken != nil {
+			return t.JournalReader.GetJournalChannelFromCursor(source.journalService, *resumeToken)
+		}
+		return t.JournalReader.GetJournalChannel(source.journalService)
 	}
 
 	if resumeToken != nil {
@@ -995,72 +1022,86 @@ func (t Dogeboxd) GetLogChannel(PupID string, resumeToken *string) (context.Canc
 		if err != nil {
 			return nil, nil, err
 		}
-		return t.logtailer.GetChannelFromOffset(PupID, offset)
+		return t.logtailer.GetChannelFromOffset(source.filePath, offset)
 	}
 
-	return t.logtailer.GetChannel(PupID)
+	return t.logtailer.GetChannel(source.filePath)
+}
+
+func (t Dogeboxd) getLogPage(source logSource, before *string, limit int) (LogPage, error) {
+	if limit <= 0 {
+		return LogPage{}, fmt.Errorf("Log tail limit must be greater than zero")
+	}
+
+	if source.usesJournal() {
+		return t.JournalReader.GetJournalPage(source.journalService, before, limit)
+	}
+
+	if before != nil {
+		offset, err := parseLogOffsetResumeToken(*before)
+		if err != nil {
+			return LogPage{}, err
+		}
+		return t.logtailer.GetPage(source.filePath, &offset, limit)
+	}
+
+	return t.logtailer.GetPage(source.filePath, nil, limit)
+}
+
+func (t Dogeboxd) GetLogChannel(PupID string, resumeToken *string) (context.CancelFunc, chan string, error) {
+	source, err := t.resolvePupLogSource(PupID)
+	if err != nil {
+		return nil, nil, err
+	}
+
+	return t.getLogChannel(source, resumeToken)
 }
 
 func (t Dogeboxd) GetLogTail(PupID string, limit int) ([]string, *string, error) {
-	if limit <= 0 {
-		return nil, nil, fmt.Errorf("Log tail limit must be greater than zero")
-	}
-
-	service, ok := allowedJournalServices[PupID]
-	if ok {
-		lines, resumeToken, err := t.JournalReader.GetJournalTail(service, limit)
-		return lines, resumeToken, err
-	}
-
-	_, _, err := t.Pups.GetPup(PupID)
+	page, err := t.GetLogPage(PupID, nil, limit)
 	if err != nil {
 		return nil, nil, err
 	}
 
-	lines, resumeToken, err := t.logtailer.GetTail(PupID, limit)
+	return page.Lines, page.ResumeToken, nil
+}
+
+func (t Dogeboxd) GetLogPage(PupID string, before *string, limit int) (LogPage, error) {
+	source, err := t.resolvePupLogSource(PupID)
 	if err != nil {
-		return nil, nil, err
+		return LogPage{}, err
 	}
 
-	return lines, logOffsetResumeToken(resumeToken), nil
+	return t.getLogPage(source, before, limit)
 }
 
 // GetJobLogChannel returns a log channel for a specific job
 // Streams logs from the job's ActionLogger in real-time (same system as pup logs)
 func (t Dogeboxd) GetJobLogChannel(JobID string, resumeToken *string) (context.CancelFunc, chan string, error) {
-	// Verify job exists
-	_, err := t.JobManager.GetJob(JobID)
-	if err != nil {
-		return nil, nil, fmt.Errorf("job not found: %s", JobID)
-	}
-
-	if resumeToken != nil {
-		offset, err := parseLogOffsetResumeToken(*resumeToken)
-		if err != nil {
-			return nil, nil, err
-		}
-		return t.logtailer.GetChannelFromOffset(JobID, offset)
-	}
-
-	return t.logtailer.GetChannel(JobID)
-}
-
-func (t Dogeboxd) GetJobLogTail(JobID string, limit int) ([]string, *string, error) {
-	if limit <= 0 {
-		return nil, nil, fmt.Errorf("Log tail limit must be greater than zero")
-	}
-
-	_, err := t.JobManager.GetJob(JobID)
-	if err != nil {
-		return nil, nil, fmt.Errorf("job not found: %s", JobID)
-	}
-
-	lines, resumeToken, err := t.logtailer.GetTail(JobID, limit)
+	source, err := t.resolveJobLogSource(JobID)
 	if err != nil {
 		return nil, nil, err
 	}
 
-	return lines, logOffsetResumeToken(resumeToken), nil
+	return t.getLogChannel(source, resumeToken)
+}
+
+func (t Dogeboxd) GetJobLogTail(JobID string, limit int) ([]string, *string, error) {
+	page, err := t.GetJobLogPage(JobID, nil, limit)
+	if err != nil {
+		return nil, nil, err
+	}
+
+	return page.Lines, page.ResumeToken, nil
+}
+
+func (t Dogeboxd) GetJobLogPage(JobID string, before *string, limit int) (LogPage, error) {
+	source, err := t.resolveJobLogSource(JobID)
+	if err != nil {
+		return LogPage{}, err
+	}
+
+	return t.getLogPage(source, before, limit)
 }
 
 func parseLogOffsetResumeToken(resumeToken string) (int64, error) {
