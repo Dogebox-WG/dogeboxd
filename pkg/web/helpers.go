@@ -22,13 +22,19 @@ func sendResponse(w http.ResponseWriter, payload any) {
 
 func sendErrorResponse(w http.ResponseWriter, code int, message string) {
 	log.Printf("[!] %d: %s\n", code, message)
-	// would prefer to use json.Marshal, but this avoids the need
-	// to handle encoding errors arising from json.Marshal itself!
-	payload := fmt.Sprintf("{\"error\":{\"code\":%q,\"message\":%q}}", code, message)
+	payload, err := json.Marshal(map[string]any{
+		"error": map[string]any{
+			"code":    code,
+			"message": message,
+		},
+	})
+	if err != nil {
+		payload = []byte(fmt.Sprintf(`{"error":{"code":%d,"message":"Failed to encode error response"}}`, code))
+	}
 	w.Header().Set("Content-Type", "application/json")
 	w.Header().Set("Cache-Control", "no-store") // do not cache (Browsers cache GET forever by default)
 	w.WriteHeader(code)
-	w.Write([]byte(payload))
+	w.Write(payload)
 }
 
 func getOriginIP(r *http.Request) string {
